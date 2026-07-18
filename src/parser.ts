@@ -17,8 +17,56 @@ export class Parser {
     if (token.type === 'UPDATE') return this.parseUpdate();
     if (token.type === 'CREATE') return this.parseCreate();
     if (token.type === 'DELETE') return this.parseDelete();
+    if (token.type === 'BEFORE' || token.type === 'AFTER') return this.parseTrigger();
 
     throw new Error(`Unexpected token: ${token.value}`);
+  }
+
+  private parseTrigger(): any {
+    const event = this.advance().type === 'BEFORE' ? 'before' : 'after';
+    const opToken = this.current();
+    let operation: 'create' | 'update' | 'delete';
+    
+    if (opToken.type === 'CREATE') {
+      operation = 'create';
+    } else if (opToken.type === 'UPDATE') {
+      operation = 'update';
+    } else if (opToken.type === 'DELETE') {
+      operation = 'delete';
+    } else {
+      throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
+    }
+    
+    this.advance();
+
+    const node: any = {
+      type: 'trigger',
+      event,
+      operation
+    };
+
+    // WHERE
+    if (this.current().type === 'WHERE') {
+      this.advance();
+      node.where = this.parseWhere();
+    }
+
+    // Action
+    const actionToken = this.current();
+    if (actionToken.type === 'DENY') {
+      this.advance();
+      const message = this.expect('STRING').value;
+      node.action = { type: 'deny', message };
+    } else if (actionToken.type === 'SET') {
+      this.advance();
+      node.action = { type: 'update', set: this.parseSetClause() };
+    } else if (actionToken.type === 'RUN') {
+      this.advance();
+      const command = this.expect('STRING').value;
+      node.action = { type: 'run', command };
+    }
+
+    return node;
   }
 
   private parseSelect(): SelectNode {
