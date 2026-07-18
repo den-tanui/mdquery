@@ -1,0 +1,105 @@
+// tests/builtins.test.ts
+import { describe, it, expect } from 'vitest';
+import { Builtins } from '../src/builtins';
+
+describe('Builtins', () => {
+  describe('now()', () => {
+    it('returns current datetime', () => {
+      const result = Builtins.now();
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
+      expect(new Date(result).getTime()).not.toBeNaN();
+    });
+  });
+
+  describe('today()', () => {
+    it('returns current date', () => {
+      const result = Builtins.today();
+      expect(result).toBeDefined();
+      expect(typeof result).toBe('string');
+      expect(new Date(result).getTime()).not.toBeNaN();
+    });
+  });
+
+  describe('len()', () => {
+    it('returns string length', () => {
+      const result = Builtins.len('hello');
+      expect(result).toBe(5);
+    });
+
+    it('returns array length', () => {
+      const result = Builtins.len([1, 2, 3]);
+      expect(result).toBe(3);
+    });
+  });
+
+  describe('upper()', () => {
+    it('converts to uppercase', () => {
+      const result = Builtins.upper('hello');
+      expect(result).toBe('HELLO');
+    });
+  });
+
+  describe('lower()', () => {
+    it('converts to lowercase', () => {
+      const result = Builtins.lower('HELLO');
+      expect(result).toBe('hello');
+    });
+  });
+
+  describe('trim()', () => {
+    it('trims whitespace', () => {
+      const result = Builtins.trim('  hello  ');
+      expect(result).toBe('hello');
+    });
+  });
+
+  describe('contains()', () => {
+    it('checks if string contains substring', () => {
+      expect(Builtins.contains('hello world', 'world')).toBe(true);
+      expect(Builtins.contains('hello world', 'foo')).toBe(false);
+    });
+  });
+
+  describe('startsWith()', () => {
+    it('checks if string starts with prefix', () => {
+      expect(Builtins.startsWith('hello world', 'hello')).toBe(true);
+      expect(Builtins.startsWith('hello world', 'world')).toBe(false);
+    });
+  });
+
+  describe('endsWith()', () => {
+    it('checks if string ends with suffix', () => {
+      expect(Builtins.endsWith('hello world', 'world')).toBe(true);
+      expect(Builtins.endsWith('hello world', 'hello')).toBe(false);
+    });
+  });
+
+  describe('split()', () => {
+    it('splits string by delimiter', () => {
+      const result = Builtins.split('a,b,c', ',');
+      expect(result).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('join()', () => {
+    it('joins array with delimiter', () => {
+      const result = Builtins.join(['a', 'b', 'c'], ',');
+      expect(result).toBe('a,b,c');
+    });
+  });
+
+  describe('project()', () => {
+    it('returns project info from context', () => {
+      const result = Builtins.project('title', { projectTitle: 'My Project' });
+      expect(result).toBe('My Project');
+    });
+  });
+
+  describe('sprint()', () => {
+    it('returns sprint info from context', () => {
+      const result = Builtins.sprint('name', { sprintName: 'Sprint 1' });
+      expect(result).toBe('Sprint 1');
+    });
+  });
+});
