@@ -4,7 +4,7 @@ import { FileOps } from '../src/files';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 
-const FIXTURES_DIR = join(__dirname, 'fixtures', 'files');
+const FIXTURES_DIR = join(__dirname, 'fixtures', 'files-test');
 
 describe('FileOps', () => {
   beforeAll(() => {

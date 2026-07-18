@@ -172,19 +172,30 @@ export class Executor {
     const fieldValue = (file as any)[field];
     const compareValue = this.evaluateValue(value);
 
+    // Type coercion for comparison
+    let coercedFieldValue = fieldValue;
+    let coercedCompareValue = compareValue;
+    
+    // Convert to same type for comparison
+    if (typeof fieldValue === 'string' && typeof compareValue === 'number') {
+      coercedFieldValue = Number(fieldValue);
+    } else if (typeof fieldValue === 'number' && typeof compareValue === 'string') {
+      coercedCompareValue = Number(compareValue);
+    }
+
     switch (op) {
       case '=':
-        return fieldValue === compareValue;
+        return coercedFieldValue === coercedCompareValue;
       case '!=':
-        return fieldValue !== compareValue;
+        return coercedFieldValue !== coercedCompareValue;
       case '<':
-        return fieldValue < compareValue;
+        return coercedFieldValue < coercedCompareValue;
       case '>':
-        return fieldValue > compareValue;
+        return coercedFieldValue > coercedCompareValue;
       case '<=':
-        return fieldValue <= compareValue;
+        return coercedFieldValue <= coercedCompareValue;
       case '>=':
-        return fieldValue >= compareValue;
+        return coercedFieldValue >= coercedCompareValue;
       case 'contains':
         return String(fieldValue).includes(String(compareValue));
       default:
