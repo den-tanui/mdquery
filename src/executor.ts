@@ -12,11 +12,20 @@ export interface QueryResult {
   deleted?: number;
 }
 
+export interface TriggerContext {
+  old?: FileData;
+  new?: FileData;
+}
+
 export class Executor {
   private dir: string;
+  private context?: Record<string, any>;
+  private triggerContext?: TriggerContext;
 
-  constructor(dir: string) {
+  constructor(dir: string, context?: Record<string, any>, triggerContext?: TriggerContext) {
     this.dir = dir;
+    this.context = context;
+    this.triggerContext = triggerContext;
   }
 
   async execute(query: string): Promise<QueryResult> {
@@ -161,15 +170,32 @@ export class Executor {
       case 'or':
         return this.evaluateWhere(file, where.left as WhereNode) ||
                this.evaluateWhere(file, where.right as WhereNode);
+      case 'not':
+        return !this.evaluateWhere(file, where.expr as WhereNode);
       case 'comparison':
-        return this.evaluateComparison(file, where.field!, where.op!, where.value!);
+        return this.evaluateComparison(file, where.field!, where.op!, where.value!, where.fieldPath);
       default:
         return false;
     }
   }
 
-  private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode): boolean {
-    const fieldValue = (file as any)[field];
+  private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string): boolean {
+    // Handle trigger variables (new.field, old.field)
+    let fieldValue: any;
+    if (fieldPath && this.triggerContext) {
+      const [prefix, ...rest] = fieldPath.split('.');
+      const fieldName = rest.join('.');
+      if (prefix === 'new' && this.triggerContext.new) {
+        fieldValue = (this.triggerContext.new as any)[fieldName];
+      } else if (prefix === 'old' && this.triggerContext.old) {
+        fieldValue = (this.triggerContext.old as any)[fieldName];
+      } else {
+        fieldValue = (file as any)[field];
+      }
+    } else {
+      fieldValue = (file as any)[field];
+    }
+
     const compareValue = this.evaluateValue(value);
 
     // Type coercion for comparison
@@ -198,6 +224,14 @@ export class Executor {
         return coercedFieldValue >= coercedCompareValue;
       case 'contains':
         return String(fieldValue).includes(String(compareValue));
+      case 'starts_with':
+        return String(fieldValue).startsWith(String(compareValue));
+      case 'ends_with':
+        return String(fieldValue).endsWith(String(compareValue));
+      case 'is_empty':
+        return !fieldValue || fieldValue === '';
+      case 'is_not_empty':
+        return fieldValue && fieldValue !== '';
       default:
         return false;
     }

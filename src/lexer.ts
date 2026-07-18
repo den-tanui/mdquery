@@ -20,6 +20,8 @@ const KEYWORDS: Record<string, TokenType> = {
   not: 'NOT',
   in: 'IN',
   contains: 'CONTAINS',
+  starts_with: 'STARTS_WITH',
+  ends_with: 'ENDS_WITH',
   any: 'ANY',
   all: 'ALL',
   exists: 'EXISTS',

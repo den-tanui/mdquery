@@ -5,7 +5,7 @@ export type TokenType =
   | 'SELECT' | 'UPDATE' | 'CREATE' | 'DELETE'
   | 'WHERE' | 'SET' | 'ORDER' | 'BY' | 'GROUP' | 'HAVING'
   | 'LIMIT' | 'OFFSET' | 'DISTINCT'
-  | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'ANY' | 'ALL'
+  | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'ANY' | 'ALL'
   | 'EXISTS' | 'IS' | 'EMPTY'
   | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN'
   | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN'
@@ -76,11 +76,14 @@ export interface RunAction {
 }
 
 export interface WhereNode {
-  type: 'and' | 'or' | 'comparison' | 'exists' | 'in' | 'any' | 'all';
+  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'any' | 'all';
   left?: WhereNode | FieldNode;
+  expr?: WhereNode;
   op?: string;
   right?: WhereNode | ValueNode | SelectNode;
   field?: string;
+  fieldPath?: string;
+  value?: ValueNode;
   subquery?: SelectNode;
 }
 

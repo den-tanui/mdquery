@@ -56,7 +56,41 @@ export class Builtins {
     return context[key];
   }
 
-  static call(name: string, args: any[], context?: Record<string, any>): any {
+  static id(context?: Record<string, any>): string {
+    return context?.id || '';
+  }
+
+  static user(context?: Record<string, any>): string {
+    return context?.user || process.env.USER || process.env.USERNAME || 'unknown';
+  }
+
+  static date(dateString: string): string {
+    return new Date(dateString).toISOString();
+  }
+
+  static nextEnum(fieldValue: string, enumValues: string[]): string {
+    const currentIndex = enumValues.indexOf(fieldValue);
+    if (currentIndex === -1 || currentIndex === enumValues.length - 1) {
+      return enumValues[0];
+    }
+    return enumValues[currentIndex + 1];
+  }
+
+  static prevEnum(fieldValue: string, enumValues: string[]): string {
+    const currentIndex = enumValues.indexOf(fieldValue);
+    if (currentIndex === -1 || currentIndex === 0) {
+      return enumValues[enumValues.length - 1];
+    }
+    return enumValues[currentIndex - 1];
+  }
+
+  static clipboard(value: string): string {
+    // In a real implementation, this would copy to clipboard
+    // For now, just return the value
+    return value;
+  }
+
+  static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[]): any {
     const builtin = (this as any)[name];
     if (!builtin) {
       throw new Error(`Unknown builtin: ${name}`);
@@ -64,6 +98,18 @@ export class Builtins {
     
     if (name === 'project' || name === 'sprint') {
       return builtin(args[0], context || {});
+    }
+    
+    if (name === 'id') {
+      return builtin(context);
+    }
+    
+    if (name === 'user') {
+      return builtin(context);
+    }
+    
+    if (name === 'nextEnum' || name === 'prevEnum') {
+      return builtin(args[0], enumValues || []);
     }
     
     return builtin(...args);

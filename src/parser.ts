@@ -228,6 +228,13 @@ export class Parser {
   private parseComparison(): WhereNode {
     const token = this.current();
 
+    // NOT
+    if (token.type === 'NOT') {
+      this.advance();
+      const expr = this.parseComparison();
+      return { type: 'not', expr };
+    }
+
     // EXISTS subquery
     if (token.type === 'EXISTS') {
       this.advance();
@@ -237,32 +244,57 @@ export class Parser {
       return { type: 'exists', subquery };
     }
 
-    // IN list
-    if (token.type === 'IDENTIFIER' && this.peek().type === 'IN') {
-      const field = token.value;
-      this.advance(); // skip field
-      this.advance(); // skip IN
-      this.expect('LPAREN');
-      const items: ValueNode[] = [];
-      while (this.current().type !== 'RPAREN') {
-        items.push(this.parseValue());
-        if (this.current().type === 'COMMA') this.advance();
-      }
-      this.expect('RPAREN');
-      return { type: 'in', field, value: { type: 'array', items } };
-    }
-
-    // field operator value
+    // field operator value (including new.field, old.field)
     if (token.type === 'IDENTIFIER') {
-      const field = token.value;
+      let field = token.value;
+      let fieldPath = token.value;
       this.advance();
+
+      // Handle new.field or old.field
+      if (this.current().type === 'DOT' && this.peek().type === 'IDENTIFIER') {
+        const prefix = field;
+        this.advance(); // skip dot
+        const fieldPart = this.expect('IDENTIFIER').value;
+        field = fieldPart;
+        fieldPath = `${prefix}.${fieldPart}`;
+      }
+
+      // IS [NOT] EMPTY
+      if (this.current().type === 'IS') {
+        this.advance();
+        const notEmpty = this.current().type === 'NOT';
+        if (notEmpty) this.advance();
+        this.expect('EMPTY');
+        return { type: 'comparison', field, fieldPath, op: notEmpty ? 'is_not_empty' : 'is_empty', value: { type: 'null', value: null } };
+      }
+
+      // IN list
+      if (this.current().type === 'IN') {
+        this.advance();
+        this.expect('LPAREN');
+        const items: ValueNode[] = [];
+        while (this.current().type !== 'RPAREN') {
+          items.push(this.parseValue());
+          if (this.current().type === 'COMMA') this.advance();
+        }
+        this.expect('RPAREN');
+        return { type: 'in', field, fieldPath, value: { type: 'array', items } };
+      }
+
+      // CONTAINS, STARTS_WITH, ENDS_WITH
+      if (this.current().type === 'CONTAINS' || this.current().type === 'STARTS_WITH' || this.current().type === 'ENDS_WITH') {
+        const op = this.current().value;
+        this.advance();
+        const value = this.parseValue();
+        return { type: 'comparison', field, fieldPath, op, value };
+      }
 
       const opToken = this.current();
       const op = this.getOperator();
       this.advance();
 
       const value = this.parseValue();
-      return { type: 'comparison', field, op, value };
+      return { type: 'comparison', field, fieldPath, op, value };
     }
 
     throw new Error(`Unexpected token in WHERE: ${token.value}`);
