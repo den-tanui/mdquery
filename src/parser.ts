@@ -277,13 +277,17 @@ export class Parser {
   private parseSetClause(): Record<string, ValueNode> {
     const set: Record<string, ValueNode> = {};
 
-    while (this.current().type !== 'EOF' && !this.isKeyword()) {
+    while (this.current().type !== 'EOF') {
+      if (this.current().type !== 'IDENTIFIER') break;
+      
       const field = this.expect('IDENTIFIER').value;
       this.expect('EQUALS');
       set[field] = this.parseValue();
 
       if (this.current().type === 'COMMA') {
         this.advance();
+      } else if (this.current().type === 'IDENTIFIER' && this.peek().type === 'EQUALS') {
+        continue;
       } else {
         break;
       }
