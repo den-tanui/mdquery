@@ -26,7 +26,15 @@ export type ASTNode =
   | UpdateNode
   | CreateNode
   | DeleteNode
-  | TriggerNode;
+  | TriggerNode
+  | PipeNode;
+
+export interface PipeNode {
+  type: 'pipe';
+  expr: ASTNode;
+  fn: string;
+  args?: ValueNode[];
+}
 
 export interface SelectNode {
   type: 'select';
@@ -34,9 +42,18 @@ export interface SelectNode {
   distinct?: boolean;
   where?: WhereNode;
   groupBy?: string[];
+  having?: WhereNode;
   orderBy?: OrderByNode[];
   limit?: number;
   offset?: number;
+  join?: JoinNode;
+}
+
+export interface JoinNode {
+  type: 'join';
+  table: string;
+  on: WhereNode;
+  alias?: string;
 }
 
 export interface UpdateNode {
@@ -76,7 +93,7 @@ export interface RunAction {
 }
 
 export interface WhereNode {
-  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'any' | 'all';
+  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'any' | 'all' | 'array_comparison';
   left?: WhereNode | FieldNode;
   expr?: WhereNode;
   op?: string;
@@ -85,6 +102,9 @@ export interface WhereNode {
   fieldPath?: string;
   value?: ValueNode;
   subquery?: SelectNode;
+  arrayOp?: string;
+  arrayField?: string;
+  arrayCondition?: WhereNode;
 }
 
 export interface FieldNode {

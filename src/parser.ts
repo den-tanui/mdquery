@@ -13,13 +13,30 @@ export class Parser {
   parse(): ASTNode {
     const token = this.current();
 
-    if (token.type === 'SELECT') return this.parseSelect();
-    if (token.type === 'UPDATE') return this.parseUpdate();
-    if (token.type === 'CREATE') return this.parseCreate();
-    if (token.type === 'DELETE') return this.parseDelete();
-    if (token.type === 'BEFORE' || token.type === 'AFTER') return this.parseTrigger();
+    let ast: ASTNode;
+    
+    if (token.type === 'SELECT') ast = this.parseSelect();
+    else if (token.type === 'UPDATE') ast = this.parseUpdate();
+    else if (token.type === 'CREATE') ast = this.parseCreate();
+    else if (token.type === 'DELETE') ast = this.parseDelete();
+    else if (token.type === 'BEFORE' || token.type === 'AFTER') ast = this.parseTrigger();
+    else throw new Error(`Unexpected token: ${token.value}`);
 
-    throw new Error(`Unexpected token: ${token.value}`);
+    // Handle pipe syntax
+    if (this.current().type === 'PIPE') {
+      this.advance();
+      const fn = this.expect('IDENTIFIER').value;
+      this.expect('LPAREN');
+      const args: ValueNode[] = [];
+      while (this.current().type !== 'RPAREN') {
+        args.push(this.parseValue());
+        if (this.current().type === 'COMMA') this.advance();
+      }
+      this.expect('RPAREN');
+      return { type: 'pipe', expr: ast, fn, args };
+    }
+
+    return ast;
   }
 
   private parseTrigger(): any {
@@ -74,6 +91,12 @@ export class Parser {
 
     const node: SelectNode = { type: 'select', fields: ['*'] };
 
+    // DISTINCT
+    if (this.current().type === 'DISTINCT') {
+      node.distinct = true;
+      this.advance();
+    }
+
     // Parse fields if not a keyword
     if (this.current().type !== 'EOF' && !this.isKeyword()) {
       node.fields = this.parseFieldList();
@@ -90,6 +113,12 @@ export class Parser {
       this.advance();
       this.expect('BY');
       node.groupBy = this.parseIdentifierList();
+    }
+
+    // HAVING
+    if (this.current().type === 'HAVING') {
+      this.advance();
+      node.having = this.parseWhere();
     }
 
     // ORDER BY
@@ -109,6 +138,15 @@ export class Parser {
     if (this.current().type === 'OFFSET') {
       this.advance();
       node.offset = parseInt(this.expect('NUMBER').value);
+    }
+
+    // JOIN
+    if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'join') {
+      this.advance();
+      const table = this.expect('IDENTIFIER').value;
+      this.expect('ON');
+      const on = this.parseWhere();
+      node.join = { type: 'join', table, on };
     }
 
     return node;
@@ -163,19 +201,35 @@ export class Parser {
 
       if (token.type === 'IDENTIFIER') {
         if (this.peek().type === 'LPAREN') {
-          // Aggregate function
+          // Check if it's an aggregate function or regular function
           const func = token.value.toLowerCase();
-          this.advance(); // skip function name
-          this.expect('LPAREN');
-          let field = '*';
-          if (this.current().type === 'IDENTIFIER') {
-            field = this.current().value;
-            this.advance();
-          } else if (this.current().type === 'STAR') {
-            this.advance();
+          if (['count', 'sum', 'avg', 'min', 'max'].includes(func)) {
+            // Aggregate function
+            this.advance(); // skip function name
+            this.expect('LPAREN');
+            let field = '*';
+            if (this.current().type === 'IDENTIFIER') {
+              field = this.current().value;
+              this.advance();
+            } else if (this.current().type === 'STAR') {
+              this.advance();
+            }
+            this.expect('RPAREN');
+            fields.push({ type: 'aggregate', func: func as any, field });
+          } else {
+            // Regular function call (like next_date) - treat as field name
+            this.advance(); // skip function name
+            this.expect('LPAREN');
+            // Skip arguments
+            let parenDepth = 1;
+            while (this.current().type !== 'EOF' && parenDepth > 0) {
+              if (this.current().type === 'LPAREN') parenDepth++;
+              if (this.current().type === 'RPAREN') parenDepth--;
+              this.advance();
+            }
+            // Use the function call as a field name for now
+            fields.push(`${token.value}()`);
           }
-          this.expect('RPAREN');
-          fields.push({ type: 'aggregate', func: func as any, field });
         } else {
           fields.push(token.value);
           this.advance();
@@ -225,6 +279,30 @@ export class Parser {
     return left;
   }
 
+  private parseArrayCondition(): WhereNode {
+    const token = this.current();
+    
+    // Handle simple comparisons like = "value" or contains "value"
+    if (token.type === 'EQUALS' || token.type === 'NOT_EQUALS' || 
+        token.type === 'LT' || token.type === 'GT' || 
+        token.type === 'LTE' || token.type === 'GTE') {
+      const op = this.getOperator();
+      this.advance();
+      const value = this.parseValue();
+      return { type: 'comparison', field: '', op, value };
+    }
+    
+    if (token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
+      const op = token.value;
+      this.advance();
+      const value = this.parseValue();
+      return { type: 'comparison', field: '', op, value };
+    }
+    
+    // Fall back to regular comparison parsing
+    return this.parseComparison();
+  }
+
   private parseComparison(): WhereNode {
     const token = this.current();
 
@@ -244,6 +322,30 @@ export class Parser {
       return { type: 'exists', subquery };
     }
 
+    // Handle aggregate functions in comparisons (e.g., count(*) > 1)
+    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
+      const func = token.value.toLowerCase();
+      if (['count', 'sum', 'avg', 'min', 'max'].includes(func)) {
+        this.advance(); // skip function name
+        this.expect('LPAREN');
+        let field = '*';
+        if (this.current().type === 'IDENTIFIER') {
+          field = this.current().value;
+          this.advance();
+        } else if (this.current().type === 'STAR') {
+          this.advance();
+        }
+        this.expect('RPAREN');
+        
+        const opToken = this.current();
+        const op = this.getOperator();
+        this.advance();
+        
+        const value = this.parseValue();
+        return { type: 'comparison', field: `${func}(${field})`, fieldPath: `${func}(${field})`, op, value };
+      }
+    }
+
     // field operator value (including new.field, old.field)
     if (token.type === 'IDENTIFIER') {
       let field = token.value;
@@ -257,6 +359,18 @@ export class Parser {
         const fieldPart = this.expect('IDENTIFIER').value;
         field = fieldPart;
         fieldPath = `${prefix}.${fieldPart}`;
+      }
+
+      // ANY/ALL array operators
+      if (this.current().type === 'ANY' || this.current().type === 'ALL') {
+        const arrayOp = this.current().value;
+        this.advance();
+        
+        // Parse the condition for each element
+        // The condition should be a comparison like = "backend" or contains "ui"
+        const condition = this.parseArrayCondition();
+        
+        return { type: 'array_comparison', field, fieldPath, arrayOp, arrayCondition: condition };
       }
 
       // IS [NOT] EMPTY

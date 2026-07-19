@@ -90,6 +90,39 @@ export class Builtins {
     return value;
   }
 
+  static nextDate(recurrence: string): string {
+    // Parse recurrence string and return next date
+    // Simple implementation: assumes recurrence is in format "daily", "weekly", "monthly"
+    const now = new Date();
+    
+    switch (recurrence.toLowerCase()) {
+      case 'daily':
+        now.setDate(now.getDate() + 1);
+        break;
+      case 'weekly':
+        now.setDate(now.getDate() + 7);
+        break;
+      case 'monthly':
+        now.setMonth(now.getMonth() + 1);
+        break;
+      case 'yearly':
+        now.setFullYear(now.getFullYear() + 1);
+        break;
+      default:
+        // Try to parse as days
+        const days = parseInt(recurrence);
+        if (!isNaN(days)) {
+          now.setDate(now.getDate() + days);
+        }
+    }
+    
+    return now.toISOString().split('T')[0];
+  }
+
+  static projectName(context?: Record<string, any>): string {
+    return context?.projectTitle || '';
+  }
+
   static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[]): any {
     const builtin = (this as any)[name];
     if (!builtin) {
@@ -110,6 +143,14 @@ export class Builtins {
     
     if (name === 'nextEnum' || name === 'prevEnum') {
       return builtin(args[0], enumValues || []);
+    }
+    
+    if (name === 'nextDate') {
+      return builtin(args[0]);
+    }
+    
+    if (name === 'projectName') {
+      return builtin(context);
     }
     
     return builtin(...args);

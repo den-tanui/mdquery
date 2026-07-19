@@ -26,12 +26,12 @@ export class FileOps {
         // Ensure id is string for consistent comparison
         const id = data.id?.toString() || basename(entry.name, '.md');
         
+        // Spread data first, then override id to ensure string type
         files.push({
+          ...data,
           id,
           filepath,
-          content,
-          ...data,
-          id: id // Override to ensure string type
+          content
         });
       }
       

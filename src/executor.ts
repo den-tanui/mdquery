@@ -43,9 +43,23 @@ export class Executor {
         return this.executeCreate(ast);
       case 'delete':
         return this.executeDelete(ast);
+      case 'pipe':
+        return this.executePipe(ast);
       default:
         throw new Error(`Unknown AST type: ${(ast as any).type}`);
     }
+  }
+
+  private async executePipe(node: any): Promise<QueryResult> {
+    const result = await this.executeAST(node.expr);
+    
+    // Handle clipboard function
+    if (node.fn === 'clipboard' && result.data) {
+      const values = result.data.map((f: any) => f.id || f.title || '').join('\n');
+      await navigator.clipboard?.writeText(values);
+    }
+    
+    return result;
   }
 
   private async executeSelect(node: SelectNode): Promise<QueryResult> {
@@ -61,6 +75,11 @@ export class Executor {
       files = this.groupBy(files, node.groupBy);
     }
 
+    // HAVING
+    if (node.having) {
+      files = files.filter(f => this.evaluateWhere(f, node.having!));
+    }
+
     // ORDER BY
     if (node.orderBy) {
       files = this.orderBy(files, node.orderBy);
@@ -74,6 +93,16 @@ export class Executor {
     // OFFSET
     if (node.offset) {
       files = files.slice(node.offset);
+    }
+
+    // JOIN
+    if (node.join) {
+      files = await this.executeJoin(files, node.join);
+    }
+
+    // DISTINCT
+    if (node.distinct) {
+      files = this.distinct(files, node.fields);
     }
 
     // Select specific fields
@@ -94,6 +123,56 @@ export class Executor {
       data: files,
       count: files.length
     };
+  }
+
+  private distinct(files: FileData[], fields: (string | any)[]): FileData[] {
+    const seen = new Set<string>();
+    return files.filter(f => {
+      const key = fields.map(field => {
+        if (typeof field === 'string') {
+          return String((f as any)[field]);
+        }
+        if (typeof field === 'object' && field.type === 'aggregate') {
+          return `${field.func}(${field.field})`;
+        }
+        return '';
+      }).join('|');
+      
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async executeJoin(files: FileData[], join: any): Promise<FileData[]> {
+    // Load the joined table
+    const joinedFiles = await FileOps.readFiles(join.table);
+    
+    // Perform the join
+    const result: FileData[] = [];
+    
+    for (const file of files) {
+      for (const joined of joinedFiles) {
+        // Create a merged file-like object
+        const merged: any = { ...file };
+        
+        // Add joined fields with prefix
+        for (const [key, value] of Object.entries(joined)) {
+          if (key !== 'id' && key !== 'filepath' && key !== 'content') {
+            merged[`${join.table}.${key}`] = value;
+          }
+        }
+        
+        // Check ON condition
+        if (this.evaluateWhere(merged as FileData, join.on)) {
+          result.push(merged as FileData);
+        }
+      }
+    }
+    
+    return result;
   }
 
   private async executeUpdate(node: UpdateNode): Promise<QueryResult> {
@@ -174,12 +253,83 @@ export class Executor {
         return !this.evaluateWhere(file, where.expr as WhereNode);
       case 'comparison':
         return this.evaluateComparison(file, where.field!, where.op!, where.value!, where.fieldPath);
+      case 'array_comparison':
+        return this.evaluateArrayComparison(file, where.field!, where.arrayOp!, where.arrayCondition!);
       default:
         return false;
     }
   }
 
+  private evaluateArrayComparison(file: FileData, field: string, arrayOp: string, condition: WhereNode): boolean {
+    const arrayValue = (file as any)[field];
+    
+    if (!Array.isArray(arrayValue)) {
+      return false;
+    }
+
+    if (arrayOp === 'any') {
+      return arrayValue.some((item: any) => {
+        // For string arrays, create a temp file with a special value field
+        // For object arrays, spread the item properties
+        const tempFile = typeof item === 'object' 
+          ? { ...file, ...item }
+          : { ...file, _value: item };
+        
+        // If the condition has an empty field, use _value
+        if (condition.type === 'comparison' && condition.field === '') {
+          const tempCondition = { ...condition, field: '_value', fieldPath: '_value' };
+          return this.evaluateWhere(tempFile, tempCondition);
+        }
+        
+        return this.evaluateWhere(tempFile, condition);
+      });
+    }
+
+    if (arrayOp === 'all') {
+      return arrayValue.every((item: any) => {
+        const tempFile = typeof item === 'object'
+          ? { ...file, ...item }
+          : { ...file, _value: item };
+        
+        if (condition.type === 'comparison' && condition.field === '') {
+          const tempCondition = { ...condition, field: '_value', fieldPath: '_value' };
+          return this.evaluateWhere(tempFile, tempCondition);
+        }
+        
+        return this.evaluateWhere(tempFile, condition);
+      });
+    }
+
+    return false;
+  }
+
   private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string): boolean {
+    // Handle aggregate functions in comparisons (e.g., count(*) > 1)
+    const aggregateMatch = field.match(/^(count|sum|avg|min|max)\((.+)\)$/);
+    if (aggregateMatch) {
+      const [, func, aggField] = aggregateMatch;
+      const compareValue = this.evaluateValue(value);
+      
+      // For aggregated comparisons, we need to evaluate against grouped data
+      // This is a simplified version - in production, you'd want to handle this more robustly
+      const fieldValue = (file as any)[field] || (file as any)[`${func}(${aggField})`];
+      
+      if (fieldValue === undefined) return false;
+      
+      const coercedFieldValue = typeof fieldValue === 'string' ? Number(fieldValue) : fieldValue;
+      const coercedCompareValue = typeof compareValue === 'string' ? Number(compareValue) : compareValue;
+      
+      switch (op) {
+        case '=': return coercedFieldValue === coercedCompareValue;
+        case '!=': return coercedFieldValue !== coercedCompareValue;
+        case '<': return coercedFieldValue < coercedCompareValue;
+        case '>': return coercedFieldValue > coercedCompareValue;
+        case '<=': return coercedFieldValue <= coercedCompareValue;
+        case '>=': return coercedFieldValue >= coercedCompareValue;
+        default: return false;
+      }
+    }
+
     // Handle trigger variables (new.field, old.field)
     let fieldValue: any;
     if (fieldPath && this.triggerContext) {
@@ -246,17 +396,34 @@ export class Executor {
   }
 
   private groupBy(files: FileData[], fields: string[]): FileData[] {
-    // Simple implementation - just sort by group fields
-    return files.sort((a, b) => {
-      for (const field of fields) {
-        const aVal = (a as any)[field] || '';
-        const bVal = (b as any)[field] || '';
-        if (aVal !== bVal) {
-          return aVal < bVal ? -1 : 1;
-        }
+    // Group files by the specified fields and calculate aggregates
+    const groups = new Map<string, FileData[]>();
+    
+    for (const file of files) {
+      const key = fields.map(f => String((file as any)[f])).join('|');
+      if (!groups.has(key)) {
+        groups.set(key, []);
       }
-      return 0;
-    });
+      groups.get(key)!.push(file);
+    }
+    
+    // Convert groups to aggregated results
+    const result: FileData[] = [];
+    for (const [, groupFiles] of groups) {
+      const aggregated: any = { ...groupFiles[0] };
+      
+      // Calculate count
+      aggregated['count(*)'] = groupFiles.length;
+      
+      // Store the count for each field
+      for (const field of fields) {
+        aggregated[`count(${field})`] = groupFiles.length;
+      }
+      
+      result.push(aggregated as FileData);
+    }
+    
+    return result;
   }
 
   private orderBy(files: FileData[], orderBy: { field: string; direction: 'asc' | 'desc' }[]): FileData[] {

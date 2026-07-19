@@ -19,7 +19,7 @@ describe('Parser', () => {
       expect(ast).toEqual({
         type: 'select',
         fields: ['*'],
-        where: { type: 'comparison', field: 'status', op: '=', value: { type: 'string', value: 'done' } }
+        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
       });
     });
 
@@ -30,8 +30,8 @@ describe('Parser', () => {
         fields: ['*'],
         where: {
           type: 'and',
-          left: { type: 'comparison', field: 'status', op: '=', value: { type: 'string', value: 'done' } },
-          right: { type: 'comparison', field: 'assignee', op: '=', value: { type: 'string', value: 'jane' } }
+          left: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } },
+          right: { type: 'comparison', field: 'assignee', fieldPath: 'assignee', op: '=', value: { type: 'string', value: 'jane' } }
         }
       });
     });
@@ -69,7 +69,7 @@ describe('Parser', () => {
       expect(ast).toEqual({
         type: 'select',
         fields: [{ type: 'aggregate', func: 'count', field: '*' }],
-        where: { type: 'comparison', field: 'projectId', op: '=', value: { type: 'number', value: 1 } }
+        where: { type: 'comparison', field: 'projectId', fieldPath: 'projectId', op: '=', value: { type: 'number', value: 1 } }
       });
     });
   });

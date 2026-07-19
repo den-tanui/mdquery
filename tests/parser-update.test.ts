@@ -8,7 +8,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where status = "todo" set status = "doing"').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'status', op: '=', value: { type: 'string', value: 'todo' } },
+        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'todo' } },
         set: { status: { type: 'string', value: 'doing' } }
       });
     });
@@ -17,7 +17,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set status = "done" assignee = "jane"').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
         set: {
           status: { type: 'string', value: 'done' },
           assignee: { type: 'string', value: 'jane' }
@@ -29,7 +29,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set priority = 5').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
         set: { priority: { type: 'number', value: 5 } }
       });
     });
@@ -38,7 +38,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set completed = true').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
         set: { completed: { type: 'boolean', value: true } }
       });
     });
@@ -74,7 +74,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('delete where status = "done"').parse();
       expect(ast).toEqual({
         type: 'delete',
-        where: { type: 'comparison', field: 'status', op: '=', value: { type: 'string', value: 'done' } }
+        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
       });
     });
 
@@ -84,8 +84,8 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
         type: 'delete',
         where: {
           type: 'and',
-          left: { type: 'comparison', field: 'projectId', op: '=', value: { type: 'number', value: 1 } },
-          right: { type: 'comparison', field: 'status', op: '=', value: { type: 'string', value: 'done' } }
+          left: { type: 'comparison', field: 'projectId', fieldPath: 'projectId', op: '=', value: { type: 'number', value: 1 } },
+          right: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
         }
       });
     });
