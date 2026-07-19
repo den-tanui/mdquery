@@ -4320,7 +4320,7 @@ class Executor {
       case "comparison":
         return this.evaluateComparison(file, where.field, where.op, where.value, where.fieldPath);
       case "array_comparison":
-        return this.evaluateArrayComparison(file, where.arrayField, where.arrayOp, where.arrayCondition);
+        return this.evaluateArrayComparison(file, where.field, where.arrayOp, where.arrayCondition);
       default:
         return false;
     }

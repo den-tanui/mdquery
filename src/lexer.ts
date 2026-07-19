@@ -55,9 +55,9 @@ export class Lexer {
         continue;
       }
 
-      // Strings
-      if (char === '"') {
-        tokens.push(this.readString());
+      // Strings (double or single quotes)
+      if (char === '"' || char === "'") {
+        tokens.push(this.readString(char));
         continue;
       }
 
@@ -87,12 +87,12 @@ export class Lexer {
     return tokens;
   }
 
-  private readString(): Token {
+  private readString(quote: string): Token {
     const start = this.position;
     this.position++; // skip opening quote
     let value = '';
 
-    while (this.position < this.input.length && this.input[this.position] !== '"') {
+    while (this.position < this.input.length && this.input[this.position] !== quote) {
       value += this.input[this.position];
       this.position++;
     }

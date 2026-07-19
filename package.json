@@ -8,7 +8,9 @@
     "mdquery": "./dist/cli.js"
   },
   "scripts": {
-    "build": "bun build src/index.ts src/cli.ts --outdir dist --target node",
+    "build": "bun run build:lib && bun run build:cli",
+    "build:lib": "bun build src/index.ts --outdir dist --target node",
+    "build:cli": "bun build src/cli.ts --compile --outfile mdquery",
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage"

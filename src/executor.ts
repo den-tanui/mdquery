@@ -105,13 +105,18 @@ export class Executor {
       files = this.distinct(files, node.fields);
     }
 
-    // Select specific fields
-    if (node.fields[0] !== '*' && !node.fields.some(f => typeof f === 'object')) {
+    // Select specific fields (handle aggregates)
+    const hasAggregates = node.fields.some(f => typeof f === 'object' && f.type === 'aggregate');
+    if (node.fields[0] !== '*' || hasAggregates) {
       files = files.map(f => {
         const selected: any = {};
         for (const field of node.fields) {
           if (typeof field === 'string') {
-            selected[field] = f[field];
+            selected[field] = (f as any)[field];
+          } else if (typeof field === 'object' && field.type === 'aggregate') {
+            // Aggregate fields are already computed by groupBy
+            const key = `${field.func}(${field.field})`;
+            selected[key] = (f as any)[key];
           }
         }
         return selected;
