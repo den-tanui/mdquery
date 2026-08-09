@@ -80,6 +80,13 @@ Pipe a query in via stdin:
 echo "select" | mdquery
 ```
 
+Pipe file paths in via stdin:
+
+```bash
+fd SKILL.md | mdquery -f - "select name, description"
+find . -name "*.md" | mdquery -f - "select filename, title"
+```
+
 Choose an output format:
 
 ```bash
@@ -94,7 +101,7 @@ mdquery --card "select *"  # expanded view with full content
 | `-h`, `--help` | Print the full manual and exit |
 | `-v`, `--version` | Print the version and exit |
 | `--dir=<path>` | Directory to query (default `.`) |
-| `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated |
+| `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated. Use `-f -` to read file paths from stdin |
 | `-d`, `--depth=<n>` | Search depth: `0` = current dir only (default), `1` = one level down, `-1` = recursive |
 | `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
 | `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |

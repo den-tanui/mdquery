@@ -20,7 +20,7 @@ mdquery is feature-complete for CLI use with arbitrary markdown files:
 
 ## Not yet implemented (projext layer)
 
-These features are planned for projext library mode:
+These features are planned for projext library mode via hooks:
 
 - Date/duration types: `2026-03-25`, `2day`
 - Date arithmetic: `date - date`, `date + duration`
@@ -29,6 +29,7 @@ These features are planned for projext library mode:
 - `has()` with qualified fields: `has(new.status)`
 - Pipe `| run()` action
 - Time triggers: `every 1hour ...`
+- Custom builtins via `onBuiltinCall` hook
 
 ## Statements
 
@@ -157,6 +158,8 @@ Callable in `set` clauses and as values:
 | `date(s)` | parse date to ISO |
 | `next_date('daily'\|'weekly'\|'monthly'\|'yearly'\|<n>)` | next recurrence / in n days |
 | `nextEnum(val, [a, b, c])` / `prevEnum(val, [..])` | cycle through enum values |
+| `fields()` / `fields(true)` | list frontmatter field names / return field map |
+| `toc()` / `toc(true)` | return indented TOC / structured TOC with tree formatting |
 
 ## Aggregate functions
 
