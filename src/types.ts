@@ -6,7 +6,7 @@ export type TokenType =
   | 'WHERE' | 'SET' | 'ORDER' | 'BY' | 'GROUP' | 'HAVING'
   | 'LIMIT' | 'OFFSET' | 'DISTINCT'
   | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'ANY' | 'ALL'
-  | 'EXISTS' | 'IS' | 'EMPTY'
+  | 'EXISTS' | 'IS' | 'EMPTY' | 'HAS'
   | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN'
   | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN'
   | 'COMMA' | 'DOT' | 'LPAREN' | 'RPAREN' | 'LBRACKET' | 'RBRACKET'
@@ -93,7 +93,7 @@ export interface RunAction {
 }
 
 export interface WhereNode {
-  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'any' | 'all' | 'array_comparison';
+  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'not_in' | 'has' | 'any' | 'all' | 'array_comparison';
   left?: WhereNode | FieldNode;
   expr?: WhereNode;
   op?: string;

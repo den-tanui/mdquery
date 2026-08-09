@@ -322,6 +322,15 @@ export class Parser {
       return { type: 'exists', subquery };
     }
 
+    // HAS function
+    if (token.type === 'HAS') {
+      this.advance();
+      this.expect('LPAREN');
+      const field = this.expect('IDENTIFIER').value;
+      this.expect('RPAREN');
+      return { type: 'has', field };
+    }
+
     // Handle aggregate functions in comparisons (e.g., count(*) > 1)
     if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
       const func = token.value.toLowerCase();
@@ -395,12 +404,38 @@ export class Parser {
         return { type: 'in', field, fieldPath, value: { type: 'array', items } };
       }
 
+      // NOT IN list
+      if (this.current().type === 'NOT' && this.peek().type === 'IN') {
+        this.advance(); // skip NOT
+        this.advance(); // skip IN
+        this.expect('LPAREN');
+        const items: ValueNode[] = [];
+        while (this.current().type !== 'RPAREN') {
+          items.push(this.parseValue());
+          if (this.current().type === 'COMMA') this.advance();
+        }
+        this.expect('RPAREN');
+        return { type: 'not_in', field, fieldPath, value: { type: 'array', items } };
+      }
+
       // CONTAINS, STARTS_WITH, ENDS_WITH
       if (this.current().type === 'CONTAINS' || this.current().type === 'STARTS_WITH' || this.current().type === 'ENDS_WITH') {
         const op = this.current().value;
         this.advance();
         const value = this.parseValue();
         return { type: 'comparison', field, fieldPath, op, value };
+      }
+
+      // NOT CONTAINS, NOT STARTS_WITH, NOT ENDS_WITH
+      if (this.current().type === 'NOT') {
+        const nextType = this.peek().type;
+        if (nextType === 'CONTAINS' || nextType === 'STARTS_WITH' || nextType === 'ENDS_WITH') {
+          this.advance(); // skip NOT
+          const op = `not_${this.current().value}`;
+          this.advance();
+          const value = this.parseValue();
+          return { type: 'comparison', field, fieldPath, op, value };
+        }
       }
 
       const opToken = this.current();
@@ -444,6 +479,18 @@ export class Parser {
     if (token.type === 'IDENTIFIER') {
       this.advance();
       return { type: 'string', value: token.value };
+    }
+
+    // Array literal [a, b, c]
+    if (token.type === 'LBRACKET') {
+      this.advance(); // skip [
+      const items: ValueNode[] = [];
+      while (this.current().type !== 'RBRACKET') {
+        items.push(this.parseValue());
+        if (this.current().type === 'COMMA') this.advance();
+      }
+      this.expect('RBRACKET');
+      return { type: 'array', items };
     }
 
     throw new Error(`Unexpected token in value: ${token.value}`);

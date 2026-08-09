@@ -27,6 +27,7 @@ const KEYWORDS: Record<string, TokenType> = {
   exists: 'EXISTS',
   is: 'IS',
   empty: 'EMPTY',
+  has: 'HAS',
   before: 'BEFORE',
   after: 'AFTER',
   deny: 'DENY',

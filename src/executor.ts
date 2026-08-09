@@ -198,6 +198,13 @@ export class Executor {
       throw new Error(this.noMatchError(node.where));
     }
 
+    // Check for immutable field updates
+    for (const field of FileOps.IMMUTABLE_FIELDS) {
+      if (node.set[field] !== undefined) {
+        throw new Error(`cannot update immutable field '${field}'`);
+      }
+    }
+
     for (const file of matches) {
       // Update fields
       for (const [key, value] of Object.entries(node.set)) {
@@ -246,6 +253,11 @@ export class Executor {
   }
 
   private async executeDelete(node: DeleteNode): Promise<QueryResult> {
+    // Require where clause for delete
+    if (!node.where) {
+      throw new Error('delete requires a where clause');
+    }
+
     const files = await FileOps.readFiles(this.dir, this.readOptions);
     const matches = node.where ? files.filter(f => this.evaluateWhere(f, node.where)) : files;
 
@@ -292,6 +304,14 @@ export class Executor {
         return this.evaluateComparison(file, where.field!, where.op!, where.value!, where.fieldPath);
       case 'array_comparison':
         return this.evaluateArrayComparison(file, where.field!, where.arrayOp!, where.arrayCondition!);
+      case 'in':
+        return this.evaluateIn(file, where.field!, where.value!, false);
+      case 'not_in':
+        return this.evaluateIn(file, where.field!, where.value!, true);
+      case 'has':
+        return this.evaluateHas(file, where.field!);
+      case 'exists':
+        return this.evaluateExists(file, where.subquery!);
       default:
         return false;
     }
@@ -340,6 +360,63 @@ export class Executor {
     return false;
   }
 
+  private evaluateIn(file: FileData, field: string, value: ValueNode, negate: boolean): boolean {
+    const fieldValue = (file as any)[field];
+    const list = this.evaluateValue(value);
+    
+    if (!Array.isArray(list)) {
+      return false;
+    }
+
+    // Absent field: = v → false, != v → true
+    if (fieldValue === undefined) {
+      return negate; // not_in returns true for absent, in returns false
+    }
+
+    const found = list.some((item: any) => {
+      // Type coercion
+      if (typeof fieldValue === 'string' && typeof item === 'number') {
+        return fieldValue === String(item);
+      }
+      if (typeof fieldValue === 'number' && typeof item === 'string') {
+        return String(fieldValue) === item;
+      }
+      return fieldValue === item;
+    });
+
+    return negate ? !found : found;
+  }
+
+  private evaluateHas(file: FileData, field: string): boolean {
+    return (file as any)[field] !== undefined;
+  }
+
+  private evaluateExists(file: FileData, subquery: any): boolean {
+    // Run the subquery synchronously by creating a temporary executor
+    // For now, we'll use a simplified approach: check if the subquery would return results
+    // This is a simplified version - in production, you'd want to handle this more robustly
+    try {
+      // Parse and evaluate the subquery
+      const parser = new (require('./parser').Parser)(subquery);
+      const ast = parser.parse();
+      
+      // For exists, we just need to know if there would be any results
+      // We'll use the same file context for the subquery
+      if (ast.type === 'select') {
+        const selectNode = ast as SelectNode;
+        // Simplified: check if where condition matches
+        if (selectNode.where) {
+          return this.evaluateWhere(file, selectNode.where);
+        }
+        // No where clause means all files match
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string): boolean {
     // Handle aggregate functions in comparisons (e.g., count(*) > 1)
     const aggregateMatch = field.match(/^(count|sum|avg|min|max)\((.+)\)$/);
@@ -385,6 +462,14 @@ export class Executor {
 
     const compareValue = this.evaluateValue(value);
 
+    // Absent field contract: = v → false, != v → true
+    if (fieldValue === undefined) {
+      if (op === '=') return false;
+      if (op === '!=') return true;
+      // For other operators, absent field returns false
+      return false;
+    }
+
     // Type coercion for comparison
     let coercedFieldValue = fieldValue;
     let coercedCompareValue = compareValue;
@@ -415,6 +500,12 @@ export class Executor {
         return String(fieldValue).startsWith(String(compareValue));
       case 'ends_with':
         return String(fieldValue).endsWith(String(compareValue));
+      case 'not_contains':
+        return !String(fieldValue).includes(String(compareValue));
+      case 'not_starts_with':
+        return !String(fieldValue).startsWith(String(compareValue));
+      case 'not_ends_with':
+        return !String(fieldValue).endsWith(String(compareValue));
       case 'is_empty':
         return !fieldValue || fieldValue === '';
       case 'is_not_empty':
@@ -429,6 +520,7 @@ export class Executor {
     if (value.type === 'number') return value.value;
     if (value.type === 'boolean') return value.value;
     if (value.type === 'null') return null;
+    if (value.type === 'array') return value.items.map(item => this.evaluateValue(item));
     return value;
   }
 

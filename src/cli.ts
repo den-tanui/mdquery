@@ -165,6 +165,9 @@ async function main() {
 
   // Confirmation for destructive operations
   const op = query.trim().split(/\s+/)[0].toLowerCase();
+  if (op === 'delete' && !query.trim().toLowerCase().includes('where')) {
+    fail('delete requires a where clause to prevent accidental deletion');
+  }
   if ((op === 'update' || op === 'delete') && !yes) {
     const ok = await confirm(`are you sure you want to ${op}?`);
     if (!ok) {

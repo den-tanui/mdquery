@@ -33,6 +33,9 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
 };
 
 export class FileOps {
+  // Identity fields that cannot be updated
+  static readonly IMMUTABLE_FIELDS = ['createdAt', 'updatedAt'];
+
   static async readFiles(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
@@ -156,8 +159,16 @@ export class FileOps {
     // Strip any existing frontmatter from the body so it isn't duplicated
     const body = stripFrontmatter(content);
 
+    // Handle empty literal: empty string clears the field from frontmatter
     const frontmatter = Object.entries(data)
       .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content'].includes(key))
+      .filter(([key, value]) => {
+        // Skip empty string values (empty literal clears the field)
+        if (value === '' || value === null || value === undefined) {
+          return false;
+        }
+        return true;
+      })
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join('\n');
 
