@@ -560,6 +560,26 @@ export class Executor {
       coercedFieldValue = Number(fieldValue);
     } else if (typeof fieldValue === 'number' && typeof compareValue === 'string') {
       coercedCompareValue = Number(compareValue);
+    } else if (fieldValue instanceof Date && typeof compareValue === 'string') {
+      // Date vs string: parse string as date
+      const parsed = new Date(compareValue);
+      if (!isNaN(parsed.getTime())) {
+        coercedCompareValue = parsed;
+      }
+    } else if (typeof fieldValue === 'string' && compareValue instanceof Date) {
+      // String vs Date: parse string as date
+      const parsed = new Date(fieldValue);
+      if (!isNaN(parsed.getTime())) {
+        coercedFieldValue = parsed;
+      }
+    } else if (typeof fieldValue === 'string' && typeof compareValue === 'string') {
+      // Both strings: check if they look like dates
+      const isFieldDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(fieldValue);
+      const isCompareDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(compareValue);
+      if (isFieldDate && isCompareDate) {
+        coercedFieldValue = new Date(fieldValue);
+        coercedCompareValue = new Date(compareValue);
+      }
     }
 
     switch (op) {
@@ -768,11 +788,30 @@ export class Executor {
   private orderBy(files: FileData[], orderBy: { field: string; direction: 'asc' | 'desc' }[]): FileData[] {
     return files.sort((a, b) => {
       for (const { field, direction } of orderBy) {
-        const aVal = (a as any)[field] || '';
-        const bVal = (b as any)[field] || '';
+        const aVal = (a as any)[field];
+        const bVal = (b as any)[field];
         
         if (aVal === bVal) continue;
         
+        // Handle dates
+        if (aVal instanceof Date && bVal instanceof Date) {
+          const compare = aVal.getTime() - bVal.getTime();
+          return direction === 'asc' ? compare : -compare;
+        }
+        
+        // Handle date strings
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          const isADate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(aVal);
+          const isBDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(bVal);
+          if (isADate && isBDate) {
+            const aDate = new Date(aVal);
+            const bDate = new Date(bVal);
+            const compare = aDate.getTime() - bDate.getTime();
+            return direction === 'asc' ? compare : -compare;
+          }
+        }
+        
+        // Default comparison
         const compare = aVal < bVal ? -1 : 1;
         return direction === 'asc' ? compare : -compare;
       }

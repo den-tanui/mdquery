@@ -156,7 +156,7 @@ export class FileOps {
       const sections = parseSections(content);
 
       return {
-        ...data,
+        ...parseDates(data),
         filename,
         path: rel,
         abspath: filepath,
@@ -179,7 +179,7 @@ export class FileOps {
       const sections = parseSections(content);
 
       return {
-        ...data,
+        ...parseDates(data),
         filename,
         path: rel,
         abspath: filepath,
@@ -289,6 +289,21 @@ export class FileOps {
     await writeFile(filepath, fileContent, 'utf-8');
     return filepath;
   }
+}
+
+function parseDates(data: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(T|\s)/.test(value)) {
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        result[key] = date;
+        continue;
+      }
+    }
+    result[key] = value;
+  }
+  return result;
 }
 
 function stripFrontmatter(content: string): string {

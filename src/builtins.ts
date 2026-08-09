@@ -222,6 +222,72 @@ export class Builtins {
     return [value];
   }
 
+  // Date comparison builtins
+  static isBefore(date1: any, date2: any): boolean {
+    const d1 = date1 instanceof Date ? date1 : new Date(date1);
+    const d2 = date2 instanceof Date ? date2 : new Date(date2);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return false;
+    return d1 < d2;
+  }
+
+  static isAfter(date1: any, date2: any): boolean {
+    const d1 = date1 instanceof Date ? date1 : new Date(date1);
+    const d2 = date2 instanceof Date ? date2 : new Date(date2);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return false;
+    return d1 > d2;
+  }
+
+  static daysUntil(date1: any, date2: any): number {
+    const d1 = date1 instanceof Date ? date1 : new Date(date1);
+    const d2 = date2 instanceof Date ? date2 : new Date(date2);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+    const diff = d2.getTime() - d1.getTime();
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  }
+
+  static daysSince(date: any): number {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return 0;
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }
+
+  // Date formatting builtins
+  static dateFormat(date: any, format: string): string {
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return '';
+    
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    
+    return format
+      .replace('YYYY', String(year))
+      .replace('MM', month)
+      .replace('DD', day)
+      .replace('HH', hours)
+      .replace('mm', minutes)
+      .replace('ss', seconds);
+  }
+
+  static dateAdd(date: any, days: number): Date {
+    const d = date instanceof Date ? new Date(date) : new Date(date);
+    if (isNaN(d.getTime())) return new Date();
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  static dateSub(date: any, days: number): Date {
+    const d = date instanceof Date ? new Date(date) : new Date(date);
+    if (isNaN(d.getTime())) return new Date();
+    d.setDate(d.getDate() - days);
+    return d;
+  }
+
   static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[], hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any }): any {
     // Try camelCase version first, then snake_case
     let builtin = (this as any)[name];
