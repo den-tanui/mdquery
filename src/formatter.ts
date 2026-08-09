@@ -40,7 +40,7 @@ export class Formatter {
     const rows = result.data.map(row => headers.map(h => {
       const value = (row as any)[h];
       // Format toc and section fields specially
-      if (h === 'toc' || h === 'toc()' || h.startsWith('section.')) {
+      if (h === 'toc' || h === 'toc()' || h.startsWith('toc(') || h === 'section' || h === 'section()' || h.startsWith('section(') || h.startsWith('section.')) {
         return formatTocForTable(value);
       }
       return String(value ?? '');
@@ -112,9 +112,9 @@ export class Formatter {
     for (const row of result.data) {
       const filename = String((row as any).filename ?? '');
       const content = String((row as any).content ?? '');
-      const toc = (row as any).toc || (row as any)['toc()'];
+      const toc = (row as any).toc || (row as any)['toc()'] || (row as any)['toc(2)'] || (row as any)['toc(3)'];
       const hasExplicitContent = headers.includes('content');
-      const hasExplicitToc = headers.includes('toc') || headers.includes('toc()');
+      const hasExplicitToc = headers.includes('toc') || headers.includes('toc()') || headers.some(h => h.startsWith('toc('));
 
       // Header line (only if filename is in the selected fields)
       const cardLines: string[] = [];
@@ -122,8 +122,8 @@ export class Formatter {
         cardLines.push(`--- ${filename} ---`);
       }
 
-      // Metadata fields (excluding content and toc)
-      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc' && h !== 'toc()');
+      // Metadata fields (excluding content, toc, and section)
+      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc' && h !== 'toc()' && !h.startsWith('toc(') && h !== 'section' && h !== 'section()' && !h.startsWith('section(') && !h.startsWith('section.'));
       const metaLines: string[] = [];
       let currentLine = '';
 
@@ -288,25 +288,54 @@ function formatFieldValue(field: string, value: string): string {
 }
 
 function formatTocForTable(value: any): string {
-  if (!Array.isArray(value)) return String(value);
+  if (value === null || value === undefined) return '';
   
-  // Handle structured TOC (array of { level, title } objects)
-  if (value.length > 0 && value[0]?.level !== undefined) {
-    return formatTocAsTree(value);
+  // Handle section() map output
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value)
+      .map(([key, val]) => `${key}: ${String(val).split('\n')[0]}`)
+      .join('\n');
   }
   
-  return String(value);
+  if (!Array.isArray(value)) return String(value);
+  
+  // Parse "level:title" format and build tree
+  const items = value.map((v: any) => {
+    if (typeof v === 'string' && v.includes(':')) {
+      const [level, ...titleParts] = v.split(':');
+      return { level: parseInt(level), title: titleParts.join(':') };
+    }
+    return { level: 1, title: String(v) };
+  });
+  
+  return formatTocAsTree(items);
 }
 
 function formatTocForCard(value: any): string {
-  if (!Array.isArray(value)) return String(value);
+  if (value === null || value === undefined) return '';
   
-  // Handle structured TOC (array of { level, title } objects)
-  if (value.length > 0 && value[0]?.level !== undefined) {
-    return formatTocAsTree(value);
+  // Handle section() map output
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value)
+      .map(([key, val]) => {
+        const content = String(val).trim();
+        return content ? `${key}:\n${content}` : `${key}: (empty)`;
+      })
+      .join('\n\n');
   }
   
-  return String(value);
+  if (!Array.isArray(value)) return String(value);
+  
+  // Parse "level:title" format and build tree
+  const items = value.map((v: any) => {
+    if (typeof v === 'string' && v.includes(':')) {
+      const [level, ...titleParts] = v.split(':');
+      return { level: parseInt(level), title: titleParts.join(':') };
+    }
+    return { level: 1, title: String(v) };
+  });
+  
+  return formatTocAsTree(items);
 }
 
 function sum(values: number[]): number {

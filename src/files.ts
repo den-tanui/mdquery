@@ -348,19 +348,26 @@ export function parseSections(content: string): Map<string, Section> {
   return sections;
 }
 
-export function formatTocAsTree(sections: Section[] | string[]): string {
+export function formatTocAsTree(sections: Section[] | string[] | { level: number; title: string }[]): string {
   if (sections.length === 0) return '';
   
-  // Convert string[] with heading markers to Section[]
-  const parsed: Section[] = sections.map(s => {
+  // Convert to uniform format with level and title
+  const parsed: { level: number; title: string }[] = sections.map(s => {
     if (typeof s === 'string') {
+      // Handle "level:title" format
+      if (s.includes(':')) {
+        const [level, ...titleParts] = s.split(':');
+        return { level: parseInt(level) || 1, title: titleParts.join(':') };
+      }
+      // Handle "# title" format
       const match = s.match(/^(#{1,6})\s+(.+)$/);
       if (match) {
-        return { level: match[1].length, title: match[2], content: '' };
+        return { level: match[1].length, title: match[2] };
       }
-      return { level: 1, title: s, content: '' };
+      return { level: 1, title: s };
     }
-    return s;
+    // Already an object with level and title
+    return { level: s.level, title: s.title };
   });
   
   const lines: string[] = [];

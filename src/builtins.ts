@@ -164,7 +164,7 @@ export class Builtins {
     return fields;
   }
 
-  static toc(context?: Record<string, any>, levels?: number | number[]): Array<{ level: number; title: string }> {
+  static toc(context?: Record<string, any>, levels?: number | number[]): string[] {
     if (!context?.sections) return [];
     
     const sections: Section[] = Array.from(context.sections.values());
@@ -178,8 +178,24 @@ export class Builtins {
       ? sections.filter(s => levelArray.includes(s.level))
       : sections;
     
-    // Return flat list with level and title (no content)
-    return filtered.map(s => ({ level: s.level, title: s.title }));
+    // Return flat list as "level:title" strings
+    return filtered.map(s => `${s.level}:${s.title}`);
+  }
+
+  static section(context?: Record<string, any>, name?: string): string | Record<string, string> | null {
+    if (!context?.sections) return null;
+    
+    // If no name provided, return all sections as a map
+    if (!name) {
+      const result: Record<string, string> = {};
+      for (const [key, section] of context.sections) {
+        result[key] = section.content;
+      }
+      return result;
+    }
+    
+    // Return specific section content
+    return context.sections.get(name)?.content || null;
   }
 
   // Type conversion builtins
@@ -318,7 +334,7 @@ export class Builtins {
         return builtin(args[0]);
       }
       
-      if (normalizedName === 'fields' || normalizedName === 'toc') {
+      if (normalizedName === 'fields' || normalizedName === 'toc' || normalizedName === 'section') {
         return builtin(context, args[0]);
       }
       
