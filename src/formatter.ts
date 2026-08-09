@@ -106,17 +106,21 @@ export class Formatter {
     const halfWidth = Math.floor(width / 2);
 
     const headers = Object.keys(result.data[0]);
+    const hasFilename = headers.includes('filename');
     const cards: string[] = [];
 
     for (const row of result.data) {
-      const filename = String((row as any).filename ?? 'unknown');
+      const filename = String((row as any).filename ?? '');
       const content = String((row as any).content ?? '');
       const toc = (row as any).toc;
       const hasExplicitContent = headers.includes('content');
       const hasExplicitToc = headers.includes('toc');
 
-      // Header line
-      const cardLines: string[] = [`--- ${filename} ---`];
+      // Header line (only if filename is in the selected fields)
+      const cardLines: string[] = [];
+      if (hasFilename && filename) {
+        cardLines.push(`--- ${filename} ---`);
+      }
 
       // Metadata fields (excluding content and toc)
       const metaFields = headers.filter(h => h !== 'content' && h !== 'toc');

@@ -127,7 +127,7 @@ describe('mdquery CLI', () => {
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, 'nested.md'), '---\ntitle: Nested\n---\n');
     try {
-      const { stdout, status } = runCli([`--dir=${fixtureDir}`, '-d', '-1', 'select filename']);
+      const { stdout, status } = runCli([`--dir=${fixtureDir}`, '-d', '0', 'select filename']);
       expect(status).toBe(0);
       expect(stdout).toContain('nested');
     } finally {

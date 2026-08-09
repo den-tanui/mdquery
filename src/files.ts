@@ -127,9 +127,10 @@ export class FileOps {
     }
 
     // Recurse into subdirectories up to the depth limit
-    const canRecurse = opts.depth === -1 || opts.depth > 0;
+    // depth: 0 = recursive (default), 1 = top level only, 2+ = limited depth
+    const canRecurse = opts.depth === 0 || opts.depth > 1;
     if (canRecurse) {
-      const nextDepth = opts.depth === -1 ? -1 : opts.depth - 1;
+      const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
         await this.walk(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
       }
@@ -244,9 +245,10 @@ export class FileOps {
     }
 
     // Recurse into subdirectories up to the depth limit
-    const canRecurse = opts.depth === -1 || opts.depth > 0;
+    // depth: 0 = recursive (default), 1 = top level only, 2+ = limited depth
+    const canRecurse = opts.depth === 0 || opts.depth > 1;
     if (canRecurse) {
-      const nextDepth = opts.depth === -1 ? -1 : opts.depth - 1;
+      const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
         this.walkSync(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
       }

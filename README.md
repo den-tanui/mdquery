@@ -102,7 +102,7 @@ mdquery --card "select *"  # expanded view with full content
 | `-v`, `--version` | Print the version and exit |
 | `--dir=<path>` | Directory to query (default `.`) |
 | `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated. Use `-f -` to read file paths from stdin |
-| `-d`, `--depth=<n>` | Search depth: `0` = current dir only (default), `1` = one level down, `-1` = recursive |
+| `-d`, `--depth=<n>` | Search depth: `0` = recursive (default), `1` = top level only, `2+` = limited depth |
 | `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
 | `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
 | `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |

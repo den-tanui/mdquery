@@ -136,9 +136,9 @@ describe('Formatter', () => {
   });
 
   describe('Card', () => {
-    it('formats as card with header and metadata', () => {
+    it('formats as card with metadata (no header when filename is empty)', () => {
       const output = Formatter.toCard(mockResult, 120);
-      expect(output).toContain('---  ---');
+      expect(output).not.toContain('---');
       expect(output).toContain('id: 1');
       expect(output).toContain('title: Test Task');
       expect(output).toContain('status: todo');

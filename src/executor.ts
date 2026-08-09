@@ -4,6 +4,7 @@ import { FileOps, FileData, ReadOptions } from './files';
 import { isAbsolute, join } from 'path';
 import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode, ExecutorHooks } from './types';
 import { copyToClipboard } from './clipboard';
+import { Builtins } from './builtins';
 
 export interface QueryResult {
   type: 'select' | 'update' | 'create' | 'delete';
@@ -149,6 +150,7 @@ export class Executor {
     const hasAggregates = node.fields.some(f => typeof f === 'object' && f.type === 'aggregate');
     if (node.fields[0] !== '*' || hasAggregates) {
       files = files.map(f => {
+        this.currentFile = f;
         const selected: any = {};
         for (const field of node.fields) {
           if (typeof field === 'string') {
@@ -157,6 +159,12 @@ export class Executor {
             // Aggregate fields are already computed by groupBy
             const key = `${field.func}(${field.field})`;
             selected[key] = (f as any)[key];
+          } else if (typeof field === 'object' && (field as any).type === 'builtin') {
+            // Evaluate builtin function
+            const builtinNode = field as any;
+            const args = builtinNode.args.map((arg: any) => this.evaluateValue(arg));
+            const result = Builtins.call(builtinNode.name, args, f, undefined, this.hooks);
+            selected[builtinNode.name] = result;
           }
         }
         return selected;
@@ -668,7 +676,6 @@ export class Executor {
     else if (value.type === 'binary') result = this.evaluateBinary(value);
     else if (value.type === 'builtin') {
       const args = value.args.map(arg => this.evaluateValue(arg));
-      const { Builtins } = require('./builtins');
       result = Builtins.call(value.name, args, this.context, undefined, this.hooks);
     }
     else result = value;

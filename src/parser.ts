@@ -193,13 +193,13 @@ export class Parser {
     return node;
   }
 
-  private parseFieldList(): (string | AggregateNode)[] {
-    const fields: (string | AggregateNode)[] = [];
+  private parseFieldList(): (string | AggregateNode | BuiltinNode)[] {
+    const fields: (string | AggregateNode | BuiltinNode)[] = [];
 
     while (this.current().type !== 'EOF' && !this.isKeyword()) {
       const token = this.current();
 
-      if (token.type === 'IDENTIFIER') {
+      if (token.type === 'IDENTIFIER' || token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
         if (this.peek().type === 'LPAREN') {
           // Check if it's an aggregate function or regular function
           const func = token.value.toLowerCase();
@@ -217,18 +217,16 @@ export class Parser {
             this.expect('RPAREN');
             fields.push({ type: 'aggregate', func: func as any, field });
           } else {
-            // Regular function call (like next_date) - treat as field name
+            // Regular function call (like fields, toc, contains, etc.) - parse as builtin
             this.advance(); // skip function name
             this.expect('LPAREN');
-            // Skip arguments
-            let parenDepth = 1;
-            while (this.current().type !== 'EOF' && parenDepth > 0) {
-              if (this.current().type === 'LPAREN') parenDepth++;
-              if (this.current().type === 'RPAREN') parenDepth--;
-              this.advance();
+            const args: (FieldNode | ValueNode)[] = [];
+            while (this.current().type !== 'RPAREN' && this.current().type !== 'EOF') {
+              args.push(this.parseValue());
+              if (this.current().type === 'COMMA') this.advance();
             }
-            // Use the function call as a field name for now
-            fields.push(`${token.value}()`);
+            this.expect('RPAREN');
+            fields.push({ type: 'builtin', name: token.value, args });
           }
         } else {
           fields.push(token.value);

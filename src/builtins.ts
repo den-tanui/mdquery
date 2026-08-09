@@ -143,23 +143,31 @@ export class Builtins {
   }
 
   static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[], hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any }): any {
-    const builtin = (this as any)[name];
+    // Try camelCase version first, then snake_case
+    let builtin = (this as any)[name];
+    let normalizedName = name;
+    
+    if (!builtin && name.includes('_')) {
+      // Convert snake_case to camelCase
+      normalizedName = name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+      builtin = (this as any)[normalizedName];
+    }
     
     // Try built-in methods first
     if (builtin) {
-      if (name === 'id' || name === 'user') {
+      if (normalizedName === 'id' || normalizedName === 'user') {
         return builtin(context);
       }
       
-      if (name === 'nextEnum' || name === 'prevEnum') {
-        return builtin(args[0], enumValues || []);
+      if (normalizedName === 'nextEnum' || normalizedName === 'prevEnum') {
+        return builtin(args[0], enumValues || args[1] || []);
       }
       
-      if (name === 'nextDate') {
+      if (normalizedName === 'nextDate') {
         return builtin(args[0]);
       }
       
-      if (name === 'fields' || name === 'toc') {
+      if (normalizedName === 'fields' || normalizedName === 'toc') {
         return builtin(context, args[0]);
       }
       

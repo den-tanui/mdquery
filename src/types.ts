@@ -38,7 +38,7 @@ export interface PipeNode {
 
 export interface SelectNode {
   type: 'select';
-  fields: (string | AggregateNode)[];
+  fields: (string | AggregateNode | BuiltinNode)[];
   distinct?: boolean;
   where?: WhereNode;
   groupBy?: string[];

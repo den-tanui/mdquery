@@ -34,47 +34,53 @@ describe('FileOps discovery', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('depth 0 (default) only reads top-level files', async () => {
-    const files = await FileOps.readFiles(dir);
+  it('depth 1 (default) only reads top-level files', async () => {
+    const files = await FileOps.readFiles(dir, { depth: 1 });
     const names = files.map(f => f.filename).sort();
     expect(names).toEqual(['top']);
   });
 
-  it('depth 1 reads one subdirectory level', async () => {
+  it('depth 1 reads top level only', async () => {
     const files = await FileOps.readFiles(dir, { depth: 1 });
+    const names = files.map(f => f.filename).sort();
+    expect(names).toEqual(['top']);
+  });
+
+  it('depth 2 reads one subdirectory level', async () => {
+    const files = await FileOps.readFiles(dir, { depth: 2 });
     const names = files.map(f => f.filename).sort();
     expect(names).toEqual(['mid', 'top']);
   });
 
-  it('depth -1 reads recursively', async () => {
-    const files = await FileOps.readFiles(dir, { depth: -1 });
+  it('depth 0 reads recursively', async () => {
+    const files = await FileOps.readFiles(dir, { depth: 0 });
     const names = files.map(f => f.filename).sort();
     expect(names).toEqual(['deep', 'mid', 'top']);
   });
 
   it('hidden files are skipped by default and included with hidden: true', async () => {
-    const without = await FileOps.readFiles(dir, { depth: -1 });
+    const without = await FileOps.readFiles(dir, { depth: 0 });
     expect(without.some(f => f.filename === 'secret')).toBe(false);
 
-    const withHidden = await FileOps.readFiles(dir, { depth: -1, hidden: true });
+    const withHidden = await FileOps.readFiles(dir, { depth: 0, hidden: true });
     expect(withHidden.some(f => f.filename === 'secret')).toBe(true);
   });
 
   it('respects .gitignore by default', async () => {
-    const files = await FileOps.readFiles(dir, { depth: -1 });
+    const files = await FileOps.readFiles(dir, { depth: 0 });
     expect(files.some(f => f.filename === 'ignored')).toBe(false);
     expect(files.some(f => f.filename === 'dep')).toBe(false);
   });
 
   it('ignore: false includes gitignored files', async () => {
-    const files = await FileOps.readFiles(dir, { depth: -1, ignore: false });
+    const files = await FileOps.readFiles(dir, { depth: 0, ignore: false });
     expect(files.some(f => f.filename === 'ignored')).toBe(true);
   });
 
   it('always skips .git', async () => {
     mkdirSync(join(dir, '.git'), { recursive: true });
     writeFileSync(join(dir, '.git', 'config.md'), '---\ntitle: Git\n---\n');
-    const files = await FileOps.readFiles(dir, { depth: -1, hidden: true, ignore: false });
+    const files = await FileOps.readFiles(dir, { depth: 0, hidden: true, ignore: false });
     expect(files.some(f => f.filename === 'config')).toBe(false);
   });
 
@@ -85,7 +91,7 @@ describe('FileOps discovery', () => {
   });
 
   it('exposes filename, path, abspath', async () => {
-    const files = await FileOps.readFiles(dir, { depth: 1 });
+    const files = await FileOps.readFiles(dir, { depth: 2 });
     const mid = files.find(f => f.filename === 'mid')!;
     expect(mid.path).toBe(join('sub', 'mid.md'));
     expect(mid.abspath).toBe(join(dir, 'sub', 'mid.md'));
@@ -105,7 +111,7 @@ describe('Executor with discovery options', () => {
   });
 
   it('select respects depth option', async () => {
-    const executor = new Executor(dir, undefined, undefined, { depth: -1 });
+    const executor = new Executor(dir, undefined, undefined, { depth: 0 });
     const result = await executor.execute('select filename');
     const names = result.data!.map(f => f.filename).sort();
     expect(names).toEqual(['deep', 'mid', 'top']);
@@ -142,7 +148,7 @@ describe('Executor with discovery options', () => {
   it('create with path writes to a relative path', async () => {
     const executor = new Executor(dir);
     await executor.execute('create title = "Nested" path = "sub/created.md"');
-    const files = await FileOps.readFiles(dir, { depth: -1 });
+    const files = await FileOps.readFiles(dir, { depth: 0 });
     expect(files.some(f => f.path === join('sub', 'created.md'))).toBe(true);
   });
 });

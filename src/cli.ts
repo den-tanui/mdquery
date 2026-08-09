@@ -21,7 +21,7 @@ Options:
   --dir=<directory>     Directory to query (default: .)
   -f, --file=<file>     Query specific markdown file(s); repeatable or comma-separated
                         Use -f - to read file paths from stdin (one per line)
-  -d, --depth=<n>       Directory depth: 0 = top level (default), 1 = one subdir, -1 = recursive
+  -d, --depth=<n>       Directory depth: 0 = recursive (default), 1 = top level only, 2+ = limited depth
   -H, --hidden          Include hidden files/dirs (except .git)
   --no-ignore           Do not respect .gitignore
   -y, --yes             Skip confirmation prompts for update/delete
@@ -32,7 +32,7 @@ Examples:
   mdquery "select where status = 'done'"
   mdquery --dir=tasks/ "select order by priority"
   mdquery -f task.md -f other.md "select title, status"
-  mdquery -d -1 "select filename, path"
+  mdquery -d 1 "select filename, path"
   mdquery -H --no-ignore "select filename"
   mdquery --format=table "select filename, title"
   echo "select" | mdquery
