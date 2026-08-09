@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@projext/mdquery",
+      "name": "@den-tanui/mdquery",
       "dependencies": {
         "gray-matter": "^4.0.3",
         "ignore": "^7.0.6",

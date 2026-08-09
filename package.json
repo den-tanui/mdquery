@@ -1,5 +1,5 @@
 {
-  "name": "@projext/mdquery",
+  "name": "@den-tanui/mdquery",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",

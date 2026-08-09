@@ -52,10 +52,10 @@ bun run build:cli   # produces the standalone ./mdquery binary
 ### As a library
 
 ```sh
-bun install @projext/mdquery
+bun install @den-tanui/mdquery
 ```
 
-> `bun install` requires `bun`. For other package managers, public release will document equivalents (`npm install @projext/mdquery`).
+> `bun install` requires `bun`. For other package managers, public release will document equivalents (`npm install @den-tanui/mdquery`).
 
 ## Quick start
 

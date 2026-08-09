@@ -2,9 +2,9 @@
 set -e
 
 # mdquery installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/projext/mdquery/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/den-tanui/mdquery/main/scripts/install.sh | bash
 
-REPO="projext/mdquery"
+REPO="den-tanui/mdquery"
 BINARY_NAME="mdquery"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 

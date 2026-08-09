@@ -1,6 +1,6 @@
 # AGENTS.md
 
-mdquery (`@projext/mdquery`): a SQL-like query language over the YAML frontmatter of markdown files. TypeScript, ESM, built with **Bun** (not npm). Grammar lives in `docs/syntax.md`; CLI flags are duplicated in the README and the in-binary manual in `src/cli.ts`.
+mdquery (`@den-tanui/mdquery`): a SQL-like query language over the YAML frontmatter of markdown files. TypeScript, ESM, built with **Bun** (not npm). Grammar lives in `docs/syntax.md`; CLI flags are duplicated in the README and the in-binary manual in `src/cli.ts`.
 
 ## Commands (Bun required)
 
