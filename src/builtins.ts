@@ -164,17 +164,22 @@ export class Builtins {
     return fields;
   }
 
-  static toc(context?: Record<string, any>, structured?: boolean): string[] | Section[] {
+  static toc(context?: Record<string, any>, levels?: number | number[]): Array<{ level: number; title: string }> {
     if (!context?.sections) return [];
     
     const sections: Section[] = Array.from(context.sections.values());
     
-    if (structured) {
-      return sections;
-    }
+    // Normalize levels to array
+    const levelArray = Array.isArray(levels) ? levels : 
+                       typeof levels === 'number' ? [levels] : [];
     
-    // Return flat list with heading markers
-    return sections.map(s => '#'.repeat(s.level) + ' ' + s.title);
+    // Filter by levels if specified
+    const filtered = levelArray.length > 0
+      ? sections.filter(s => levelArray.includes(s.level))
+      : sections;
+    
+    // Return flat list with level and title (no content)
+    return filtered.map(s => ({ level: s.level, title: s.title }));
   }
 
   // Type conversion builtins

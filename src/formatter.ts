@@ -290,25 +290,23 @@ function formatFieldValue(field: string, value: string): string {
 function formatTocForTable(value: any): string {
   if (!Array.isArray(value)) return String(value);
   
-  // Handle structured TOC (array of Section objects)
+  // Handle structured TOC (array of { level, title } objects)
   if (value.length > 0 && value[0]?.level !== undefined) {
-    return formatTocAsTree(value.map((s: any) => ({ level: s.level, title: s.title, content: '' })));
+    return formatTocAsTree(value);
   }
   
-  // Handle flat TOC with heading markers (e.g., ["# Main", "## Sub"])
-  return formatTocAsTree(value);
+  return String(value);
 }
 
 function formatTocForCard(value: any): string {
   if (!Array.isArray(value)) return String(value);
   
-  // Handle structured TOC (array of Section objects)
+  // Handle structured TOC (array of { level, title } objects)
   if (value.length > 0 && value[0]?.level !== undefined) {
-    return formatTocAsTree(value.map((s: any) => ({ level: s.level, title: s.title, content: '' })));
+    return formatTocAsTree(value);
   }
   
-  // Handle flat TOC with heading markers (e.g., ["# Main", "## Sub"])
-  return formatTocAsTree(value);
+  return String(value);
 }
 
 function sum(values: number[]): number {
