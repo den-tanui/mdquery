@@ -48,6 +48,7 @@ Query language (compact):
   where: <field> <op> <value>  combined with and | or, not (<expr>)
   ops: = != < <= > >= contains starts_with ends_with is [not] empty
        in (...), any <op>, all <op>, exists (<select>)
+       "value" in toc(), has section("name")
   aggregates: count(*) | sum(f) | avg(f) | min(f) | max(f)
   pipes: <statement> | <fn>(<args>)
   triggers: before|after create|update|delete ... deny|set|run

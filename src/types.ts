@@ -93,7 +93,7 @@ export interface RunAction {
 }
 
 export interface WhereNode {
-  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'not_in' | 'has' | 'any' | 'all' | 'array_comparison';
+  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'not_in' | 'has' | 'has_section' | 'in_toc' | 'any' | 'all' | 'array_comparison';
   left?: WhereNode | FieldNode;
   expr?: WhereNode;
   op?: string;
@@ -105,6 +105,8 @@ export interface WhereNode {
   arrayOp?: string;
   arrayField?: string;
   arrayCondition?: WhereNode;
+  sectionName?: string;
+  tocValue?: ValueNode;
 }
 
 export interface FieldNode {

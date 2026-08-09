@@ -428,6 +428,10 @@ export class Executor {
         return this.evaluateIn(file, where.field!, where.value!, true);
       case 'has':
         return this.evaluateHas(file, where.field!);
+      case 'has_section':
+        return this.evaluateHasSection(file, where.sectionName!);
+      case 'in_toc':
+        return this.evaluateInToc(file, where.tocValue!);
       case 'exists':
         return this.evaluateExists(file, where.subquery!);
       default:
@@ -513,6 +517,26 @@ export class Executor {
     }
     
     return (file as any)[field] !== undefined;
+  }
+
+  private evaluateHasSection(file: FileData, sectionName: string): boolean {
+    return file.sections?.has(sectionName) || false;
+  }
+
+  private evaluateInToc(file: FileData, tocValue: any): boolean {
+    if (!file.sections) return false;
+    
+    // Get the string value to check
+    const searchValue = tocValue?.value || tocValue;
+    if (typeof searchValue !== 'string') return false;
+    
+    // Check if the value exists in any section title
+    for (const [title] of file.sections) {
+      if (title.toLowerCase().includes(searchValue.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private evaluateExists(file: FileData, subquery: any): boolean {

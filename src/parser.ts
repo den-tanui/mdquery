@@ -348,10 +348,48 @@ export class Parser {
     // HAS function
     if (token.type === 'HAS') {
       this.advance();
+      
+      // Handle has section("name") syntax
+      if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'section') {
+        this.advance(); // skip section
+        this.expect('LPAREN');
+        const sectionName = this.expect('STRING').value;
+        this.expect('RPAREN');
+        return { type: 'has_section', sectionName };
+      }
+      
+      // Handle has(field) syntax
       this.expect('LPAREN');
       const field = this.expect('IDENTIFIER').value;
       this.expect('RPAREN');
       return { type: 'has', field };
+    }
+
+    // "value" in toc() syntax
+    if (token.type === 'STRING') {
+      const value = this.parseValue(); // parses the string
+      if (this.current().type === 'IN') {
+        this.advance(); // skip IN
+        // Check for toc()
+        if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'toc') {
+          this.advance(); // skip toc
+          this.expect('LPAREN');
+          // Parse optional levels
+          let levels: number[] = [];
+          if (this.current().type === 'NUMBER') {
+            levels.push(parseInt(this.current().value));
+            this.advance();
+            while (this.current().type === 'COMMA') {
+              this.advance();
+              levels.push(parseInt(this.expect('NUMBER').value));
+            }
+          }
+          this.expect('RPAREN');
+          return { type: 'in_toc', tocValue: value, field: 'toc', value: { type: 'array', items: [] } };
+        }
+      }
+      // If not "in toc()", fall through to regular comparison
+      // Restore state by re-parsing would be complex, so handle differently
     }
 
     // Handle aggregate functions in comparisons (e.g., count(*) > 1)

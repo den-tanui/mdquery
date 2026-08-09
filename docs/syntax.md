@@ -124,6 +124,8 @@ Comparisons compose with `and`, `or`, `not`, and parentheses.
 | `in (`val, ...)` | membership in a list |
 | `any <op>` / `all <op>` | match inside an array field |
 | `exists (<subquery>)` | subquery existence |
+| `"value" in toc()` | check if heading exists in markdown body |
+| `has section("name")` | check if section exists in markdown body |
 
 Examples:
 
@@ -132,6 +134,8 @@ select where status = 'done' and priority >= 3
 select where name contains 'login'
 select where tags any = 'backend'
 select where tags all contains 'ui'
+select where "TODO" in toc()
+select where has section("Fix bugs")
 ```
 
 Field access with dot notation works for nested/qualified fields:
