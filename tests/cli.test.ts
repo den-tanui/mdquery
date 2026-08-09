@@ -1,6 +1,6 @@
 // tests/cli.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, writeFileSync, rmSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -133,5 +133,11 @@ describe('mdquery CLI', () => {
     } finally {
       rmSync(sub, { recursive: true, force: true });
     }
+  });
+
+  it('reads file paths from stdin with -f -', () => {
+    const f1 = join(fixtureDir, 'task-001.md');
+    const output = execSync(`echo "${f1}" | ${cliPath} -f - "select filename"`, { encoding: 'utf-8' });
+    expect(output).toContain('task-001');
   });
 });

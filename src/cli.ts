@@ -13,12 +13,14 @@ Query YAML frontmatter of markdown files with a SQL-like language.
 Usage:
   mdquery <query> [options]
   mdquery [options] < query.txt
+  fd SKILL.md | mdquery -f - "select name, description"
 
 Options:
   -h, --help            Show this manual and exit
   -v, --version         Print the version and exit
   --dir=<directory>     Directory to query (default: .)
   -f, --file=<file>     Query specific markdown file(s); repeatable or comma-separated
+                        Use -f - to read file paths from stdin (one per line)
   -d, --depth=<n>       Directory depth: 0 = top level (default), 1 = one subdir, -1 = recursive
   -H, --hidden          Include hidden files/dirs (except .git)
   --no-ignore           Do not respect .gitignore
@@ -34,6 +36,7 @@ Examples:
   mdquery -H --no-ignore "select filename"
   mdquery --format=table "select filename, title"
   echo "select" | mdquery
+  fd SKILL.md | mdquery -f - "select name, description"
 
 Query language (compact):
   select [distinct] <fields> [where <cond>] [group by <f>] [having <cond>]
@@ -100,6 +103,7 @@ async function main() {
   let format: OutputFormat = 'json';
   let dir = '.';
   let files: string[] = [];
+  let stdinFiles = false;
   let depth = 0;
   let hidden = false;
   let ignore = true;
@@ -114,7 +118,12 @@ async function main() {
       dir = args[i + 1];
       i++;
     } else if ((arg === '--file' || arg === '-f') && args[i + 1]) {
-      files.push(...splitFiles(args[i + 1]));
+      const val = args[i + 1];
+      if (val === '-') {
+        stdinFiles = true;
+      } else {
+        files.push(...splitFiles(val));
+      }
       i++;
     } else if ((arg === '--depth' || arg === '-d') && args[i + 1]) {
       depth = parseDepth(args[i + 1]);
@@ -130,9 +139,19 @@ async function main() {
     } else if (arg.startsWith('--dir=')) {
       dir = arg.split('=')[1];
     } else if (arg.startsWith('--file=')) {
-      files.push(...splitFiles(arg.split('=')[1]));
+      const val = arg.split('=')[1];
+      if (val === '-') {
+        stdinFiles = true;
+      } else {
+        files.push(...splitFiles(val));
+      }
     } else if (arg.startsWith('-f=')) {
-      files.push(...splitFiles(arg.slice(3)));
+      const val = arg.slice(3);
+      if (val === '-') {
+        stdinFiles = true;
+      } else {
+        files.push(...splitFiles(val));
+      }
     } else if (arg.startsWith('--depth=')) {
       depth = parseDepth(arg.split('=')[1]);
     } else if (arg.startsWith('-d=')) {
@@ -151,12 +170,20 @@ async function main() {
   }
 
   // Check for stdin pipe
-  if (!query && !process.stdin.isTTY) {
+  if (stdinFiles || (!query && !process.stdin.isTTY)) {
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) {
       chunks.push(chunk);
     }
-    query = Buffer.concat(chunks).toString().trim();
+    const input = Buffer.concat(chunks).toString().trim();
+    
+    if (stdinFiles) {
+      // Read file paths from stdin (one per line)
+      files.push(...input.split('\n').map(line => line.trim()).filter(Boolean));
+    } else {
+      // Read query from stdin
+      query = input;
+    }
   }
 
   if (!query) {
