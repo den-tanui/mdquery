@@ -3,6 +3,7 @@ var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 function __accessProp(key) {
   return this[key];
@@ -29,10 +30,753 @@ var __toESM = (mod, isNodeMode, target) => {
     cache.set(mod, to);
   return to;
 };
+var __toCommonJS = (from) => {
+  var entry = (__moduleCache ??= new WeakMap).get(from), desc;
+  if (entry)
+    return entry;
+  entry = __defProp({}, "__esModule", { value: true });
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (var key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(entry, key))
+        __defProp(entry, key, {
+          get: __accessProp.bind(from, key),
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+        });
+  }
+  __moduleCache.set(from, entry);
+  return entry;
+};
+var __moduleCache;
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, {
+      get: all[name],
+      enumerable: true,
+      configurable: true,
+      set: __exportSetter.bind(all, name)
+    });
+};
+var __esm = (fn, res) => () => (fn && (res = fn(fn = 0)), res);
 var __require = /* @__PURE__ */ createRequire(import.meta.url);
 
-// node_modules/kind-of/index.js
+// src/lexer.ts
+class Lexer {
+  input;
+  position = 0;
+  constructor(input) {
+    this.input = input;
+  }
+  tokenize() {
+    const tokens = [];
+    while (this.position < this.input.length) {
+      const char = this.input[this.position];
+      if (/\s/.test(char)) {
+        this.position++;
+        continue;
+      }
+      if (char === '"' || char === "'") {
+        tokens.push(this.readString(char));
+        continue;
+      }
+      if (/[0-9]/.test(char)) {
+        tokens.push(this.readNumber());
+        continue;
+      }
+      if (/[a-zA-Z_]/.test(char)) {
+        tokens.push(this.readIdentifier());
+        continue;
+      }
+      const symbolToken = this.readSymbol();
+      if (symbolToken) {
+        tokens.push(symbolToken);
+        continue;
+      }
+      throw new Error(`Unexpected character '${char}' at position ${this.position}`);
+    }
+    tokens.push({ type: "EOF", value: "", position: this.position });
+    return tokens;
+  }
+  readString(quote) {
+    const start = this.position;
+    this.position++;
+    let value = "";
+    while (this.position < this.input.length && this.input[this.position] !== quote) {
+      value += this.input[this.position];
+      this.position++;
+    }
+    this.position++;
+    return { type: "STRING", value, position: start };
+  }
+  readNumber() {
+    const start = this.position;
+    let value = "";
+    while (this.position < this.input.length && /[0-9]/.test(this.input[this.position])) {
+      value += this.input[this.position];
+      this.position++;
+    }
+    return { type: "NUMBER", value, position: start };
+  }
+  readIdentifier() {
+    const start = this.position;
+    let value = "";
+    while (this.position < this.input.length && /[a-zA-Z_0-9]/.test(this.input[this.position])) {
+      value += this.input[this.position];
+      this.position++;
+    }
+    const type = KEYWORDS[value.toLowerCase()] || "IDENTIFIER";
+    return { type, value, position: start };
+  }
+  readSymbol() {
+    const start = this.position;
+    const char = this.input[this.position];
+    const next = this.input[this.position + 1];
+    const symbols = {
+      "=": "EQUALS",
+      "!": "NOT_EQUALS",
+      "<": "LT",
+      ">": "GT",
+      "+": "PLUS",
+      "-": "MINUS",
+      "*": "STAR",
+      "(": "LPAREN",
+      ")": "RPAREN",
+      "[": "LBRACKET",
+      "]": "RBRACKET",
+      ",": "COMMA",
+      ".": "DOT",
+      "|": "PIPE"
+    };
+    if (char === "!" && next === "=") {
+      this.position += 2;
+      return { type: "NOT_EQUALS", value: "!=", position: start };
+    }
+    if (char === "<" && next === "=") {
+      this.position += 2;
+      return { type: "LTE", value: "<=", position: start };
+    }
+    if (char === ">" && next === "=") {
+      this.position += 2;
+      return { type: "GTE", value: ">=", position: start };
+    }
+    if (symbols[char]) {
+      this.position++;
+      return { type: symbols[char], value: char, position: start };
+    }
+    return null;
+  }
+}
+var KEYWORDS;
+var init_lexer = __esm(() => {
+  KEYWORDS = {
+    select: "SELECT",
+    where: "WHERE",
+    update: "UPDATE",
+    create: "CREATE",
+    delete: "DELETE",
+    set: "SET",
+    order: "ORDER",
+    by: "BY",
+    group: "GROUP",
+    having: "HAVING",
+    limit: "LIMIT",
+    offset: "OFFSET",
+    distinct: "DISTINCT",
+    and: "AND",
+    or: "OR",
+    not: "NOT",
+    in: "IN",
+    contains: "CONTAINS",
+    starts_with: "STARTS_WITH",
+    ends_with: "ENDS_WITH",
+    any: "ANY",
+    all: "ALL",
+    exists: "EXISTS",
+    is: "IS",
+    empty: "EMPTY",
+    has: "HAS",
+    before: "BEFORE",
+    after: "AFTER",
+    deny: "DENY",
+    run: "RUN",
+    true: "BOOLEAN",
+    false: "BOOLEAN"
+  };
+});
+
+// src/parser.ts
+var exports_parser = {};
+__export(exports_parser, {
+  Parser: () => Parser
+});
+
+class Parser {
+  tokens;
+  position = 0;
+  constructor(input) {
+    this.tokens = new Lexer(input).tokenize();
+  }
+  parse() {
+    const token = this.current();
+    let ast;
+    if (token.type === "SELECT")
+      ast = this.parseSelect();
+    else if (token.type === "UPDATE")
+      ast = this.parseUpdate();
+    else if (token.type === "CREATE")
+      ast = this.parseCreate();
+    else if (token.type === "DELETE")
+      ast = this.parseDelete();
+    else if (token.type === "BEFORE" || token.type === "AFTER")
+      ast = this.parseTrigger();
+    else
+      throw new Error(`Unexpected token: ${token.value}`);
+    if (this.current().type === "PIPE") {
+      this.advance();
+      const fn = this.expect("IDENTIFIER").value;
+      this.expect("LPAREN");
+      const args = [];
+      while (this.current().type !== "RPAREN") {
+        args.push(this.parseValue());
+        if (this.current().type === "COMMA")
+          this.advance();
+      }
+      this.expect("RPAREN");
+      return { type: "pipe", expr: ast, fn, args };
+    }
+    return ast;
+  }
+  parseTrigger() {
+    const event = this.advance().type === "BEFORE" ? "before" : "after";
+    const opToken = this.current();
+    let operation;
+    if (opToken.type === "CREATE") {
+      operation = "create";
+    } else if (opToken.type === "UPDATE") {
+      operation = "update";
+    } else if (opToken.type === "DELETE") {
+      operation = "delete";
+    } else {
+      throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
+    }
+    this.advance();
+    const node = {
+      type: "trigger",
+      event,
+      operation
+    };
+    if (this.current().type === "WHERE") {
+      this.advance();
+      node.where = this.parseWhere();
+    }
+    const actionToken = this.current();
+    if (actionToken.type === "DENY") {
+      this.advance();
+      const message = this.expect("STRING").value;
+      node.action = { type: "deny", message };
+    } else if (actionToken.type === "SET") {
+      this.advance();
+      node.action = { type: "update", set: this.parseSetClause() };
+    } else if (actionToken.type === "RUN") {
+      this.advance();
+      const command = this.expect("STRING").value;
+      node.action = { type: "run", command };
+    }
+    return node;
+  }
+  parseSelect() {
+    this.advance();
+    const node = { type: "select", fields: ["*"] };
+    if (this.current().type === "DISTINCT") {
+      node.distinct = true;
+      this.advance();
+    }
+    if (this.current().type !== "EOF" && !this.isKeyword()) {
+      node.fields = this.parseFieldList();
+    }
+    if (this.current().type === "WHERE") {
+      this.advance();
+      node.where = this.parseWhere();
+    }
+    if (this.current().type === "GROUP") {
+      this.advance();
+      this.expect("BY");
+      node.groupBy = this.parseIdentifierList();
+    }
+    if (this.current().type === "HAVING") {
+      this.advance();
+      node.having = this.parseWhere();
+    }
+    if (this.current().type === "ORDER") {
+      this.advance();
+      this.expect("BY");
+      node.orderBy = this.parseOrderBy();
+    }
+    if (this.current().type === "LIMIT") {
+      this.advance();
+      node.limit = parseInt(this.expect("NUMBER").value);
+    }
+    if (this.current().type === "OFFSET") {
+      this.advance();
+      node.offset = parseInt(this.expect("NUMBER").value);
+    }
+    if (this.current().type === "IDENTIFIER" && this.current().value.toLowerCase() === "join") {
+      this.advance();
+      const table = this.expect("IDENTIFIER").value;
+      this.expect("ON");
+      const on = this.parseWhere();
+      node.join = { type: "join", table, on };
+    }
+    return node;
+  }
+  parseUpdate() {
+    this.advance();
+    const node = { type: "update", set: {} };
+    if (this.current().type === "WHERE") {
+      this.advance();
+      node.where = this.parseWhere();
+    }
+    if (this.current().type === "SET") {
+      this.advance();
+      node.set = this.parseSetClause();
+    }
+    return node;
+  }
+  parseCreate() {
+    this.advance();
+    const node = { type: "create", fields: {} };
+    node.fields = this.parseSetClause();
+    return node;
+  }
+  parseDelete() {
+    this.advance();
+    const node = { type: "delete" };
+    if (this.current().type === "WHERE") {
+      this.advance();
+      node.where = this.parseWhere();
+    }
+    return node;
+  }
+  parseFieldList() {
+    const fields = [];
+    while (this.current().type !== "EOF" && !this.isKeyword()) {
+      const token = this.current();
+      if (token.type === "IDENTIFIER") {
+        if (this.peek().type === "LPAREN") {
+          const func = token.value.toLowerCase();
+          if (["count", "sum", "avg", "min", "max"].includes(func)) {
+            this.advance();
+            this.expect("LPAREN");
+            let field = "*";
+            if (this.current().type === "IDENTIFIER") {
+              field = this.current().value;
+              this.advance();
+            } else if (this.current().type === "STAR") {
+              this.advance();
+            }
+            this.expect("RPAREN");
+            fields.push({ type: "aggregate", func, field });
+          } else {
+            this.advance();
+            this.expect("LPAREN");
+            let parenDepth = 1;
+            while (this.current().type !== "EOF" && parenDepth > 0) {
+              if (this.current().type === "LPAREN")
+                parenDepth++;
+              if (this.current().type === "RPAREN")
+                parenDepth--;
+              this.advance();
+            }
+            fields.push(`${token.value}()`);
+          }
+        } else {
+          fields.push(token.value);
+          this.advance();
+        }
+      } else if (token.type === "STAR") {
+        fields.push("*");
+        this.advance();
+      } else if (token.type === "RPAREN") {
+        break;
+      }
+      if (this.current().type === "COMMA") {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+    return fields;
+  }
+  parseWhere() {
+    return this.parseOrExpression();
+  }
+  parseOrExpression() {
+    let left = this.parseAndExpression();
+    while (this.current().type === "OR") {
+      this.advance();
+      const right = this.parseAndExpression();
+      left = { type: "or", left, right };
+    }
+    return left;
+  }
+  parseAndExpression() {
+    let left = this.parseComparison();
+    while (this.current().type === "AND") {
+      this.advance();
+      const right = this.parseComparison();
+      left = { type: "and", left, right };
+    }
+    return left;
+  }
+  parseArrayCondition() {
+    const token = this.current();
+    if (token.type === "EQUALS" || token.type === "NOT_EQUALS" || token.type === "LT" || token.type === "GT" || token.type === "LTE" || token.type === "GTE") {
+      const op = this.getOperator();
+      this.advance();
+      const value = this.parseValue();
+      return { type: "comparison", field: "", op, value };
+    }
+    if (token.type === "CONTAINS" || token.type === "STARTS_WITH" || token.type === "ENDS_WITH") {
+      const op = token.value;
+      this.advance();
+      const value = this.parseValue();
+      return { type: "comparison", field: "", op, value };
+    }
+    return this.parseComparison();
+  }
+  parseComparison() {
+    const token = this.current();
+    if (token.type === "NOT") {
+      this.advance();
+      const expr = this.parseComparison();
+      return { type: "not", expr };
+    }
+    if (token.type === "EXISTS") {
+      this.advance();
+      this.expect("LPAREN");
+      const subquery = this.parseSelect();
+      this.expect("RPAREN");
+      return { type: "exists", subquery };
+    }
+    if (token.type === "HAS") {
+      this.advance();
+      this.expect("LPAREN");
+      const field = this.expect("IDENTIFIER").value;
+      this.expect("RPAREN");
+      return { type: "has", field };
+    }
+    if (token.type === "IDENTIFIER" && this.peek().type === "LPAREN") {
+      const func = token.value.toLowerCase();
+      if (["count", "sum", "avg", "min", "max"].includes(func)) {
+        this.advance();
+        this.expect("LPAREN");
+        if (this.current().type === "SELECT") {
+          const subquery = this.parseSelect();
+          this.expect("RPAREN");
+          let op2;
+          let value2;
+          if (this.current().type === "EQUALS" || this.current().type === "NOT_EQUALS" || this.current().type === "LT" || this.current().type === "GT" || this.current().type === "LTE" || this.current().type === "GTE") {
+            op2 = this.getOperator();
+            this.advance();
+            value2 = this.parseValue();
+          }
+          return { type: "comparison", field: `${func}(select)`, fieldPath: `${func}(select)`, op: op2, value: value2, subquery };
+        }
+        let field = "*";
+        if (this.current().type === "IDENTIFIER") {
+          field = this.current().value;
+          this.advance();
+        } else if (this.current().type === "STAR") {
+          this.advance();
+        }
+        this.expect("RPAREN");
+        const opToken = this.current();
+        const op = this.getOperator();
+        this.advance();
+        const value = this.parseValue();
+        return { type: "comparison", field: `${func}(${field})`, fieldPath: `${func}(${field})`, op, value };
+      }
+    }
+    if (token.type === "IDENTIFIER") {
+      let field = token.value;
+      let fieldPath = token.value;
+      this.advance();
+      if (this.current().type === "DOT" && this.peek().type === "IDENTIFIER") {
+        const prefix = field;
+        this.advance();
+        const fieldPart = this.expect("IDENTIFIER").value;
+        field = fieldPart;
+        fieldPath = `${prefix}.${fieldPart}`;
+      }
+      if (this.current().type === "ANY" || this.current().type === "ALL") {
+        const arrayOp = this.current().value;
+        this.advance();
+        const condition = this.parseArrayCondition();
+        return { type: "array_comparison", field, fieldPath, arrayOp, arrayCondition: condition };
+      }
+      if (this.current().type === "IS") {
+        this.advance();
+        const notEmpty = this.current().type === "NOT";
+        if (notEmpty)
+          this.advance();
+        this.expect("EMPTY");
+        return { type: "comparison", field, fieldPath, op: notEmpty ? "is_not_empty" : "is_empty", value: { type: "null", value: null } };
+      }
+      if (this.current().type === "IN") {
+        this.advance();
+        this.expect("LPAREN");
+        const items = [];
+        while (this.current().type !== "RPAREN") {
+          items.push(this.parseValue());
+          if (this.current().type === "COMMA")
+            this.advance();
+        }
+        this.expect("RPAREN");
+        return { type: "in", field, fieldPath, value: { type: "array", items } };
+      }
+      if (this.current().type === "NOT" && this.peek().type === "IN") {
+        this.advance();
+        this.advance();
+        this.expect("LPAREN");
+        const items = [];
+        while (this.current().type !== "RPAREN") {
+          items.push(this.parseValue());
+          if (this.current().type === "COMMA")
+            this.advance();
+        }
+        this.expect("RPAREN");
+        return { type: "not_in", field, fieldPath, value: { type: "array", items } };
+      }
+      if (this.current().type === "CONTAINS" || this.current().type === "STARTS_WITH" || this.current().type === "ENDS_WITH") {
+        const op2 = this.current().value;
+        this.advance();
+        const value2 = this.parseValue();
+        return { type: "comparison", field, fieldPath, op: op2, value: value2 };
+      }
+      if (this.current().type === "NOT") {
+        const nextType = this.peek().type;
+        if (nextType === "CONTAINS" || nextType === "STARTS_WITH" || nextType === "ENDS_WITH") {
+          this.advance();
+          const op2 = `not_${this.current().value}`;
+          this.advance();
+          const value2 = this.parseValue();
+          return { type: "comparison", field, fieldPath, op: op2, value: value2 };
+        }
+      }
+      const opToken = this.current();
+      const op = this.getOperator();
+      this.advance();
+      const value = this.parseValue();
+      return { type: "comparison", field, fieldPath, op, value };
+    }
+    throw new Error(`Unexpected token in WHERE: ${token.value}`);
+  }
+  parseValue() {
+    const token = this.current();
+    if (token.type === "STRING") {
+      this.advance();
+      return { type: "string", value: token.value };
+    }
+    if (token.type === "NUMBER") {
+      this.advance();
+      return { type: "number", value: parseInt(token.value) };
+    }
+    if (token.type === "BOOLEAN") {
+      this.advance();
+      return { type: "boolean", value: token.value === "true" };
+    }
+    if (token.type === "IDENTIFIER" && token.value.toLowerCase() === "null") {
+      this.advance();
+      return { type: "null", value: null };
+    }
+    if (token.type === "EMPTY") {
+      this.advance();
+      return { type: "empty" };
+    }
+    if (token.type === "IDENTIFIER" && this.peek().type === "LPAREN") {
+      const result = this.parseBuiltin();
+      return this.parseBinarySuffix(result);
+    }
+    if (token.type === "IDENTIFIER") {
+      this.advance();
+      return this.parseBinarySuffix({ type: "field", name: token.value });
+    }
+    if (token.type === "LBRACKET") {
+      this.advance();
+      const items = [];
+      while (this.current().type !== "RBRACKET") {
+        items.push(this.parseValue());
+        if (this.current().type === "COMMA")
+          this.advance();
+      }
+      this.expect("RBRACKET");
+      return this.parseBinarySuffix({ type: "array", items });
+    }
+    throw new Error(`Unexpected token in value: ${token.value}`);
+  }
+  parseBinarySuffix(left) {
+    while (this.current().type === "PLUS" || this.current().type === "MINUS") {
+      const op = this.current().type === "PLUS" ? "+" : "-";
+      this.advance();
+      const right = this.parsePrimary();
+      left = { type: "binary", op, left, right };
+    }
+    return left;
+  }
+  parsePrimary() {
+    const token = this.current();
+    if (token.type === "STRING") {
+      this.advance();
+      return { type: "string", value: token.value };
+    }
+    if (token.type === "NUMBER") {
+      this.advance();
+      return { type: "number", value: parseInt(token.value) };
+    }
+    if (token.type === "BOOLEAN") {
+      this.advance();
+      return { type: "boolean", value: token.value === "true" };
+    }
+    if (token.type === "IDENTIFIER" && token.value.toLowerCase() === "null") {
+      this.advance();
+      return { type: "null", value: null };
+    }
+    if (token.type === "EMPTY") {
+      this.advance();
+      return { type: "empty" };
+    }
+    if (token.type === "IDENTIFIER" && this.peek().type === "LPAREN") {
+      return this.parseBuiltin();
+    }
+    if (token.type === "IDENTIFIER") {
+      this.advance();
+      return { type: "string", value: token.value };
+    }
+    if (token.type === "LBRACKET") {
+      this.advance();
+      const items = [];
+      while (this.current().type !== "RBRACKET") {
+        items.push(this.parseValue());
+        if (this.current().type === "COMMA")
+          this.advance();
+      }
+      this.expect("RBRACKET");
+      return { type: "array", items };
+    }
+    throw new Error(`Unexpected token in value: ${token.value}`);
+  }
+  parseBuiltin() {
+    const name = this.expect("IDENTIFIER").value;
+    this.expect("LPAREN");
+    const args = [];
+    while (this.current().type !== "RPAREN") {
+      if (this.current().type === "IDENTIFIER") {
+        args.push({ type: "field", name: this.current().value });
+        this.advance();
+      } else {
+        args.push(this.parseValue());
+      }
+      if (this.current().type === "COMMA")
+        this.advance();
+    }
+    this.expect("RPAREN");
+    return { type: "builtin", name, args };
+  }
+  parseSetClause() {
+    const set = {};
+    while (this.current().type !== "EOF") {
+      if (this.current().type !== "IDENTIFIER")
+        break;
+      const field = this.expect("IDENTIFIER").value;
+      this.expect("EQUALS");
+      set[field] = this.parseValue();
+      if (this.current().type === "COMMA") {
+        this.advance();
+      } else if (this.current().type === "IDENTIFIER" && this.peek().type === "EQUALS") {
+        continue;
+      } else {
+        break;
+      }
+    }
+    return set;
+  }
+  parseIdentifierList() {
+    const identifiers = [];
+    while (true) {
+      identifiers.push(this.expect("IDENTIFIER").value);
+      if (this.current().type === "COMMA") {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+    return identifiers;
+  }
+  parseOrderBy() {
+    const items = [];
+    while (true) {
+      const field = this.expect("IDENTIFIER").value;
+      let direction = "asc";
+      if (this.current().type === "IDENTIFIER") {
+        const dir = this.current().value.toLowerCase();
+        if (dir === "asc" || dir === "desc") {
+          direction = dir;
+          this.advance();
+        }
+      }
+      items.push({ field, direction });
+      if (this.current().type === "COMMA") {
+        this.advance();
+      } else {
+        break;
+      }
+    }
+    return items;
+  }
+  getOperator() {
+    const token = this.current();
+    const ops = {
+      EQUALS: "=",
+      NOT_EQUALS: "!=",
+      LT: "<",
+      GT: ">",
+      LTE: "<=",
+      GTE: ">="
+    };
+    return ops[token.type] || token.value;
+  }
+  isKeyword() {
+    const keywords = ["WHERE", "SET", "ORDER", "GROUP", "LIMIT", "OFFSET", "AND", "OR", "BY"];
+    return keywords.includes(this.current().type);
+  }
+  current() {
+    return this.tokens[this.position] || { type: "EOF", value: "", position: -1 };
+  }
+  peek() {
+    return this.tokens[this.position + 1] || { type: "EOF", value: "", position: -1 };
+  }
+  advance() {
+    const token = this.current();
+    this.position++;
+    return token;
+  }
+  expect(type) {
+    const token = this.current();
+    if (token.type !== type) {
+      throw new Error(`Expected ${type}, got ${token.type} (${token.value})`);
+    }
+    return this.advance();
+  }
+}
+var init_parser = __esm(() => {
+  init_lexer();
+});
+
+// node_modules/.pnpm/kind-of@6.0.3/node_modules/kind-of/index.js
 var require_kind_of = __commonJS((exports, module) => {
   var toString = Object.prototype.toString;
   module.exports = function kindOf(val) {
@@ -161,7 +905,7 @@ var require_kind_of = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/is-extendable/index.js
+// node_modules/.pnpm/is-extendable@0.1.1/node_modules/is-extendable/index.js
 var require_is_extendable = __commonJS((exports, module) => {
   /*!
    * is-extendable <https://github.com/jonschlinkert/is-extendable>
@@ -174,7 +918,7 @@ var require_is_extendable = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/extend-shallow/index.js
+// node_modules/.pnpm/extend-shallow@2.0.1/node_modules/extend-shallow/index.js
 var require_extend_shallow = __commonJS((exports, module) => {
   var isObject = require_is_extendable();
   module.exports = function extend(o) {
@@ -202,7 +946,7 @@ var require_extend_shallow = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/section-matter/index.js
+// node_modules/.pnpm/section-matter@1.0.0/node_modules/section-matter/index.js
 var require_section_matter = __commonJS((exports, module) => {
   var typeOf = require_kind_of();
   var extend = require_extend_shallow();
@@ -311,7 +1055,7 @@ var require_section_matter = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/js-yaml/lib/js-yaml/common.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/common.js
 var require_common = __commonJS((exports, module) => {
   function isNothing(subject) {
     return typeof subject === "undefined" || subject === null;
@@ -355,7 +1099,7 @@ var require_common = __commonJS((exports, module) => {
   exports.extend = extend;
 });
 
-// node_modules/js-yaml/lib/js-yaml/exception.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/exception.js
 var require_exception = __commonJS((exports, module) => {
   function YAMLException(reason, mark) {
     Error.call(this);
@@ -382,7 +1126,7 @@ var require_exception = __commonJS((exports, module) => {
   module.exports = YAMLException;
 });
 
-// node_modules/js-yaml/lib/js-yaml/mark.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/mark.js
 var require_mark = __commonJS((exports, module) => {
   var common = require_common();
   function Mark(name, buffer, position, line, column) {
@@ -442,7 +1186,7 @@ var require_mark = __commonJS((exports, module) => {
   module.exports = Mark;
 });
 
-// node_modules/js-yaml/lib/js-yaml/type.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type.js
 var require_type = __commonJS((exports, module) => {
   var YAMLException = require_exception();
   var TYPE_CONSTRUCTOR_OPTIONS = [
@@ -498,7 +1242,7 @@ var require_type = __commonJS((exports, module) => {
   module.exports = Type;
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema.js
 var require_schema = __commonJS((exports, module) => {
   var common = require_common();
   var YAMLException = require_exception();
@@ -583,7 +1327,7 @@ var require_schema = __commonJS((exports, module) => {
   module.exports = Schema;
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/str.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/str.js
 var require_str = __commonJS((exports, module) => {
   var Type = require_type();
   module.exports = new Type("tag:yaml.org,2002:str", {
@@ -594,7 +1338,7 @@ var require_str = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/seq.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/seq.js
 var require_seq = __commonJS((exports, module) => {
   var Type = require_type();
   module.exports = new Type("tag:yaml.org,2002:seq", {
@@ -605,7 +1349,7 @@ var require_seq = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/map.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/map.js
 var require_map = __commonJS((exports, module) => {
   var Type = require_type();
   module.exports = new Type("tag:yaml.org,2002:map", {
@@ -616,7 +1360,7 @@ var require_map = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema/failsafe.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema/failsafe.js
 var require_failsafe = __commonJS((exports, module) => {
   var Schema = require_schema();
   module.exports = new Schema({
@@ -628,7 +1372,7 @@ var require_failsafe = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/null.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/null.js
 var require_null = __commonJS((exports, module) => {
   var Type = require_type();
   function resolveYamlNull(data) {
@@ -666,7 +1410,7 @@ var require_null = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/bool.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/bool.js
 var require_bool = __commonJS((exports, module) => {
   var Type = require_type();
   function resolveYamlBoolean(data) {
@@ -701,7 +1445,7 @@ var require_bool = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/int.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/int.js
 var require_int = __commonJS((exports, module) => {
   var common = require_common();
   var Type = require_type();
@@ -848,7 +1592,7 @@ var require_int = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/float.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/float.js
 var require_float = __commonJS((exports, module) => {
   var common = require_common();
   var Type = require_type();
@@ -936,7 +1680,7 @@ var require_float = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema/json.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema/json.js
 var require_json = __commonJS((exports, module) => {
   var Schema = require_schema();
   module.exports = new Schema({
@@ -952,7 +1696,7 @@ var require_json = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema/core.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema/core.js
 var require_core = __commonJS((exports, module) => {
   var Schema = require_schema();
   module.exports = new Schema({
@@ -962,7 +1706,7 @@ var require_core = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/timestamp.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/timestamp.js
 var require_timestamp = __commonJS((exports, module) => {
   var Type = require_type();
   var YAML_DATE_REGEXP = new RegExp("^([0-9][0-9][0-9][0-9])" + "-([0-9][0-9])" + "-([0-9][0-9])$");
@@ -1023,7 +1767,7 @@ var require_timestamp = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/merge.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/merge.js
 var require_merge = __commonJS((exports, module) => {
   var Type = require_type();
   function resolveYamlMerge(data) {
@@ -1035,7 +1779,7 @@ var require_merge = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/binary.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/binary.js
 var require_binary = __commonJS((exports, module) => {
   var NodeBuffer;
   try {
@@ -1128,7 +1872,7 @@ var require_binary = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/omap.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/omap.js
 var require_omap = __commonJS((exports, module) => {
   var Type = require_type();
   var _hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -1136,7 +1880,7 @@ var require_omap = __commonJS((exports, module) => {
   function resolveYamlOmap(data) {
     if (data === null)
       return true;
-    var objectKeys = [], index, length, pair, pairKey, pairHasKey, object = data;
+    var objectKeys = {}, index, length, pair, pairKey, pairHasKey, object = data;
     for (index = 0, length = object.length;index < length; index += 1) {
       pair = object[index];
       pairHasKey = false;
@@ -1152,10 +1896,9 @@ var require_omap = __commonJS((exports, module) => {
       }
       if (!pairHasKey)
         return false;
-      if (objectKeys.indexOf(pairKey) === -1)
-        objectKeys.push(pairKey);
-      else
+      if (_hasOwnProperty.call(objectKeys, pairKey))
         return false;
+      Object.defineProperty(objectKeys, pairKey, { value: true });
     }
     return true;
   }
@@ -1169,7 +1912,7 @@ var require_omap = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/pairs.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/pairs.js
 var require_pairs = __commonJS((exports, module) => {
   var Type = require_type();
   var _toString = Object.prototype.toString;
@@ -1208,7 +1951,7 @@ var require_pairs = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/set.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/set.js
 var require_set = __commonJS((exports, module) => {
   var Type = require_type();
   var _hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -1234,7 +1977,7 @@ var require_set = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema/default_safe.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema/default_safe.js
 var require_default_safe = __commonJS((exports, module) => {
   var Schema = require_schema();
   module.exports = new Schema({
@@ -1254,7 +1997,7 @@ var require_default_safe = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/js/undefined.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/js/undefined.js
 var require_undefined = __commonJS((exports, module) => {
   var Type = require_type();
   function resolveJavascriptUndefined() {
@@ -1278,7 +2021,7 @@ var require_undefined = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/js/regexp.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/js/regexp.js
 var require_regexp = __commonJS((exports, module) => {
   var Type = require_type();
   function resolveJavascriptRegExp(data) {
@@ -1328,7 +2071,7 @@ var require_regexp = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/type/js/function.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/type/js/function.js
 var require_function = __commonJS((exports, module) => {
   var esprima;
   try {
@@ -1382,7 +2125,7 @@ var require_function = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/schema/default_full.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/schema/default_full.js
 var require_default_full = __commonJS((exports, module) => {
   var Schema = require_schema();
   module.exports = Schema.DEFAULT = new Schema({
@@ -1397,7 +2140,7 @@ var require_default_full = __commonJS((exports, module) => {
   });
 });
 
-// node_modules/js-yaml/lib/js-yaml/loader.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/loader.js
 var require_loader = __commonJS((exports, module) => {
   var common = require_common();
   var YAMLException = require_exception();
@@ -2526,7 +3269,7 @@ var require_loader = __commonJS((exports, module) => {
   exports.safeLoad = safeLoad;
 });
 
-// node_modules/js-yaml/lib/js-yaml/dumper.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml/dumper.js
 var require_dumper = __commonJS((exports, module) => {
   var common = require_common();
   var YAMLException = require_exception();
@@ -3095,7 +3838,7 @@ var require_dumper = __commonJS((exports, module) => {
   exports.safeDump = safeDump;
 });
 
-// node_modules/js-yaml/lib/js-yaml.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/lib/js-yaml.js
 var require_js_yaml = __commonJS((exports, module) => {
   var loader = require_loader();
   var dumper = require_dumper();
@@ -3127,13 +3870,13 @@ var require_js_yaml = __commonJS((exports, module) => {
   exports.addConstructor = deprecated("addConstructor");
 });
 
-// node_modules/js-yaml/index.js
+// node_modules/.pnpm/js-yaml@3.15.1/node_modules/js-yaml/index.js
 var require_js_yaml2 = __commonJS((exports, module) => {
   var yaml = require_js_yaml();
   module.exports = yaml;
 });
 
-// node_modules/gray-matter/lib/engines.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/engines.js
 var require_engines = __commonJS((exports, module) => {
   var yaml = require_js_yaml2();
   var engines = exports = module.exports;
@@ -3170,7 +3913,7 @@ return ` + str.trim() + `;
   };
 });
 
-// node_modules/strip-bom-string/index.js
+// node_modules/.pnpm/strip-bom-string@1.0.0/node_modules/strip-bom-string/index.js
 var require_strip_bom_string = __commonJS((exports, module) => {
   /*!
    * strip-bom-string <https://github.com/jonschlinkert/strip-bom-string>
@@ -3186,7 +3929,7 @@ var require_strip_bom_string = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/gray-matter/lib/utils.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/utils.js
 var require_utils = __commonJS((exports) => {
   var stripBom = require_strip_bom_string();
   var typeOf = require_kind_of();
@@ -3225,7 +3968,7 @@ var require_utils = __commonJS((exports) => {
   };
 });
 
-// node_modules/gray-matter/lib/defaults.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/defaults.js
 var require_defaults = __commonJS((exports, module) => {
   var engines = require_engines();
   var utils = require_utils();
@@ -3241,7 +3984,7 @@ var require_defaults = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/gray-matter/lib/engine.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/engine.js
 var require_engine = __commonJS((exports, module) => {
   module.exports = function(name, options2) {
     let engine = options2.engines[name] || options2.engines[aliase(name)];
@@ -3272,7 +4015,7 @@ var require_engine = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/gray-matter/lib/stringify.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/stringify.js
 var require_stringify = __commonJS((exports, module) => {
   var typeOf = require_kind_of();
   var getEngine = require_engine();
@@ -3325,7 +4068,7 @@ var require_stringify = __commonJS((exports, module) => {
   }
 });
 
-// node_modules/gray-matter/lib/excerpt.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/excerpt.js
 var require_excerpt = __commonJS((exports, module) => {
   var defaults = require_defaults();
   module.exports = function(file, options2) {
@@ -3349,7 +4092,7 @@ var require_excerpt = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/gray-matter/lib/to-file.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/to-file.js
 var require_to_file = __commonJS((exports, module) => {
   var typeOf = require_kind_of();
   var stringify = require_stringify();
@@ -3380,7 +4123,7 @@ var require_to_file = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/gray-matter/lib/parse.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/lib/parse.js
 var require_parse = __commonJS((exports, module) => {
   var getEngine = require_engine();
   var defaults = require_defaults();
@@ -3394,7 +4137,7 @@ var require_parse = __commonJS((exports, module) => {
   };
 });
 
-// node_modules/gray-matter/index.js
+// node_modules/.pnpm/gray-matter@4.0.3/node_modules/gray-matter/index.js
 var require_gray_matter = __commonJS((exports, module) => {
   var fs = __require("fs");
   var sections = require_section_matter();
@@ -3510,7 +4253,7 @@ var require_gray_matter = __commonJS((exports, module) => {
   module.exports = matter;
 });
 
-// node_modules/ignore/index.js
+// node_modules/.pnpm/ignore@7.0.6/node_modules/ignore/index.js
 var require_ignore = __commonJS((exports, module) => {
   function makeArray(subject) {
     return Array.isArray(subject) ? subject : [subject];
@@ -3837,597 +4580,13 @@ var require_ignore = __commonJS((exports, module) => {
   module.exports.isPathValid = isPathValid;
   define(module.exports, Symbol.for("setupWindows"), setupWindows);
 });
+// src/index.ts
+init_lexer();
+init_parser();
 
-// src/lexer.ts
-var KEYWORDS = {
-  select: "SELECT",
-  where: "WHERE",
-  update: "UPDATE",
-  create: "CREATE",
-  delete: "DELETE",
-  set: "SET",
-  order: "ORDER",
-  by: "BY",
-  group: "GROUP",
-  having: "HAVING",
-  limit: "LIMIT",
-  offset: "OFFSET",
-  distinct: "DISTINCT",
-  and: "AND",
-  or: "OR",
-  not: "NOT",
-  in: "IN",
-  contains: "CONTAINS",
-  starts_with: "STARTS_WITH",
-  ends_with: "ENDS_WITH",
-  any: "ANY",
-  all: "ALL",
-  exists: "EXISTS",
-  is: "IS",
-  empty: "EMPTY",
-  before: "BEFORE",
-  after: "AFTER",
-  deny: "DENY",
-  run: "RUN",
-  true: "BOOLEAN",
-  false: "BOOLEAN"
-};
+// src/executor.ts
+init_parser();
 
-class Lexer {
-  input;
-  position = 0;
-  constructor(input) {
-    this.input = input;
-  }
-  tokenize() {
-    const tokens = [];
-    while (this.position < this.input.length) {
-      const char = this.input[this.position];
-      if (/\s/.test(char)) {
-        this.position++;
-        continue;
-      }
-      if (char === '"' || char === "'") {
-        tokens.push(this.readString(char));
-        continue;
-      }
-      if (/[0-9]/.test(char)) {
-        tokens.push(this.readNumber());
-        continue;
-      }
-      if (/[a-zA-Z_]/.test(char)) {
-        tokens.push(this.readIdentifier());
-        continue;
-      }
-      const symbolToken = this.readSymbol();
-      if (symbolToken) {
-        tokens.push(symbolToken);
-        continue;
-      }
-      throw new Error(`Unexpected character '${char}' at position ${this.position}`);
-    }
-    tokens.push({ type: "EOF", value: "", position: this.position });
-    return tokens;
-  }
-  readString(quote) {
-    const start = this.position;
-    this.position++;
-    let value = "";
-    while (this.position < this.input.length && this.input[this.position] !== quote) {
-      value += this.input[this.position];
-      this.position++;
-    }
-    this.position++;
-    return { type: "STRING", value, position: start };
-  }
-  readNumber() {
-    const start = this.position;
-    let value = "";
-    while (this.position < this.input.length && /[0-9]/.test(this.input[this.position])) {
-      value += this.input[this.position];
-      this.position++;
-    }
-    return { type: "NUMBER", value, position: start };
-  }
-  readIdentifier() {
-    const start = this.position;
-    let value = "";
-    while (this.position < this.input.length && /[a-zA-Z_0-9]/.test(this.input[this.position])) {
-      value += this.input[this.position];
-      this.position++;
-    }
-    const type = KEYWORDS[value.toLowerCase()] || "IDENTIFIER";
-    return { type, value, position: start };
-  }
-  readSymbol() {
-    const start = this.position;
-    const char = this.input[this.position];
-    const next = this.input[this.position + 1];
-    const symbols = {
-      "=": "EQUALS",
-      "!": "NOT_EQUALS",
-      "<": "LT",
-      ">": "GT",
-      "+": "PLUS",
-      "-": "MINUS",
-      "*": "STAR",
-      "(": "LPAREN",
-      ")": "RPAREN",
-      "[": "LBRACKET",
-      "]": "RBRACKET",
-      ",": "COMMA",
-      ".": "DOT",
-      "|": "PIPE"
-    };
-    if (char === "!" && next === "=") {
-      this.position += 2;
-      return { type: "NOT_EQUALS", value: "!=", position: start };
-    }
-    if (char === "<" && next === "=") {
-      this.position += 2;
-      return { type: "LTE", value: "<=", position: start };
-    }
-    if (char === ">" && next === "=") {
-      this.position += 2;
-      return { type: "GTE", value: ">=", position: start };
-    }
-    if (symbols[char]) {
-      this.position++;
-      return { type: symbols[char], value: char, position: start };
-    }
-    return null;
-  }
-}
-// src/parser.ts
-class Parser {
-  tokens;
-  position = 0;
-  constructor(input) {
-    this.tokens = new Lexer(input).tokenize();
-  }
-  parse() {
-    const token = this.current();
-    let ast;
-    if (token.type === "SELECT")
-      ast = this.parseSelect();
-    else if (token.type === "UPDATE")
-      ast = this.parseUpdate();
-    else if (token.type === "CREATE")
-      ast = this.parseCreate();
-    else if (token.type === "DELETE")
-      ast = this.parseDelete();
-    else if (token.type === "BEFORE" || token.type === "AFTER")
-      ast = this.parseTrigger();
-    else
-      throw new Error(`Unexpected token: ${token.value}`);
-    if (this.current().type === "PIPE") {
-      this.advance();
-      const fn = this.expect("IDENTIFIER").value;
-      this.expect("LPAREN");
-      const args = [];
-      while (this.current().type !== "RPAREN") {
-        args.push(this.parseValue());
-        if (this.current().type === "COMMA")
-          this.advance();
-      }
-      this.expect("RPAREN");
-      return { type: "pipe", expr: ast, fn, args };
-    }
-    return ast;
-  }
-  parseTrigger() {
-    const event = this.advance().type === "BEFORE" ? "before" : "after";
-    const opToken = this.current();
-    let operation;
-    if (opToken.type === "CREATE") {
-      operation = "create";
-    } else if (opToken.type === "UPDATE") {
-      operation = "update";
-    } else if (opToken.type === "DELETE") {
-      operation = "delete";
-    } else {
-      throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
-    }
-    this.advance();
-    const node = {
-      type: "trigger",
-      event,
-      operation
-    };
-    if (this.current().type === "WHERE") {
-      this.advance();
-      node.where = this.parseWhere();
-    }
-    const actionToken = this.current();
-    if (actionToken.type === "DENY") {
-      this.advance();
-      const message = this.expect("STRING").value;
-      node.action = { type: "deny", message };
-    } else if (actionToken.type === "SET") {
-      this.advance();
-      node.action = { type: "update", set: this.parseSetClause() };
-    } else if (actionToken.type === "RUN") {
-      this.advance();
-      const command = this.expect("STRING").value;
-      node.action = { type: "run", command };
-    }
-    return node;
-  }
-  parseSelect() {
-    this.advance();
-    const node = { type: "select", fields: ["*"] };
-    if (this.current().type === "DISTINCT") {
-      node.distinct = true;
-      this.advance();
-    }
-    if (this.current().type !== "EOF" && !this.isKeyword()) {
-      node.fields = this.parseFieldList();
-    }
-    if (this.current().type === "WHERE") {
-      this.advance();
-      node.where = this.parseWhere();
-    }
-    if (this.current().type === "GROUP") {
-      this.advance();
-      this.expect("BY");
-      node.groupBy = this.parseIdentifierList();
-    }
-    if (this.current().type === "HAVING") {
-      this.advance();
-      node.having = this.parseWhere();
-    }
-    if (this.current().type === "ORDER") {
-      this.advance();
-      this.expect("BY");
-      node.orderBy = this.parseOrderBy();
-    }
-    if (this.current().type === "LIMIT") {
-      this.advance();
-      node.limit = parseInt(this.expect("NUMBER").value);
-    }
-    if (this.current().type === "OFFSET") {
-      this.advance();
-      node.offset = parseInt(this.expect("NUMBER").value);
-    }
-    if (this.current().type === "IDENTIFIER" && this.current().value.toLowerCase() === "join") {
-      this.advance();
-      const table = this.expect("IDENTIFIER").value;
-      this.expect("ON");
-      const on = this.parseWhere();
-      node.join = { type: "join", table, on };
-    }
-    return node;
-  }
-  parseUpdate() {
-    this.advance();
-    const node = { type: "update", set: {} };
-    if (this.current().type === "WHERE") {
-      this.advance();
-      node.where = this.parseWhere();
-    }
-    if (this.current().type === "SET") {
-      this.advance();
-      node.set = this.parseSetClause();
-    }
-    return node;
-  }
-  parseCreate() {
-    this.advance();
-    const node = { type: "create", fields: {} };
-    node.fields = this.parseSetClause();
-    return node;
-  }
-  parseDelete() {
-    this.advance();
-    const node = { type: "delete" };
-    if (this.current().type === "WHERE") {
-      this.advance();
-      node.where = this.parseWhere();
-    }
-    return node;
-  }
-  parseFieldList() {
-    const fields = [];
-    while (this.current().type !== "EOF" && !this.isKeyword()) {
-      const token = this.current();
-      if (token.type === "IDENTIFIER") {
-        if (this.peek().type === "LPAREN") {
-          const func = token.value.toLowerCase();
-          if (["count", "sum", "avg", "min", "max"].includes(func)) {
-            this.advance();
-            this.expect("LPAREN");
-            let field = "*";
-            if (this.current().type === "IDENTIFIER") {
-              field = this.current().value;
-              this.advance();
-            } else if (this.current().type === "STAR") {
-              this.advance();
-            }
-            this.expect("RPAREN");
-            fields.push({ type: "aggregate", func, field });
-          } else {
-            this.advance();
-            this.expect("LPAREN");
-            let parenDepth = 1;
-            while (this.current().type !== "EOF" && parenDepth > 0) {
-              if (this.current().type === "LPAREN")
-                parenDepth++;
-              if (this.current().type === "RPAREN")
-                parenDepth--;
-              this.advance();
-            }
-            fields.push(`${token.value}()`);
-          }
-        } else {
-          fields.push(token.value);
-          this.advance();
-        }
-      } else if (token.type === "STAR") {
-        fields.push("*");
-        this.advance();
-      } else if (token.type === "RPAREN") {
-        break;
-      }
-      if (this.current().type === "COMMA") {
-        this.advance();
-      } else {
-        break;
-      }
-    }
-    return fields;
-  }
-  parseWhere() {
-    return this.parseOrExpression();
-  }
-  parseOrExpression() {
-    let left = this.parseAndExpression();
-    while (this.current().type === "OR") {
-      this.advance();
-      const right = this.parseAndExpression();
-      left = { type: "or", left, right };
-    }
-    return left;
-  }
-  parseAndExpression() {
-    let left = this.parseComparison();
-    while (this.current().type === "AND") {
-      this.advance();
-      const right = this.parseComparison();
-      left = { type: "and", left, right };
-    }
-    return left;
-  }
-  parseArrayCondition() {
-    const token = this.current();
-    if (token.type === "EQUALS" || token.type === "NOT_EQUALS" || token.type === "LT" || token.type === "GT" || token.type === "LTE" || token.type === "GTE") {
-      const op = this.getOperator();
-      this.advance();
-      const value = this.parseValue();
-      return { type: "comparison", field: "", op, value };
-    }
-    if (token.type === "CONTAINS" || token.type === "STARTS_WITH" || token.type === "ENDS_WITH") {
-      const op = token.value;
-      this.advance();
-      const value = this.parseValue();
-      return { type: "comparison", field: "", op, value };
-    }
-    return this.parseComparison();
-  }
-  parseComparison() {
-    const token = this.current();
-    if (token.type === "NOT") {
-      this.advance();
-      const expr = this.parseComparison();
-      return { type: "not", expr };
-    }
-    if (token.type === "EXISTS") {
-      this.advance();
-      this.expect("LPAREN");
-      const subquery = this.parseSelect();
-      this.expect("RPAREN");
-      return { type: "exists", subquery };
-    }
-    if (token.type === "IDENTIFIER" && this.peek().type === "LPAREN") {
-      const func = token.value.toLowerCase();
-      if (["count", "sum", "avg", "min", "max"].includes(func)) {
-        this.advance();
-        this.expect("LPAREN");
-        let field = "*";
-        if (this.current().type === "IDENTIFIER") {
-          field = this.current().value;
-          this.advance();
-        } else if (this.current().type === "STAR") {
-          this.advance();
-        }
-        this.expect("RPAREN");
-        const opToken = this.current();
-        const op = this.getOperator();
-        this.advance();
-        const value = this.parseValue();
-        return { type: "comparison", field: `${func}(${field})`, fieldPath: `${func}(${field})`, op, value };
-      }
-    }
-    if (token.type === "IDENTIFIER") {
-      let field = token.value;
-      let fieldPath = token.value;
-      this.advance();
-      if (this.current().type === "DOT" && this.peek().type === "IDENTIFIER") {
-        const prefix = field;
-        this.advance();
-        const fieldPart = this.expect("IDENTIFIER").value;
-        field = fieldPart;
-        fieldPath = `${prefix}.${fieldPart}`;
-      }
-      if (this.current().type === "ANY" || this.current().type === "ALL") {
-        const arrayOp = this.current().value;
-        this.advance();
-        const condition = this.parseArrayCondition();
-        return { type: "array_comparison", field, fieldPath, arrayOp, arrayCondition: condition };
-      }
-      if (this.current().type === "IS") {
-        this.advance();
-        const notEmpty = this.current().type === "NOT";
-        if (notEmpty)
-          this.advance();
-        this.expect("EMPTY");
-        return { type: "comparison", field, fieldPath, op: notEmpty ? "is_not_empty" : "is_empty", value: { type: "null", value: null } };
-      }
-      if (this.current().type === "IN") {
-        this.advance();
-        this.expect("LPAREN");
-        const items = [];
-        while (this.current().type !== "RPAREN") {
-          items.push(this.parseValue());
-          if (this.current().type === "COMMA")
-            this.advance();
-        }
-        this.expect("RPAREN");
-        return { type: "in", field, fieldPath, value: { type: "array", items } };
-      }
-      if (this.current().type === "CONTAINS" || this.current().type === "STARTS_WITH" || this.current().type === "ENDS_WITH") {
-        const op2 = this.current().value;
-        this.advance();
-        const value2 = this.parseValue();
-        return { type: "comparison", field, fieldPath, op: op2, value: value2 };
-      }
-      const opToken = this.current();
-      const op = this.getOperator();
-      this.advance();
-      const value = this.parseValue();
-      return { type: "comparison", field, fieldPath, op, value };
-    }
-    throw new Error(`Unexpected token in WHERE: ${token.value}`);
-  }
-  parseValue() {
-    const token = this.current();
-    if (token.type === "STRING") {
-      this.advance();
-      return { type: "string", value: token.value };
-    }
-    if (token.type === "NUMBER") {
-      this.advance();
-      return { type: "number", value: parseInt(token.value) };
-    }
-    if (token.type === "BOOLEAN") {
-      this.advance();
-      return { type: "boolean", value: token.value === "true" };
-    }
-    if (token.type === "IDENTIFIER" && token.value.toLowerCase() === "null") {
-      this.advance();
-      return { type: "null", value: null };
-    }
-    if (token.type === "IDENTIFIER" && this.peek().type === "LPAREN") {
-      return this.parseBuiltin();
-    }
-    if (token.type === "IDENTIFIER") {
-      this.advance();
-      return { type: "string", value: token.value };
-    }
-    throw new Error(`Unexpected token in value: ${token.value}`);
-  }
-  parseBuiltin() {
-    const name = this.expect("IDENTIFIER").value;
-    this.expect("LPAREN");
-    const args = [];
-    while (this.current().type !== "RPAREN") {
-      if (this.current().type === "IDENTIFIER") {
-        args.push({ type: "field", name: this.current().value });
-        this.advance();
-      } else {
-        args.push(this.parseValue());
-      }
-      if (this.current().type === "COMMA")
-        this.advance();
-    }
-    this.expect("RPAREN");
-    return { type: "builtin", name, args };
-  }
-  parseSetClause() {
-    const set = {};
-    while (this.current().type !== "EOF") {
-      if (this.current().type !== "IDENTIFIER")
-        break;
-      const field = this.expect("IDENTIFIER").value;
-      this.expect("EQUALS");
-      set[field] = this.parseValue();
-      if (this.current().type === "COMMA") {
-        this.advance();
-      } else if (this.current().type === "IDENTIFIER" && this.peek().type === "EQUALS") {
-        continue;
-      } else {
-        break;
-      }
-    }
-    return set;
-  }
-  parseIdentifierList() {
-    const identifiers = [];
-    while (true) {
-      identifiers.push(this.expect("IDENTIFIER").value);
-      if (this.current().type === "COMMA") {
-        this.advance();
-      } else {
-        break;
-      }
-    }
-    return identifiers;
-  }
-  parseOrderBy() {
-    const items = [];
-    while (true) {
-      const field = this.expect("IDENTIFIER").value;
-      let direction = "asc";
-      if (this.current().type === "IDENTIFIER") {
-        const dir = this.current().value.toLowerCase();
-        if (dir === "asc" || dir === "desc") {
-          direction = dir;
-          this.advance();
-        }
-      }
-      items.push({ field, direction });
-      if (this.current().type === "COMMA") {
-        this.advance();
-      } else {
-        break;
-      }
-    }
-    return items;
-  }
-  getOperator() {
-    const token = this.current();
-    const ops = {
-      EQUALS: "=",
-      NOT_EQUALS: "!=",
-      LT: "<",
-      GT: ">",
-      LTE: "<=",
-      GTE: ">="
-    };
-    return ops[token.type] || token.value;
-  }
-  isKeyword() {
-    const keywords = ["WHERE", "SET", "ORDER", "GROUP", "LIMIT", "OFFSET", "AND", "OR", "BY"];
-    return keywords.includes(this.current().type);
-  }
-  current() {
-    return this.tokens[this.position] || { type: "EOF", value: "", position: -1 };
-  }
-  peek() {
-    return this.tokens[this.position + 1] || { type: "EOF", value: "", position: -1 };
-  }
-  advance() {
-    const token = this.current();
-    this.position++;
-    return token;
-  }
-  expect(type) {
-    const token = this.current();
-    if (token.type !== type) {
-      throw new Error(`Expected ${type}, got ${token.type} (${token.value})`);
-    }
-    return this.advance();
-  }
-}
 // src/files.ts
 var import_gray_matter = __toESM(require_gray_matter(), 1);
 var import_ignore = __toESM(require_ignore(), 1);
@@ -4440,6 +4599,7 @@ var DEFAULT_OPTIONS = {
 };
 
 class FileOps {
+  static IMMUTABLE_FIELDS = ["createdAt", "updatedAt"];
   static async readFiles(dir, options2 = {}) {
     if (options2.files && options2.files.length > 0) {
       const files2 = [];
@@ -4453,6 +4613,21 @@ class FileOps {
     const opts = { ...DEFAULT_OPTIONS, ...options2 };
     const files = [];
     await this.walk(dir, dir, opts, [], files);
+    return files;
+  }
+  static readFilesSync(dir, options2 = {}) {
+    if (options2.files && options2.files.length > 0) {
+      const files2 = [];
+      for (const f of options2.files) {
+        const file = this.readSync(dir, f);
+        if (file)
+          files2.push(file);
+      }
+      return files2;
+    }
+    const opts = { ...DEFAULT_OPTIONS, ...options2 };
+    const files = [];
+    this.walkSync(dir, dir, opts, [], files);
     return files;
   }
   static async walk(root, currentDir, opts, parentIgnores, out) {
@@ -4526,6 +4701,68 @@ class FileOps {
       return null;
     }
   }
+  static readSync(root, filepath) {
+    try {
+      const { readFileSync } = __require("fs");
+      const content = readFileSync(filepath, "utf-8");
+      const { data } = import_gray_matter.default(content);
+      const filename = basename(filepath, ".md");
+      const rel = relative(root, filepath);
+      return {
+        ...data,
+        filename,
+        path: rel,
+        abspath: filepath,
+        filepath,
+        content
+      };
+    } catch {
+      return null;
+    }
+  }
+  static walkSync(root, currentDir, opts, parentIgnores, out) {
+    const { readdirSync } = __require("fs");
+    let entries;
+    try {
+      entries = readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const ignores = [...parentIgnores];
+    if (opts.ignore) {
+      try {
+        const { readFileSync } = __require("fs");
+        const gi = readFileSync(join(currentDir, ".gitignore"), "utf-8");
+        ignores.push({ dir: currentDir, ig: import_ignore.default().add(gi) });
+      } catch {}
+    }
+    const dirs = [];
+    for (const entry of entries) {
+      const name = entry.name;
+      const fullPath = join(currentDir, name);
+      if (name === ".git")
+        continue;
+      if (!opts.hidden && name.startsWith("."))
+        continue;
+      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        dirs.push(entry);
+      } else if (entry.isFile() && name.endsWith(".md")) {
+        const file = this.readSync(root, fullPath);
+        if (file)
+          out.push(file);
+      }
+    }
+    const canRecurse = opts.depth === -1 || opts.depth > 0;
+    if (canRecurse) {
+      const nextDepth = opts.depth === -1 ? -1 : opts.depth - 1;
+      for (const dir of dirs) {
+        this.walkSync(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+      }
+    }
+  }
   static async writeFile(target, data, content) {
     let filepath;
     if (target.endsWith(".md")) {
@@ -4534,16 +4771,31 @@ class FileOps {
       const name = data.filename || data.file || "task";
       filepath = join(target, `${name}.md`);
     }
-    const frontmatter = Object.entries(data).filter(([key]) => !["filename", "path", "abspath", "filepath", "file", "content"].includes(key)).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(`
+    const body = stripFrontmatter(content);
+    const frontmatter = Object.entries(data).filter(([key]) => !["filename", "path", "abspath", "filepath", "file", "content"].includes(key)).filter(([key, value]) => {
+      if (value === "" || value === null || value === undefined) {
+        return false;
+      }
+      return true;
+    }).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(`
 `);
     const fileContent = `---
 ${frontmatter}
 ---
 
-${content}`;
+${body}`;
     await writeFile(filepath, fileContent, "utf-8");
     return filepath;
   }
+}
+function stripFrontmatter(content) {
+  if (!content.startsWith("---"))
+    return content;
+  const end = content.indexOf(`
+---`, 3);
+  if (end === -1)
+    return content;
+  return content.slice(end + 4).replace(/^\n+/, "");
 }
 
 // src/executor.ts
@@ -4554,6 +4806,7 @@ class Executor {
   context;
   triggerContext;
   readOptions;
+  currentFile;
   constructor(dir, context, triggerContext, readOptions = {}) {
     this.dir = dir;
     this.context = context;
@@ -4679,7 +4932,13 @@ class Executor {
     if (matches.length === 0) {
       throw new Error(this.noMatchError(node.where));
     }
+    for (const field of FileOps.IMMUTABLE_FIELDS) {
+      if (node.set[field] !== undefined) {
+        throw new Error(`cannot update immutable field '${field}'`);
+      }
+    }
     for (const file of matches) {
+      this.currentFile = file;
       for (const [key, value] of Object.entries(node.set)) {
         file[key] = this.evaluateValue(value);
       }
@@ -4715,6 +4974,9 @@ class Executor {
     };
   }
   async executeDelete(node) {
+    if (!node.where) {
+      throw new Error("delete requires a where clause");
+    }
     const files = await FileOps.readFiles(this.dir, this.readOptions);
     const matches = node.where ? files.filter((f) => this.evaluateWhere(f, node.where)) : files;
     if (matches.length === 0) {
@@ -4753,6 +5015,14 @@ class Executor {
         return this.evaluateComparison(file, where.field, where.op, where.value, where.fieldPath);
       case "array_comparison":
         return this.evaluateArrayComparison(file, where.field, where.arrayOp, where.arrayCondition);
+      case "in":
+        return this.evaluateIn(file, where.field, where.value, false);
+      case "not_in":
+        return this.evaluateIn(file, where.field, where.value, true);
+      case "has":
+        return this.evaluateHas(file, where.field);
+      case "exists":
+        return this.evaluateExists(file, where.subquery);
       default:
         return false;
     }
@@ -4784,7 +5054,69 @@ class Executor {
     }
     return false;
   }
-  evaluateComparison(file, field, op, value, fieldPath) {
+  evaluateIn(file, field, value, negate) {
+    const fieldValue = file[field];
+    const list = this.evaluateValue(value);
+    if (!Array.isArray(list)) {
+      return false;
+    }
+    if (fieldValue === undefined) {
+      return negate;
+    }
+    const found = list.some((item) => {
+      if (typeof fieldValue === "string" && typeof item === "number") {
+        return fieldValue === String(item);
+      }
+      if (typeof fieldValue === "number" && typeof item === "string") {
+        return String(fieldValue) === item;
+      }
+      return fieldValue === item;
+    });
+    return negate ? !found : found;
+  }
+  evaluateHas(file, field) {
+    return file[field] !== undefined;
+  }
+  evaluateExists(file, subquery) {
+    try {
+      const parser = new ((init_parser(), __toCommonJS(exports_parser))).Parser(subquery);
+      const ast = parser.parse();
+      if (ast.type === "select") {
+        const selectNode = ast;
+        if (selectNode.where) {
+          return this.evaluateWhere(file, selectNode.where);
+        }
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  evaluateComparison(file, field, op, value, fieldPath, subquery) {
+    if (field === "count(select)" && subquery) {
+      const compareValue2 = value ? this.evaluateValue(value) : null;
+      const count = this.evaluateSubqueryCount(file, subquery);
+      if (!op || compareValue2 === null) {
+        return count > 0;
+      }
+      switch (op) {
+        case "=":
+          return count === compareValue2;
+        case "!=":
+          return count !== compareValue2;
+        case "<":
+          return count < compareValue2;
+        case ">":
+          return count > compareValue2;
+        case "<=":
+          return count <= compareValue2;
+        case ">=":
+          return count >= compareValue2;
+        default:
+          return false;
+      }
+    }
     const aggregateMatch = field.match(/^(count|sum|avg|min|max)\((.+)\)$/);
     if (aggregateMatch) {
       const [, func, aggField] = aggregateMatch;
@@ -4826,6 +5158,13 @@ class Executor {
       fieldValue = file[field];
     }
     const compareValue = this.evaluateValue(value);
+    if (fieldValue === undefined) {
+      if (op === "=")
+        return false;
+      if (op === "!=")
+        return true;
+      return false;
+    }
     let coercedFieldValue = fieldValue;
     let coercedCompareValue = compareValue;
     if (typeof fieldValue === "string" && typeof compareValue === "number") {
@@ -4852,12 +5191,72 @@ class Executor {
         return String(fieldValue).startsWith(String(compareValue));
       case "ends_with":
         return String(fieldValue).endsWith(String(compareValue));
+      case "not_contains":
+        return !String(fieldValue).includes(String(compareValue));
+      case "not_starts_with":
+        return !String(fieldValue).startsWith(String(compareValue));
+      case "not_ends_with":
+        return !String(fieldValue).endsWith(String(compareValue));
       case "is_empty":
         return !fieldValue || fieldValue === "";
       case "is_not_empty":
         return fieldValue && fieldValue !== "";
       default:
         return false;
+    }
+  }
+  evaluateSubqueryCount(file, subquery) {
+    try {
+      if (subquery.where) {
+        const correlatedWhere = this.correlateSubquery(subquery.where, file);
+        subquery = { ...subquery, where: correlatedWhere };
+      }
+      const subExecutor = new Executor(this.dir, this.context, this.triggerContext, this.readOptions);
+      const result = subExecutor.executeSubquerySync(subquery);
+      return result;
+    } catch {
+      return 0;
+    }
+  }
+  correlateSubquery(where, file) {
+    if (where.type === "comparison") {
+      if (where.fieldPath && where.fieldPath.startsWith("outer.")) {
+        const outerField = where.fieldPath.slice(6);
+        const outerValue = file[outerField];
+        return { ...where, field: outerField, fieldPath: outerField, value: { type: typeof outerValue === "string" ? "string" : "number", value: outerValue } };
+      }
+    }
+    if (where.type === "and" || where.type === "or") {
+      return {
+        ...where,
+        left: this.correlateSubquery(where.left, file),
+        right: this.correlateSubquery(where.right, file)
+      };
+    }
+    if (where.type === "not") {
+      return {
+        ...where,
+        expr: this.correlateSubquery(where.expr, file)
+      };
+    }
+    return where;
+  }
+  executeSubquerySync(subquery) {
+    try {
+      const files = FileOps.readFilesSync(this.dir, this.readOptions);
+      let count = 0;
+      for (const file of files) {
+        if (subquery.where) {
+          if (this.evaluateWhere(file, subquery.where)) {
+            count++;
+          }
+        } else {
+          count++;
+        }
+      }
+      return count;
+    } catch {
+      return 0;
     }
   }
   evaluateValue(value) {
@@ -4869,7 +5268,43 @@ class Executor {
       return value.value;
     if (value.type === "null")
       return null;
+    if (value.type === "empty")
+      return null;
+    if (value.type === "field")
+      return this.currentFile ? this.currentFile[value.name] : null;
+    if (value.type === "array")
+      return value.items.map((item) => this.evaluateValue(item));
+    if (value.type === "binary")
+      return this.evaluateBinary(value);
     return value;
+  }
+  evaluateBinary(expr) {
+    const left = this.evaluateValue(expr.left);
+    const right = this.evaluateValue(expr.right);
+    if (typeof left === "number" && typeof right === "number") {
+      return expr.op === "+" ? left + right : left - right;
+    }
+    if (typeof left === "string" && typeof right === "string" && expr.op === "+") {
+      return left + right;
+    }
+    if (Array.isArray(left) && Array.isArray(right)) {
+      if (expr.op === "+") {
+        return [...new Set([...left, ...right])];
+      } else {
+        return left.filter((item) => !right.includes(item));
+      }
+    }
+    if (Array.isArray(left) && !Array.isArray(right)) {
+      if (expr.op === "+") {
+        return left.includes(right) ? left : [...left, right];
+      } else {
+        return left.filter((item) => item !== right);
+      }
+    }
+    if (!Array.isArray(left) && Array.isArray(right) && expr.op === "+" && typeof left === "string") {
+      return right.includes(left) ? right : [left, ...right];
+    }
+    throw new Error(`Cannot apply ${expr.op} to ${typeof left} and ${typeof right}`);
   }
   groupBy(files, fields) {
     const groups = new Map;
@@ -5033,6 +5468,10 @@ class Builtins {
 // src/formatter.ts
 var MIN_COLUMN_WIDTH = 3;
 var DEFAULT_TERMINAL_WIDTH = 80;
+var SEMANTIC_CAPS = {
+  content: 20,
+  abspath: 24
+};
 
 class Formatter {
   static format(result, format) {
@@ -5041,6 +5480,8 @@ class Formatter {
         return this.toJSON(result);
       case "table":
         return this.toTable(result);
+      case "card":
+        return this.toCard(result);
       case "csv":
         return this.toCSV(result);
       default:
@@ -5054,43 +5495,131 @@ class Formatter {
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
     const headers = Object.keys(result.data[0]);
     const rows = result.data.map((row) => headers.map((h) => String(row[h] ?? "")));
-    const rawWidths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length || 0)));
+    const cappedRows = rows.map((row) => row.map((cell, i) => {
+      const header = headers[i];
+      const cap = SEMANTIC_CAPS[header];
+      if (cap !== undefined) {
+        const firstLine = cell.split(`
+`)[0];
+        if (firstLine.length > cap) {
+          if (header === "abspath") {
+            return tailDisplay(firstLine, cap);
+          }
+          return ellipsize(firstLine, cap);
+        }
+        return firstLine;
+      }
+      return cell;
+    }));
+    const naturalWidths = headers.map((h, i) => Math.max(h.length, ...cappedRows.map((r) => r[i]?.length || 0)));
     const separators = headers.length > 0 ? (headers.length - 1) * 3 : 0;
-    const totalRaw = rawWidths.reduce((a, b) => a + b, 0) + separators;
+    const usable = width - separators;
+    const cappedWidths = naturalWidths.map((w, i) => {
+      const cap = SEMANTIC_CAPS[headers[i]];
+      return cap !== undefined ? Math.min(w, cap) : w;
+    });
     let widths;
-    if (totalRaw <= width) {
-      widths = rawWidths;
+    if (sum(cappedWidths) <= usable) {
+      widths = cappedWidths;
     } else {
-      widths = this.shrink(rawWidths, width - separators);
+      widths = this.allocateWidths(cappedWidths, usable);
     }
     const headerLine = headers.map((h, i) => pad(h, widths[i])).join(" | ");
     const separatorLine = widths.map((w) => "-".repeat(w)).join(" | ");
-    const dataLines = rows.map((row) => row.map((cell, i) => pad(cell, widths[i])).join(" | "));
+    const dataLines = cappedRows.map((row) => row.map((cell, i) => pad(cell, widths[i])).join(" | "));
     return [headerLine, separatorLine, ...dataLines].join(`
 `);
   }
-  static shrink(rawWidths, budget) {
+  static toCard(result, terminalWidth = 0) {
+    if (!result.data || result.data.length === 0) {
+      return "No results";
+    }
+    const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
+    const halfWidth = Math.floor(width / 2);
+    const headers = Object.keys(result.data[0]);
+    const cards = [];
+    for (const row of result.data) {
+      const filename = String(row.filename ?? "unknown");
+      const content = String(row.content ?? "");
+      const hasExplicitContent = headers.includes("content");
+      const cardLines = [`--- ${filename} ---`];
+      const metaFields = headers.filter((h) => h !== "content");
+      const metaLines = [];
+      let currentLine = "";
+      for (const field of metaFields) {
+        const value = String(row[field] ?? "");
+        const display = formatFieldValue(field, value);
+        const entry = `${field}: ${display}`;
+        if (currentLine === "") {
+          currentLine = entry;
+        } else if ((currentLine + " | " + entry).length <= width) {
+          currentLine += " | " + entry;
+        } else {
+          metaLines.push(currentLine);
+          currentLine = entry;
+        }
+      }
+      if (currentLine !== "") {
+        metaLines.push(currentLine);
+      }
+      const expandedLines = [];
+      for (const line of metaLines) {
+        if (line.length > halfWidth) {
+          const fields = line.split(" | ");
+          for (const field of fields) {
+            if (field.length > halfWidth) {
+              expandedLines.push(field);
+            } else {
+              expandedLines.push(field);
+            }
+          }
+        } else {
+          expandedLines.push(line);
+        }
+      }
+      cardLines.push(...expandedLines);
+      if (hasExplicitContent) {
+        cardLines.push("");
+        if (content.trim() === "") {
+          cardLines.push("");
+        } else {
+          cardLines.push(content);
+        }
+      } else if (content.trim() !== "") {
+        cardLines.push("");
+        cardLines.push(content);
+      }
+      cards.push(cardLines.join(`
+`));
+    }
+    return cards.join(`
+
+`);
+  }
+  static allocateWidths(rawWidths, budget) {
     const n = rawWidths.length;
     if (n === 0)
       return [];
-    const rawTotal = rawWidths.reduce((a, b) => a + b, 0);
-    const scaled = rawWidths.map((w) => w <= MIN_COLUMN_WIDTH ? w : Math.max(MIN_COLUMN_WIDTH, Math.floor(w / rawTotal * budget)));
-    if (sum(scaled) <= budget)
-      return scaled;
-    let over = sum(scaled) - budget;
-    while (over > 0) {
-      let candidate = -1;
-      for (let i = 0;i < n; i++) {
-        if (scaled[i] > 1 && (candidate === -1 || scaled[i] > scaled[candidate])) {
-          candidate = i;
-        }
-      }
-      if (candidate === -1)
-        break;
-      scaled[candidate]--;
-      over--;
+    if (budget <= 0)
+      return rawWidths.map(() => 1);
+    const fallbackCap = Math.floor(budget / n * 1.5);
+    const headerWidths = rawWidths.map(() => MIN_COLUMN_WIDTH);
+    let floors;
+    if (sum(headerWidths) <= budget) {
+      floors = headerWidths;
+    } else if (MIN_COLUMN_WIDTH * n <= budget) {
+      floors = rawWidths.map(() => MIN_COLUMN_WIDTH);
+    } else {
+      floors = rawWidths.map(() => Math.max(1, Math.floor(budget / n)));
     }
-    return scaled;
+    const remaining = budget - sum(floors);
+    if (remaining <= 0)
+      return floors;
+    const weights = rawWidths.map((w) => Math.max(Math.min(w, fallbackCap) - MIN_COLUMN_WIDTH, 0));
+    const totalW = sum(weights);
+    if (totalW === 0)
+      return floors;
+    return floors.map((f, i) => f + Math.floor(remaining * weights[i] / totalW));
   }
   static toJSON(result) {
     if (result.data) {
@@ -5127,6 +5656,26 @@ function ellipsize(value, width) {
   if (width <= 1)
     return value.slice(0, width);
   return value.slice(0, width - 1) + "…";
+}
+function tailDisplay(value, width) {
+  if (width <= 3)
+    return ellipsize(value, width);
+  return "…" + value.slice(-(width - 1));
+}
+function formatFieldValue(field, value) {
+  if (value.startsWith("[") && value.endsWith("]")) {
+    return value;
+  }
+  if (value.startsWith("{") && value.endsWith("}")) {
+    return value;
+  }
+  if (value.includes(`
+`)) {
+    const firstLine = value.split(`
+`)[0];
+    return firstLine.length > 60 ? ellipsize(firstLine, 60) : firstLine;
+  }
+  return value;
 }
 function sum(values) {
   return values.reduce((a, b) => a + b, 0);
