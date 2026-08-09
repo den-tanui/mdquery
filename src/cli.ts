@@ -23,7 +23,8 @@ Options:
   -H, --hidden          Include hidden files/dirs (except .git)
   --no-ignore           Do not respect .gitignore
   -y, --yes             Skip confirmation prompts for update/delete
-  --format=<format>     Output format: json | table | csv (default: json)
+  --format=<format>     Output format: json | table | csv | card (default: json)
+  --card                Shortcut for --format=card (expanded view with full content)
 
 Examples:
   mdquery "select where status = 'done'"
@@ -124,6 +125,8 @@ async function main() {
       ignore = false;
     } else if (arg === '-y' || arg === '--yes') {
       yes = true;
+    } else if (arg === '--card') {
+      format = 'card';
     } else if (arg.startsWith('--dir=')) {
       dir = arg.split('=')[1];
     } else if (arg.startsWith('--file=')) {
@@ -143,7 +146,7 @@ async function main() {
     }
   }
 
-  if (!['json', 'table', 'csv'].includes(format)) {
+  if (!['json', 'table', 'csv', 'card'].includes(format)) {
     fail(`Invalid format: ${format}`);
   }
 

@@ -24,7 +24,7 @@ describe('Formatter', () => {
 
   describe('Table', () => {
     it('formats as table', () => {
-      const output = Formatter.format(mockResult, 'table');
+      const output = Formatter.toTable(mockResult, 120);
       expect(output).toContain('id');
       expect(output).toContain('title');
       expect(output).toContain('Test Task');
@@ -46,7 +46,7 @@ describe('Formatter', () => {
       expect(longestLine).toBeLessThanOrEqual(width);
     });
 
-it('does not shrink when content fits the width', () => {
+    it('does not shrink when content fits the width', () => {
       const smallResult: QueryResult = {
         type: 'select',
         data: [{ id: '1', title: 'hi', filename: '', path: '', abspath: '', filepath: '', content: '' }],
@@ -82,6 +82,47 @@ it('does not shrink when content fits the width', () => {
       const longestLine = Math.max(...output.split('\n').map(l => l.length));
       expect(longestLine).toBeLessThanOrEqual(40);
     });
+
+    it('applies semantic cap to content column', () => {
+      const longContentResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', content: 'This is a very long content that should be truncated to 20 chars', filename: '', path: '', abspath: '', filepath: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toTable(longContentResult, 200);
+      // Content should be capped at 20 chars
+      expect(output).toContain('This is a very long…');
+    });
+
+    it('applies semantic cap to abspath column', () => {
+      const longAbspathResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md', filename: '', path: '', filepath: '', content: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toTable(longAbspathResult, 200);
+      // Abspath should be capped at 24 chars with tail display
+      expect(output).toContain('…es/advanced/task-001.md');
+    });
+
+    it('prevents column squashing with fallback cap', () => {
+      const squashingResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Short', filename: '', path: '', abspath: '', filepath: '', content: 'x'.repeat(500) }
+        ],
+        count: 1
+      };
+      const output = Formatter.toTable(squashingResult, 100);
+      // Title should not be squashed to 3 chars
+      const lines = output.split('\n');
+      const dataLine = lines[2]; // First data line
+      expect(dataLine).toContain('Short');
+    });
   });
 
   describe('CSV', () => {
@@ -91,6 +132,68 @@ it('does not shrink when content fits the width', () => {
       expect(lines[0]).toContain('id');
       expect(lines[1]).toContain('1');
       expect(lines[1]).toContain('Test Task');
+    });
+  });
+
+  describe('Card', () => {
+    it('formats as card with header and metadata', () => {
+      const output = Formatter.toCard(mockResult, 120);
+      expect(output).toContain('---  ---');
+      expect(output).toContain('id: 1');
+      expect(output).toContain('title: Test Task');
+      expect(output).toContain('status: todo');
+    });
+
+    it('shows content block when content is present', () => {
+      const contentResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Task', content: 'This is the content body', filename: 'task-001', path: '', abspath: '', filepath: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toCard(contentResult, 120);
+      expect(output).toContain('This is the content body');
+    });
+
+    it('skips empty content when not explicitly selected', () => {
+      const emptyContentResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Task', content: '', filename: 'task-001', path: '', abspath: '', filepath: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toCard(emptyContentResult, 120);
+      // Should not have empty line after metadata
+      expect(output).not.toContain('\n\n\n');
+    });
+
+    it('shows empty line when content is explicitly selected and empty', () => {
+      const explicitContentResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Task', content: '', filename: 'task-001', path: '', abspath: '', filepath: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toCard(explicitContentResult, 120);
+      // Should have empty line for content
+      expect(output).toContain('\n\n');
+    });
+
+    it('handles multiline content', () => {
+      const multilineResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Task', content: 'Line 1\nLine 2\nLine 3', filename: 'task-001', path: '', abspath: '', filepath: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toCard(multilineResult, 120);
+      expect(output).toContain('Line 1');
+      expect(output).toContain('Line 2');
+      expect(output).toContain('Line 3');
     });
   });
 

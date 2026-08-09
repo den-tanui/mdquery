@@ -1,10 +1,16 @@
 // src/formatter.ts
 import { QueryResult } from './executor';
 
-export type OutputFormat = 'json' | 'table' | 'csv';
+export type OutputFormat = 'json' | 'table' | 'csv' | 'card';
 
 const MIN_COLUMN_WIDTH = 3;
 const DEFAULT_TERMINAL_WIDTH = 80;
+
+// Semantic caps for known fields — fixed widths for predictable display
+const SEMANTIC_CAPS: Record<string, number> = {
+  content: 20,   // First line + ellipsis
+  abspath: 24,   // Tail: .../filename.md
+};
 
 export class Formatter {
   static format(result: QueryResult, format: OutputFormat): string {
@@ -13,6 +19,8 @@ export class Formatter {
         return this.toJSON(result);
       case 'table':
         return this.toTable(result);
+      case 'card':
+        return this.toCard(result);
       case 'csv':
         return this.toCSV(result);
       default:
@@ -30,57 +38,169 @@ export class Formatter {
     const headers = Object.keys(result.data[0]);
     const rows = result.data.map(row => headers.map(h => String((row as any)[h] ?? '')));
 
-    // Natural column widths
-    const rawWidths = headers.map((h, i) =>
-      Math.max(h.length, ...rows.map(r => r[i]?.length || 0))
+    // Apply semantic caps to cell values (first-line extraction + truncation)
+    const cappedRows = rows.map(row =>
+      row.map((cell, i) => {
+        const header = headers[i];
+        const cap = SEMANTIC_CAPS[header];
+        if (cap !== undefined) {
+          const firstLine = cell.split('\n')[0];
+          if (firstLine.length > cap) {
+            // Special handling for abspath: show tail
+            if (header === 'abspath') {
+              return tailDisplay(firstLine, cap);
+            }
+            return ellipsize(firstLine, cap);
+          }
+          return firstLine;
+        }
+        return cell;
+      })
+    );
+
+    // Natural column widths after cap application
+    const naturalWidths = headers.map((h, i) =>
+      Math.max(h.length, ...cappedRows.map(r => r[i]?.length || 0))
     );
 
     // " | " separator costs 3 chars between columns
     const separators = headers.length > 0 ? (headers.length - 1) * 3 : 0;
-    const totalRaw = rawWidths.reduce((a, b) => a + b, 0) + separators;
+    const usable = width - separators;
+
+    // Apply semantic caps to natural widths
+    const cappedWidths = naturalWidths.map((w, i) => {
+      const cap = SEMANTIC_CAPS[headers[i]];
+      return cap !== undefined ? Math.min(w, cap) : w;
+    });
 
     let widths: number[];
-    if (totalRaw <= width) {
-      widths = rawWidths;
+    if (sum(cappedWidths) <= usable) {
+      widths = cappedWidths;
     } else {
-      widths = this.shrink(rawWidths, width - separators);
+      widths = this.allocateWidths(cappedWidths, usable);
     }
 
     const headerLine = headers.map((h, i) => pad(h, widths[i])).join(' | ');
     const separatorLine = widths.map(w => '-'.repeat(w)).join(' | ');
-    const dataLines = rows.map(row =>
+    const dataLines = cappedRows.map(row =>
       row.map((cell, i) => pad(cell, widths[i])).join(' | ')
     );
 
     return [headerLine, separatorLine, ...dataLines].join('\n');
   }
 
-  private static shrink(rawWidths: number[], budget: number): number[] {
-    const n = rawWidths.length;
-    if (n === 0) return [];
-    const rawTotal = rawWidths.reduce((a, b) => a + b, 0);
-
-    const scaled = rawWidths.map(w =>
-      w <= MIN_COLUMN_WIDTH ? w : Math.max(MIN_COLUMN_WIDTH, Math.floor((w / rawTotal) * budget))
-    );
-
-    if (sum(scaled) <= budget) return scaled;
-
-    // Reduce below the minimum (down to 1) until we fit the budget.
-    let over = sum(scaled) - budget;
-    while (over > 0) {
-      let candidate = -1;
-      for (let i = 0; i < n; i++) {
-        if (scaled[i] > 1 && (candidate === -1 || scaled[i] > scaled[candidate])) {
-          candidate = i;
-        }
-      }
-      if (candidate === -1) break;
-      scaled[candidate]--;
-      over--;
+  static toCard(result: QueryResult, terminalWidth: number = 0): string {
+    if (!result.data || result.data.length === 0) {
+      return 'No results';
     }
 
-    return scaled;
+    const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
+    const halfWidth = Math.floor(width / 2);
+
+    const headers = Object.keys(result.data[0]);
+    const cards: string[] = [];
+
+    for (const row of result.data) {
+      const filename = String((row as any).filename ?? 'unknown');
+      const content = String((row as any).content ?? '');
+      const hasExplicitContent = headers.includes('content');
+
+      // Header line
+      const cardLines: string[] = [`--- ${filename} ---`];
+
+      // Metadata fields (excluding content)
+      const metaFields = headers.filter(h => h !== 'content');
+      const metaLines: string[] = [];
+      let currentLine = '';
+
+      for (const field of metaFields) {
+        const value = String((row as any)[field] ?? '');
+        const display = formatFieldValue(field, value);
+        const entry = `${field}: ${display}`;
+
+        if (currentLine === '') {
+          currentLine = entry;
+        } else if ((currentLine + ' | ' + entry).length <= width) {
+          currentLine += ' | ' + entry;
+        } else {
+          metaLines.push(currentLine);
+          currentLine = entry;
+        }
+      }
+
+      if (currentLine !== '') {
+        metaLines.push(currentLine);
+      }
+
+      // Check for field overflow: any field exceeding half width gets its own line
+      const expandedLines: string[] = [];
+      for (const line of metaLines) {
+        if (line.length > halfWidth) {
+          // Split into individual fields
+          const fields = line.split(' | ');
+          for (const field of fields) {
+            if (field.length > halfWidth) {
+              // This field gets its own line
+              expandedLines.push(field);
+            } else {
+              // Try to pack with next field
+              expandedLines.push(field);
+            }
+          }
+        } else {
+          expandedLines.push(line);
+        }
+      }
+
+      cardLines.push(...expandedLines);
+
+      // Content block
+      if (hasExplicitContent) {
+        cardLines.push('');  // Empty line before content
+        if (content.trim() === '') {
+          cardLines.push('');  // Empty line for empty content when explicitly selected
+        } else {
+          cardLines.push(content);
+        }
+      } else if (content.trim() !== '') {
+        cardLines.push('');  // Empty line before content
+        cardLines.push(content);
+      }
+
+      cards.push(cardLines.join('\n'));
+    }
+
+    return cards.join('\n\n');
+  }
+
+  private static allocateWidths(rawWidths: number[], budget: number): number[] {
+    const n = rawWidths.length;
+    if (n === 0) return [];
+    if (budget <= 0) return rawWidths.map(() => 1);
+
+    const fallbackCap = Math.floor(budget / n * 1.5);
+
+    // Compute floors: header widths if they fit, else MIN_COLUMN_WIDTH, else degenerate
+    const headerWidths = rawWidths.map(() => MIN_COLUMN_WIDTH);
+    let floors: number[];
+    if (sum(headerWidths) <= budget) {
+      floors = headerWidths;
+    } else if (MIN_COLUMN_WIDTH * n <= budget) {
+      floors = rawWidths.map(() => MIN_COLUMN_WIDTH);
+    } else {
+      floors = rawWidths.map(() => Math.max(1, Math.floor(budget / n)));
+    }
+
+    const remaining = budget - sum(floors);
+    if (remaining <= 0) return floors;
+
+    // Weights: how much each column wants above its floor, capped by fallbackCap
+    const weights = rawWidths.map(w => Math.max(Math.min(w, fallbackCap) - MIN_COLUMN_WIDTH, 0));
+    const totalW = sum(weights);
+
+    if (totalW === 0) return floors;
+
+    return floors.map((f, i) => f + Math.floor(remaining * weights[i] / totalW));
   }
 
   private static toJSON(result: QueryResult): string {
@@ -121,6 +241,29 @@ function pad(value: string, width: number): string {
 function ellipsize(value: string, width: number): string {
   if (width <= 1) return value.slice(0, width);
   return value.slice(0, width - 1) + '…';
+}
+
+function tailDisplay(value: string, width: number): string {
+  if (width <= 3) return ellipsize(value, width);
+  // Show last (width - 3) chars with leading ellipsis
+  return '…' + value.slice(-(width - 1));
+}
+
+function formatFieldValue(field: string, value: string): string {
+  // Handle arrays
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value;
+  }
+  // Handle objects
+  if (value.startsWith('{') && value.endsWith('}')) {
+    return value;
+  }
+  // Handle multiline content
+  if (value.includes('\n')) {
+    const firstLine = value.split('\n')[0];
+    return firstLine.length > 60 ? ellipsize(firstLine, 60) : firstLine;
+  }
+  return value;
 }
 
 function sum(values: number[]): number {

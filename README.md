@@ -17,7 +17,7 @@ $ mdquery "select count(*) group by status"
 
 - SQL-style grammar (`select`, `update`, `create`, `delete`, `where`, `order by`, `group by`, ...)
 - Read/write YAML frontmatter in markdown files
-- Output as **json**, **table**, or **csv**
+- Output as **json**, **table**, **csv**, or **card**
 - Aggregates, joins, pipes, and triggers
 - Single markdown file or a whole directory
 - Recursive search with depth control, hidden-file and `.gitignore` awareness
@@ -82,6 +82,7 @@ Choose an output format:
 
 ```bash
 mdquery --format=csv "select title, status"
+mdquery --card "select *"  # expanded view with full content
 ```
 
 ### Options
@@ -96,9 +97,24 @@ mdquery --format=csv "select title, status"
 | `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
 | `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
 | `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |
-| `--format=<fmt>` | Output format: `json`, `table`, `csv` (default `json`) |
+| `--format=<fmt>` | Output format: `json`, `table`, `csv`, `card` (default `json`) |
+| `--card` | Shortcut for `--format=card` (expanded view with full content) |
 
 Calling `mdquery` with no arguments prints the manual.
+
+### Output modes
+
+**Compact mode** (default `--format=table`): All fields in a grid. Content column capped at 20 chars (first line + `…`). `abspath` capped at 24 chars (tail display). Good for piping, scripts, and quick browsing.
+
+**Card mode** (`--card`): Expanded view with metadata on top and content below. Content gets full terminal width with multiline preservation. Good for reading full content.
+
+```bash
+# Compact table view
+mdquery --format=table "select *"
+
+# Card view with full content
+mdquery --card "select *"
+```
 
 ### File identity fields
 
