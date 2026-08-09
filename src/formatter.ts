@@ -40,7 +40,7 @@ export class Formatter {
     const rows = result.data.map(row => headers.map(h => {
       const value = (row as any)[h];
       // Format toc and section fields specially
-      if (h === 'toc' || h.startsWith('section.')) {
+      if (h === 'toc' || h === 'toc()' || h.startsWith('section.')) {
         return formatTocForTable(value);
       }
       return String(value ?? '');
@@ -112,9 +112,9 @@ export class Formatter {
     for (const row of result.data) {
       const filename = String((row as any).filename ?? '');
       const content = String((row as any).content ?? '');
-      const toc = (row as any).toc;
+      const toc = (row as any).toc || (row as any)['toc()'];
       const hasExplicitContent = headers.includes('content');
-      const hasExplicitToc = headers.includes('toc');
+      const hasExplicitToc = headers.includes('toc') || headers.includes('toc()');
 
       // Header line (only if filename is in the selected fields)
       const cardLines: string[] = [];
@@ -123,7 +123,7 @@ export class Formatter {
       }
 
       // Metadata fields (excluding content and toc)
-      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc');
+      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc' && h !== 'toc()');
       const metaLines: string[] = [];
       let currentLine = '';
 
@@ -292,11 +292,11 @@ function formatTocForTable(value: any): string {
   
   // Handle structured TOC (array of Section objects)
   if (value.length > 0 && value[0]?.level !== undefined) {
-    return value.map((s: any) => '  '.repeat(s.level - 1) + s.title).join('\n');
+    return formatTocAsTree(value.map((s: any) => ({ level: s.level, title: s.title, content: '' })));
   }
   
-  // Handle flat TOC (already formatted with indentation)
-  return value.join('\n');
+  // Handle flat TOC with heading markers (e.g., ["# Main", "## Sub"])
+  return formatTocAsTree(value);
 }
 
 function formatTocForCard(value: any): string {
@@ -307,8 +307,8 @@ function formatTocForCard(value: any): string {
     return formatTocAsTree(value.map((s: any) => ({ level: s.level, title: s.title, content: '' })));
   }
   
-  // Handle flat TOC (already formatted with indentation)
-  return value.join('\n');
+  // Handle flat TOC with heading markers (e.g., ["# Main", "## Sub"])
+  return formatTocAsTree(value);
 }
 
 function sum(values: number[]): number {

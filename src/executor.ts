@@ -164,7 +164,9 @@ export class Executor {
             const builtinNode = field as any;
             const args = builtinNode.args.map((arg: any) => this.evaluateValue(arg));
             const result = Builtins.call(builtinNode.name, args, f, undefined, this.hooks);
-            selected[builtinNode.name] = result;
+            // Use full expression as key to avoid overwriting duplicate function calls
+            const key = `${builtinNode.name}(${builtinNode.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
+            selected[key] = result;
           }
         }
         return selected;

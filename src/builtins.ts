@@ -1,6 +1,20 @@
 // src/builtins.ts
 import { formatTocIndented, Section } from './files';
 
+function requireString(value: any, fn: string): string {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${fn}() requires a string, got ${typeof value}`);
+  }
+  return value;
+}
+
+function requireStringOrArray(value: any, fn: string): string | any[] {
+  if (typeof value !== 'string' && !Array.isArray(value)) {
+    throw new TypeError(`${fn}() requires a string or array, got ${typeof value}`);
+  }
+  return value;
+}
+
 export class Builtins {
   static now(): string {
     return new Date().toISOString();
@@ -11,40 +25,50 @@ export class Builtins {
   }
 
   static len(value: any): number {
+    requireStringOrArray(value, 'len');
     if (typeof value === 'string') return value.length;
-    if (Array.isArray(value)) return value.length;
-    return 0;
+    return value.length;
   }
 
   static upper(value: string): string {
+    requireString(value, 'upper');
     return value.toUpperCase();
   }
 
   static lower(value: string): string {
+    requireString(value, 'lower');
     return value.toLowerCase();
   }
 
   static trim(value: string): string {
+    requireString(value, 'trim');
     return value.trim();
   }
 
   static contains(value: string, substring: string): boolean {
+    requireString(value, 'contains');
     return value.includes(substring);
   }
 
   static startsWith(value: string, prefix: string): boolean {
+    requireString(value, 'starts_with');
     return value.startsWith(prefix);
   }
 
   static endsWith(value: string, suffix: string): boolean {
+    requireString(value, 'ends_with');
     return value.endsWith(suffix);
   }
 
   static split(value: string, delimiter: string): string[] {
+    requireString(value, 'split');
     return value.split(delimiter);
   }
 
   static join(array: string[], delimiter: string): string {
+    if (!Array.isArray(array)) {
+      throw new TypeError(`join() requires an array, got ${typeof array}`);
+    }
     return array.join(delimiter);
   }
 
@@ -57,10 +81,15 @@ export class Builtins {
   }
 
   static date(dateString: string): string {
+    requireString(dateString, 'date');
     return new Date(dateString).toISOString();
   }
 
   static nextEnum(fieldValue: string, enumValues: string[]): string {
+    requireString(fieldValue, 'next_enum');
+    if (!Array.isArray(enumValues)) {
+      throw new TypeError(`next_enum() requires an array of enum values, got ${typeof enumValues}`);
+    }
     const currentIndex = enumValues.indexOf(fieldValue);
     if (currentIndex === -1 || currentIndex === enumValues.length - 1) {
       return enumValues[0];
@@ -69,6 +98,10 @@ export class Builtins {
   }
 
   static prevEnum(fieldValue: string, enumValues: string[]): string {
+    requireString(fieldValue, 'prev_enum');
+    if (!Array.isArray(enumValues)) {
+      throw new TypeError(`prev_enum() requires an array of enum values, got ${typeof enumValues}`);
+    }
     const currentIndex = enumValues.indexOf(fieldValue);
     if (currentIndex === -1 || currentIndex === 0) {
       return enumValues[enumValues.length - 1];
@@ -83,6 +116,7 @@ export class Builtins {
   }
 
   static nextDate(recurrence: string): string {
+    requireString(recurrence, 'next_date');
     // Parse recurrence string and return next date
     // Simple implementation: assumes recurrence is in format "daily", "weekly", "monthly"
     const now = new Date();
@@ -103,9 +137,10 @@ export class Builtins {
       default:
         // Try to parse as days
         const days = parseInt(recurrence);
-        if (!isNaN(days)) {
-          now.setDate(now.getDate() + days);
+        if (isNaN(days)) {
+          throw new TypeError(`next_date() requires a valid recurrence string (daily, weekly, monthly, yearly, or N days), got "${recurrence}"`);
         }
+        now.setDate(now.getDate() + days);
     }
     
     return now.toISOString().split('T')[0];
@@ -138,8 +173,53 @@ export class Builtins {
       return sections;
     }
     
-    // Return flat list with indentation
-    return formatTocIndented(sections).split('\n');
+    // Return flat list with heading markers
+    return sections.map(s => '#'.repeat(s.level) + ' ' + s.title);
+  }
+
+  // Type conversion builtins
+  static typeof(value: any): string {
+    if (value === null || value === undefined) return 'null';
+    if (Array.isArray(value)) return 'array';
+    if (value instanceof Date) return 'date';
+    return typeof value;
+  }
+
+  static str(value: any): string {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) return JSON.stringify(value);
+    return String(value);
+  }
+
+  static int(value: any): number {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return Math.floor(value);
+    const n = parseInt(String(value), 10);
+    return isNaN(n) ? 0 : n;
+  }
+
+  static float(value: any): number {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return value;
+    const n = parseFloat(String(value));
+    return isNaN(n) ? 0 : n;
+  }
+
+  static bool(value: any): boolean {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase();
+      return lower === 'true' || lower === '1' || lower === 'yes';
+    }
+    return Boolean(value);
+  }
+
+  static array(value: any): any[] {
+    if (Array.isArray(value)) return value;
+    if (value === null || value === undefined) return [];
+    return [value];
   }
 
   static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[], hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any }): any {

@@ -333,22 +333,34 @@ export function parseSections(content: string): Map<string, Section> {
   return sections;
 }
 
-export function formatTocAsTree(sections: Section[]): string {
+export function formatTocAsTree(sections: Section[] | string[]): string {
   if (sections.length === 0) return '';
+  
+  // Convert string[] with heading markers to Section[]
+  const parsed: Section[] = sections.map(s => {
+    if (typeof s === 'string') {
+      const match = s.match(/^(#{1,6})\s+(.+)$/);
+      if (match) {
+        return { level: match[1].length, title: match[2], content: '' };
+      }
+      return { level: 1, title: s, content: '' };
+    }
+    return s;
+  });
   
   const lines: string[] = [];
   const stack: number[] = [];
   
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    const isLast = i === sections.length - 1;
+  for (let i = 0; i < parsed.length; i++) {
+    const section = parsed[i];
+    const isLast = i === parsed.length - 1;
     const prefix = stack.map((_, idx) => idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   ').join('');
     
     lines.push(`${prefix}${section.title}`);
     
     // Update stack for next iteration
-    if (i < sections.length - 1) {
-      const nextSection = sections[i + 1];
+    if (i < parsed.length - 1) {
+      const nextSection = parsed[i + 1];
       if (nextSection.level > section.level) {
         stack.push(section.level);
       } else if (nextSection.level < section.level) {
