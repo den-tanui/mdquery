@@ -27,26 +27,23 @@ $ mdquery "select count(*) group by status"
 - Set arithmetic: `+` (union), `-` (difference) on lists
 - Negated operators: `not contains`, `not starts_with`, `not ends_with`
 - Triggers: before/after create/update/delete with deny, set, run
+- Markdown body parsing with `section.<name>` and `toc()` builtins
+- `fields()` builtin to list frontmatter fields
 
 ## Install
 
-### Via scripts
+### Via install script (recommended)
 
 ```bash
-git clone <repo-url> mdquery && cd mdquery
-
-# build (requires bun) and copy the binary into ~/.local/bin
-./scripts/install.sh
-
-# remove it again
-./scripts/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/den-tanui/mdquery/main/scripts/install.sh | bash
 ```
 
 ### From source
 
 ```sh
+git clone https://github.com/den-tanui/mdquery.git && cd mdquery
 bun install
-bun run build:cli   # produces the standalone ./mdquery binary
+bun run build:cli   # produces bin/mdquery
 ```
 
 ### As a library
@@ -133,6 +130,24 @@ Every row exposes these fields regardless of frontmatter:
 
 `id` is a plain frontmatter field — it is only present when the file defines it.
 
+### Section and TOC queries
+
+Query markdown body sections:
+
+```bash
+# Find files with TODO section
+mdquery "select id, filename where has section.TODO"
+
+# Return section content
+mdquery "select id, section.TODO where has section.TODO"
+
+# Return table of contents
+mdquery "select id, toc()"
+
+# Return structured TOC with tree formatting
+mdquery --card "select id, toc()"
+```
+
 ## Query language
 
 See **[docs/syntax.md](docs/syntax.md)** for the full grammar reference (statements, operators, functions, joins, pipes, triggers).
@@ -146,7 +161,7 @@ See **[docs/examples.md](docs/examples.md)** for worked scenarios.
 ```sh
 bun install
 bun run test    # vitest unit + integration tests
-bun run build   # build the library (dist/) and CLI binary (/mdquery)
+bun run build   # build the library (dist/) and CLI binary (bin/mdquery)
 ```
 
 ## License
