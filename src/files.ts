@@ -153,13 +153,23 @@ export class FileOps {
       filepath = join(target, `${name}.md`);
     }
 
+    // Strip any existing frontmatter from the body so it isn't duplicated
+    const body = stripFrontmatter(content);
+
     const frontmatter = Object.entries(data)
       .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content'].includes(key))
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join('\n');
 
-    const fileContent = `---\n${frontmatter}\n---\n\n${content}`;
+    const fileContent = `---\n${frontmatter}\n---\n\n${body}`;
     await writeFile(filepath, fileContent, 'utf-8');
     return filepath;
   }
+}
+
+function stripFrontmatter(content: string): string {
+  if (!content.startsWith('---')) return content;
+  const end = content.indexOf('\n---', 3);
+  if (end === -1) return content;
+  return content.slice(end + 4).replace(/^\n+/, '');
 }

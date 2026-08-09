@@ -1,6 +1,6 @@
 # mdquery syntax reference
 
-`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. The file `id` defaults to the filename (without `.md`) when no `id` field is present.
+`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path). `id` is a plain frontmatter field — it is only present when the file declares it.
 
 ## Statements
 
@@ -37,10 +37,12 @@ update where status = 'todo' set status = 'done'
 create set <field> = <value>, ...
 ```
 
-Creates a new file. `id`, `createdAt`, and `updatedAt` are generated automatically.
+Creates a new file. `createdAt` and `updatedAt` are generated automatically.
+
+The target file is chosen from the `abspath`, `path` (relative to the search directory), or `file`/`filename` fields in the `set` clause. Without one of these, `create` fails with `create requires path to file`.
 
 ```sql
-create set title = 'New task', status = 'todo'
+create set path = 'tasks/task-002.md', title = 'New task', status = 'todo'
 ```
 
 ### DELETE
@@ -154,8 +156,12 @@ select title join ../sprints on sprint = id
 ## Data files
 
 - Each row = one `.md` file
-- Query target = a directory (default `.`) reading all `.md` files; nested directories are not recursed
+- Query target = a directory (default `.`) reading all `.md` files
+- Search depth: `0` = current directory only (default), `1` = one level down, `-1` = recursive
+- Hidden files are skipped unless `--hidden` is passed
+- `.gitignore` rules are respected by default (including nested `.gitignore` files); `--no-ignore` disables this. `.git` directories are always skipped
 - Fields come from YAML frontmatter parsed with [gray-matter]
 - Writing is always idempotent; `FileOps.writeFile` emits frontmatter + body
+- `update` writes back to the file's original location, preserving its path
 
 [gray-matter]: https://www.npmjs.com/package/gray-matter

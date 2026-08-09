@@ -20,6 +20,8 @@ $ mdquery "select count(*) group by status"
 - Output as **json**, **table**, or **csv**
 - Aggregates, joins, pipes, and triggers
 - Single markdown file or a whole directory
+- Recursive search with depth control, hidden-file and `.gitignore` awareness
+- Every row exposes `filename`, `path` (relative), and `abspath` (absolute)
 
 ## Install
 
@@ -89,10 +91,26 @@ mdquery --format=csv "select title, status"
 | `-h`, `--help` | Print the full manual and exit |
 | `-v`, `--version` | Print the version and exit |
 | `--dir=<path>` | Directory to query (default `.`) |
-| `--file=<path>` | Query a single markdown file |
+| `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated |
+| `-d`, `--depth=<n>` | Search depth: `0` = current dir only (default), `1` = one level down, `-1` = recursive |
+| `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
+| `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
+| `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |
 | `--format=<fmt>` | Output format: `json`, `table`, `csv` (default `json`) |
 
 Calling `mdquery` with no arguments prints the manual.
+
+### File identity fields
+
+Every row exposes these fields regardless of frontmatter:
+
+| Field | Meaning |
+| --- | --- |
+| `filename` | File name without the `.md` extension (e.g. `task-001`) |
+| `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
+| `abspath` | Absolute path to the file |
+
+`id` is a plain frontmatter field — it is only present when the file defines it.
 
 ## Query language
 

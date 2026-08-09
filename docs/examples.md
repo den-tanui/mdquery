@@ -107,14 +107,56 @@ mdquery --dir=tasks "select title where status is not empty"
 mdquery --dir=tasks "update where id = 2 set status = 'done'"
 ```
 
-This rewrites `tasks/task-002.md` with `status: done`.
+This rewrites `tasks/task-002.md` with `status: done`. The file keeps its original path. `update` and `delete` ask for confirmation (`y/N`) unless `-y` is passed:
+
+```sh
+mdquery --dir=tasks -y "update where id = 2 set status = 'done'"
+```
 
 ## Creating and deleting
 
 ```sh
-mdquery --dir=tasks "create set title = 'Refactor parser', status = 'todo'"
-mdquery --dir=tasks "delete where status = 'archived'"
+mdquery --dir=tasks "create set path = 'tasks/task-004.md', title = 'Refactor parser', status = 'todo'"
+mdquery --dir=tasks -y "delete where status = 'archived'"
 ```
+
+`create` targets the file named by `abspath`, `path`, or `file`/`filename` in the `set` clause.
+
+## File identity fields
+
+Every row exposes `filename`, `path`, and `abspath` regardless of frontmatter:
+
+```sh
+mdquery --dir=tasks "select filename, path, status"
+```
+
+```json
+[
+  {
+    "filename": "task-001",
+    "path": "task-001",
+    "status": "done"
+  }
+]
+```
+
+## Recursive search, hidden files, and gitignore
+
+```sh
+# one level down
+mdquery --dir=tasks -d 1 "select title"
+
+# recursive
+mdquery --dir=tasks -d -1 "select title"
+
+# include hidden files
+mdquery --dir=tasks -H "select title"
+
+# ignore .gitignore rules
+mdquery --dir=tasks --no-ignore "select title"
+```
+
+`.git` directories are always skipped. `.gitignore` rules (including nested ones) are respected by default.
 
 ## Pipes
 
