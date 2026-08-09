@@ -13,7 +13,9 @@
     "build:cli": "bun build src/cli.ts --compile --outfile mdquery",
     "test": "vitest run",
     "test:watch": "vitest watch",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "format": "echo 'No formatter configured'"
   },
   "dependencies": {
     "gray-matter": "^4.0.3",

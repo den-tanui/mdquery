@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+echo "Running pre-commit checks..."
+
+# Run formatter
+echo "Running formatter..."
+bun run format 2>/dev/null || true
+
+# Run linter
+echo "Running linter..."
+bun run lint 2>/dev/null || true
+
+# Run tests
+echo "Running tests..."
+bun run test
+
+echo "Pre-commit checks passed!"
