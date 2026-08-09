@@ -30,8 +30,8 @@ This is a test task.
 
   it('compares new.field in trigger context', async () => {
     const triggerContext: TriggerContext = {
-      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '' },
-      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '' }
+      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' },
+      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' }
     };
     
     const executor = new Executor(FIXTURES_DIR, undefined, triggerContext);
@@ -41,8 +41,8 @@ This is a test task.
 
   it('compares old.field in trigger context', async () => {
     const triggerContext: TriggerContext = {
-      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '' },
-      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '' }
+      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' },
+      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' }
     };
     
     const executor = new Executor(FIXTURES_DIR, undefined, triggerContext);
@@ -52,8 +52,8 @@ This is a test task.
 
   it('compares new.field with not equal', async () => {
     const triggerContext: TriggerContext = {
-      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '' },
-      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '' }
+      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' },
+      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' }
     };
     
     const executor = new Executor(FIXTURES_DIR, undefined, triggerContext);
@@ -63,8 +63,8 @@ This is a test task.
 
   it('compares new.field with is empty', async () => {
     const triggerContext: TriggerContext = {
-      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '' },
-      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '', assignee: '' }
+      old: { id: '1', title: 'Test Task', status: 'todo', projectId: 1, priority: 3, filepath: '', content: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' },
+      new: { id: '1', title: 'Test Task', status: 'done', projectId: 1, priority: 3, filepath: '', content: '', assignee: '', filename: 'task-001', path: 'task-001.md', abspath: '/tmp/task-001.md' }
     };
     
     const executor = new Executor(FIXTURES_DIR, undefined, triggerContext);

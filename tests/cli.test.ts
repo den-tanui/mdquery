@@ -6,7 +6,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 
-const cliPath = join(__dirname, '..', 'mdquery');
+const cliPath = join(__dirname, '..', 'bin', 'mdquery');
 const srcCliPath = join(__dirname, '..', 'src', 'cli.ts');
 
 function binaryIsFresh(): boolean {
