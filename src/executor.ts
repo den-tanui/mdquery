@@ -1,6 +1,7 @@
 // src/executor.ts
 import { Parser } from './parser';
-import { FileOps, FileData } from './files';
+import { FileOps, FileData, ReadOptions } from './files';
+import { isAbsolute, join } from 'path';
 import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode } from './types';
 
 export interface QueryResult {
@@ -21,11 +22,18 @@ export class Executor {
   private dir: string;
   private context?: Record<string, any>;
   private triggerContext?: TriggerContext;
+  private readOptions: ReadOptions;
 
-  constructor(dir: string, context?: Record<string, any>, triggerContext?: TriggerContext) {
+  constructor(
+    dir: string,
+    context?: Record<string, any>,
+    triggerContext?: TriggerContext,
+    readOptions: ReadOptions = {}
+  ) {
     this.dir = dir;
     this.context = context;
     this.triggerContext = triggerContext;
+    this.readOptions = readOptions;
   }
 
   async execute(query: string): Promise<QueryResult> {
@@ -55,7 +63,7 @@ export class Executor {
     
     // Handle clipboard function
     if (node.fn === 'clipboard' && result.data) {
-      const values = result.data.map((f: any) => f.id || f.title || '').join('\n');
+      const values = result.data.map((f: any) => f.filename || f.title || '').join('\n');
       await navigator.clipboard?.writeText(values);
     }
     
@@ -63,7 +71,7 @@ export class Executor {
   }
 
   private async executeSelect(node: SelectNode): Promise<QueryResult> {
-    let files = await FileOps.readFiles(this.dir);
+    let files = await FileOps.readFiles(this.dir, this.readOptions);
 
     // WHERE
     if (node.where) {
@@ -181,33 +189,33 @@ export class Executor {
   }
 
   private async executeUpdate(node: UpdateNode): Promise<QueryResult> {
-    const files = await FileOps.readFiles(this.dir);
-    let updated = 0;
+    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const matches = node.where
+      ? files.filter(f => this.evaluateWhere(f, node.where))
+      : files;
 
-    for (const file of files) {
-      if (node.where && !this.evaluateWhere(file, node.where)) {
-        continue;
-      }
+    if (matches.length === 0) {
+      throw new Error(this.noMatchError(node.where));
+    }
 
+    for (const file of matches) {
       // Update fields
       for (const [key, value] of Object.entries(node.set)) {
         (file as any)[key] = this.evaluateValue(value);
       }
 
-      // Write back
-      await FileOps.writeFile(this.dir, file, file.content);
-      updated++;
+      // Write back to the original file path
+      await FileOps.writeFile(file.filepath, file, file.content);
     }
 
     return {
       type: 'update',
-      updated
+      updated: matches.length
     };
   }
 
   private async executeCreate(node: CreateNode): Promise<QueryResult> {
     const newFile: any = {
-      id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -217,7 +225,19 @@ export class Executor {
       newFile[key] = this.evaluateValue(value);
     }
 
-    await FileOps.writeFile(this.dir, newFile, '');
+    // Determine target: abspath > path > file/filename > error
+    let target: string;
+    if (newFile.abspath) {
+      target = newFile.abspath;
+    } else if (newFile.path) {
+      target = this.resolveTargetPath(newFile.path);
+    } else if (newFile.file || newFile.filename) {
+      target = this.dir;
+    } else {
+      throw new Error('create requires path to file');
+    }
+
+    await FileOps.writeFile(target, newFile, '');
 
     return {
       type: 'create',
@@ -226,24 +246,36 @@ export class Executor {
   }
 
   private async executeDelete(node: DeleteNode): Promise<QueryResult> {
-    const files = await FileOps.readFiles(this.dir);
-    let deleted = 0;
+    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const matches = node.where ? files.filter(f => this.evaluateWhere(f, node.where)) : files;
 
-    for (const file of files) {
-      if (node.where && !this.evaluateWhere(file, node.where)) {
-        continue;
-      }
+    if (matches.length === 0) {
+      throw new Error(this.noMatchError(node.where));
+    }
 
+    for (const file of matches) {
       // Delete file
       const { unlink } = await import('fs/promises');
       await unlink(file.filepath);
-      deleted++;
     }
 
     return {
       type: 'delete',
-      deleted
+      deleted: matches.length
     };
+  }
+
+  private noMatchError(where?: WhereNode): string {
+    if (where && where.type === 'comparison' && where.field) {
+      const value = where.value && where.value.type === 'string' ? where.value.value : '';
+      return `no file with ${where.field} '${value}'`;
+    }
+    return 'no files matched the query';
+  }
+
+  private resolveTargetPath(p: string): string {
+    if (isAbsolute(p)) return p;
+    return join(this.dir, p);
   }
 
   private evaluateWhere(file: FileData, where: WhereNode): boolean {

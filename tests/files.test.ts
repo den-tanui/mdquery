@@ -62,7 +62,7 @@ This is the third test task.
 
   it('parses frontmatter correctly', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.id === '1');
+    const task1 = files.find(f => f.filename === 'task-001');
     expect(task1).toBeDefined();
     expect(task1?.title).toBe('Test Task');
     expect(task1?.status).toBe('todo');
@@ -71,14 +71,16 @@ This is the third test task.
 
   it('reads content correctly', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.id === '1');
+    const task1 = files.find(f => f.filename === 'task-001');
     expect(task1?.content).toContain('This is a test task.');
   });
 
   it('returns correct file paths', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.id === '1');
+    const task1 = files.find(f => f.filename === 'task-001');
     expect(task1?.filepath).toContain('task-001.md');
+    expect(task1?.path).toBe('task-001.md');
+    expect(task1?.abspath).toContain('task-001.md');
   });
 
   it('handles empty directory', async () => {
@@ -100,10 +102,10 @@ This is the third test task.
       updatedAt: new Date().toISOString()
     };
     
-    await FileOps.writeFile(FIXTURES_DIR, newTask, 'This is new content.');
+    await FileOps.writeFile(join(FIXTURES_DIR, 'task-004.md'), newTask, 'This is new content.');
     
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const newFile = files.find(f => f.id === '4');
+    const newFile = files.find(f => f.filename === 'task-004');
     expect(newFile).toBeDefined();
     expect(newFile?.title).toBe('New Task');
     

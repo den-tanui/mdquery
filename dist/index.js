@@ -3510,6 +3510,334 @@ var require_gray_matter = __commonJS((exports, module) => {
   module.exports = matter;
 });
 
+// node_modules/ignore/index.js
+var require_ignore = __commonJS((exports, module) => {
+  function makeArray(subject) {
+    return Array.isArray(subject) ? subject : [subject];
+  }
+  var UNDEFINED = undefined;
+  var EMPTY = "";
+  var SPACE = " ";
+  var ESCAPE = "\\";
+  var REGEX_TEST_BLANK_LINE = /^\s+$/;
+  var REGEX_INVALID_TRAILING_BACKSLASH = /(?:[^\\]|^)\\$/;
+  var REGEX_REPLACE_LEADING_EXCAPED_EXCLAMATION = /^\\!/;
+  var REGEX_REPLACE_LEADING_EXCAPED_HASH = /^\\#/;
+  var REGEX_SPLITALL_CRLF = /\r?\n/g;
+  var REGEX_TEST_INVALID_PATH = /^\.{0,2}\/|^\.{1,2}$/;
+  var REGEX_TEST_TRAILING_SLASH = /\/$/;
+  var SLASH = "/";
+  var TMP_KEY_IGNORE = "node-ignore";
+  if (typeof Symbol !== "undefined") {
+    TMP_KEY_IGNORE = Symbol.for("node-ignore");
+  }
+  var KEY_IGNORE = TMP_KEY_IGNORE;
+  var define = (object, key, value) => {
+    Object.defineProperty(object, key, { value });
+    return value;
+  };
+  var REGEX_REGEXP_RANGE = /([0-z])-([0-z])/g;
+  var RETURN_FALSE = () => false;
+  var sanitizeRange = (range) => range.replace(REGEX_REGEXP_RANGE, (match, from, to) => from.charCodeAt(0) <= to.charCodeAt(0) ? match : EMPTY);
+  var negateRange = (range) => range.startsWith("!") || range.startsWith("\\^") ? `^${range.slice(range[0] === "!" ? 1 : 2)}` : range;
+  var cleanRangeBackSlash = (slashes) => {
+    const { length } = slashes;
+    return slashes.slice(0, length - length % 2);
+  };
+  var REPLACERS = [
+    [
+      /^\uFEFF/,
+      () => EMPTY
+    ],
+    [
+      /((?:\\\\)*?)(\\?\s+)$/,
+      (_, m1, m2) => m1 + (m2.indexOf("\\") === 0 ? SPACE : EMPTY)
+    ],
+    [
+      /(\\+?)\s/g,
+      (_, m1) => {
+        const { length } = m1;
+        return m1.slice(0, length - length % 2) + SPACE;
+      }
+    ],
+    [
+      /[\\$.|*+(){^]/g,
+      (match) => `\\${match}`
+    ],
+    [
+      /(?!\\)\?/g,
+      () => "[^/]"
+    ],
+    [
+      /^\//,
+      () => "^"
+    ],
+    [
+      /\//g,
+      () => "\\/"
+    ],
+    [
+      /^\^*(?:\\\*\\\*\\\/)+/,
+      () => "^(?:.*\\/)?"
+    ],
+    [
+      /^(?=[^^])/,
+      function startingReplacer() {
+        return !/\/(?!$)/.test(this) ? "(?:^|\\/)" : "^";
+      }
+    ],
+    [
+      /\\\/\\\*\\\*(?=\\\/|$)/g,
+      (_, index, str2) => index + 6 < str2.length ? "(?:\\/[^\\/]+)*" : "\\/.+"
+    ],
+    [
+      /(^|[^\\]+)(\\\*)+(?=.+)/g,
+      (_, p1, p2) => {
+        const unescaped = p2.replace(/\\\*/g, "[^\\/]*");
+        return p1 + unescaped;
+      }
+    ],
+    [
+      /\\\\\\(?=[$.|*+(){^])/g,
+      () => ESCAPE
+    ],
+    [
+      /\\\\/g,
+      () => ESCAPE
+    ],
+    [
+      /(\\)?\[([^\]/]*?)(\\*)($|\])/g,
+      (match, leadEscape, range, endEscape, close) => leadEscape === ESCAPE ? `\\[${range}${cleanRangeBackSlash(endEscape)}${close}` : close === "]" ? endEscape.length % 2 === 0 ? `[${negateRange(sanitizeRange(range))}${endEscape}]` : "[]" : "[]"
+    ],
+    [
+      /(?:[^*])$/,
+      (match) => /\/$/.test(match) ? `${match}$` : `${match}(?=$|\\/$)`
+    ]
+  ];
+  var REGEX_REPLACE_TRAILING_WILDCARD = /(^|\\\/)?\\\*$/;
+  var MODE_IGNORE = "regex";
+  var MODE_CHECK_IGNORE = "checkRegex";
+  var UNDERSCORE = "_";
+  var TRAILING_WILD_CARD_REPLACERS = {
+    [MODE_IGNORE](_, p1) {
+      const prefix = p1 ? `${p1}[^/]+` : "[^/]*";
+      return `${prefix}(?=$|\\/$)`;
+    },
+    [MODE_CHECK_IGNORE](_, p1) {
+      const prefix = p1 ? `${p1}[^/]*` : "[^/]*";
+      return `${prefix}(?=$|\\/$)`;
+    }
+  };
+  var makeRegexPrefix = (pattern) => REPLACERS.reduce((prev, [matcher, replacer]) => prev.replace(matcher, replacer.bind(pattern)), pattern);
+  var isString = (subject) => typeof subject === "string";
+  var checkPattern = (pattern) => pattern && isString(pattern) && !REGEX_TEST_BLANK_LINE.test(pattern) && !REGEX_INVALID_TRAILING_BACKSLASH.test(pattern) && pattern.indexOf("#") !== 0;
+  var splitPattern = (pattern) => pattern.split(REGEX_SPLITALL_CRLF).filter(Boolean);
+
+  class IgnoreRule {
+    constructor(pattern, mark, body, ignoreCase, negative, prefix) {
+      this.pattern = pattern;
+      this.mark = mark;
+      this.negative = negative;
+      define(this, "body", body);
+      define(this, "ignoreCase", ignoreCase);
+      define(this, "regexPrefix", prefix);
+    }
+    get regex() {
+      const key = UNDERSCORE + MODE_IGNORE;
+      if (this[key]) {
+        return this[key];
+      }
+      return this._make(MODE_IGNORE, key);
+    }
+    get checkRegex() {
+      const key = UNDERSCORE + MODE_CHECK_IGNORE;
+      if (this[key]) {
+        return this[key];
+      }
+      return this._make(MODE_CHECK_IGNORE, key);
+    }
+    _make(mode, key) {
+      const str2 = this.regexPrefix.replace(REGEX_REPLACE_TRAILING_WILDCARD, TRAILING_WILD_CARD_REPLACERS[mode]);
+      const regex = this.ignoreCase ? new RegExp(str2, "i") : new RegExp(str2);
+      return define(this, key, regex);
+    }
+  }
+  var createRule = ({
+    pattern,
+    mark
+  }, ignoreCase) => {
+    let negative = false;
+    let body = pattern;
+    if (body.indexOf("!") === 0) {
+      negative = true;
+      body = body.substr(1);
+    }
+    body = body.replace(REGEX_REPLACE_LEADING_EXCAPED_EXCLAMATION, "!").replace(REGEX_REPLACE_LEADING_EXCAPED_HASH, "#");
+    const regexPrefix = makeRegexPrefix(body);
+    return new IgnoreRule(pattern, mark, body, ignoreCase, negative, regexPrefix);
+  };
+
+  class RuleManager {
+    constructor(ignoreCase) {
+      this._ignoreCase = ignoreCase;
+      this._rules = [];
+    }
+    _add(pattern) {
+      if (pattern && pattern[KEY_IGNORE]) {
+        this._rules = this._rules.concat(pattern._rules._rules);
+        this._added = true;
+        return;
+      }
+      if (isString(pattern)) {
+        pattern = {
+          pattern
+        };
+      }
+      if (checkPattern(pattern.pattern)) {
+        const rule = createRule(pattern, this._ignoreCase);
+        this._added = true;
+        this._rules.push(rule);
+      }
+    }
+    add(pattern) {
+      this._added = false;
+      makeArray(isString(pattern) ? splitPattern(pattern) : pattern).forEach(this._add, this);
+      return this._added;
+    }
+    test(path, checkUnignored, mode) {
+      let ignored = false;
+      let unignored = false;
+      let matchedRule;
+      this._rules.forEach((rule) => {
+        const { negative } = rule;
+        if (unignored === negative && ignored !== unignored || negative && !ignored && !unignored && !checkUnignored) {
+          return;
+        }
+        const matched = rule[mode].test(path);
+        if (!matched) {
+          return;
+        }
+        ignored = !negative;
+        unignored = negative;
+        matchedRule = negative ? UNDEFINED : rule;
+      });
+      const ret = {
+        ignored,
+        unignored
+      };
+      if (matchedRule) {
+        ret.rule = matchedRule;
+      }
+      return ret;
+    }
+  }
+  var throwError = (message, Ctor) => {
+    throw new Ctor(message);
+  };
+  var checkPath = (path, originalPath, doThrow) => {
+    if (!isString(path)) {
+      return doThrow(`path must be a string, but got \`${originalPath}\``, TypeError);
+    }
+    if (!path) {
+      return doThrow(`path must not be empty`, TypeError);
+    }
+    if (checkPath.isNotRelative(path)) {
+      const r = "`path.relative()`d";
+      return doThrow(`path should be a ${r} string, but got "${originalPath}"`, RangeError);
+    }
+    return true;
+  };
+  var isNotRelative = (path) => REGEX_TEST_INVALID_PATH.test(path);
+  checkPath.isNotRelative = isNotRelative;
+  checkPath.convert = (p) => p;
+
+  class Ignore {
+    constructor({
+      ignorecase = true,
+      ignoreCase = ignorecase,
+      allowRelativePaths = false
+    } = {}) {
+      define(this, KEY_IGNORE, true);
+      this._rules = new RuleManager(ignoreCase);
+      this._strictPathCheck = !allowRelativePaths;
+      this._initCache();
+    }
+    _initCache() {
+      this._ignoreCache = Object.create(null);
+      this._testCache = Object.create(null);
+    }
+    add(pattern) {
+      if (this._rules.add(pattern)) {
+        this._initCache();
+      }
+      return this;
+    }
+    addPattern(pattern) {
+      return this.add(pattern);
+    }
+    _test(originalPath, cache, checkUnignored, slices) {
+      const path = originalPath && checkPath.convert(originalPath);
+      checkPath(path, originalPath, this._strictPathCheck ? throwError : RETURN_FALSE);
+      return this._t(path, cache, checkUnignored, slices);
+    }
+    checkIgnore(path) {
+      if (!REGEX_TEST_TRAILING_SLASH.test(path)) {
+        return this.test(path);
+      }
+      const slices = path.split(SLASH).filter(Boolean);
+      slices.pop();
+      if (slices.length) {
+        const parent = this._t(slices.join(SLASH) + SLASH, this._testCache, true, slices);
+        if (parent.ignored) {
+          return parent;
+        }
+      }
+      return this._rules.test(path, false, MODE_CHECK_IGNORE);
+    }
+    _t(path, cache, checkUnignored, slices) {
+      if (path in cache) {
+        return cache[path];
+      }
+      if (!slices) {
+        slices = path.split(SLASH).filter(Boolean);
+      }
+      slices.pop();
+      if (!slices.length) {
+        return cache[path] = this._rules.test(path, checkUnignored, MODE_IGNORE);
+      }
+      const parent = this._t(slices.join(SLASH) + SLASH, cache, checkUnignored, slices);
+      return cache[path] = parent.ignored ? parent : this._rules.test(path, checkUnignored, MODE_IGNORE);
+    }
+    ignores(path) {
+      return this._test(path, this._ignoreCache, false).ignored;
+    }
+    createFilter() {
+      return (path) => !this.ignores(path);
+    }
+    filter(paths) {
+      return makeArray(paths).filter(this.createFilter());
+    }
+    test(path) {
+      return this._test(path, this._testCache, true);
+    }
+  }
+  var factory = (options2) => new Ignore(options2);
+  var isPathValid = (path) => checkPath(path && checkPath.convert(path), path, RETURN_FALSE);
+  var setupWindows = () => {
+    const makePosix = (str2) => /^\\\\\?\\/.test(str2) || /["<>|\u0000-\u001F]+/u.test(str2) ? str2 : str2.replace(/\\/g, "/");
+    checkPath.convert = makePosix;
+    const REGEX_TEST_WINDOWS_PATH_ABSOLUTE = /^[a-z]:\//i;
+    checkPath.isNotRelative = (path) => REGEX_TEST_WINDOWS_PATH_ABSOLUTE.test(path) || isNotRelative(path);
+  };
+  if (typeof process !== "undefined" && process.platform === "win32") {
+    setupWindows();
+  }
+  module.exports = factory;
+  factory.default = factory;
+  module.exports.isPathValid = isPathValid;
+  define(module.exports, Symbol.for("setupWindows"), setupWindows);
+});
+
 // src/lexer.ts
 var KEYWORDS = {
   select: "SELECT",
@@ -3559,8 +3887,8 @@ class Lexer {
         this.position++;
         continue;
       }
-      if (char === '"') {
-        tokens.push(this.readString());
+      if (char === '"' || char === "'") {
+        tokens.push(this.readString(char));
         continue;
       }
       if (/[0-9]/.test(char)) {
@@ -3581,11 +3909,11 @@ class Lexer {
     tokens.push({ type: "EOF", value: "", position: this.position });
     return tokens;
   }
-  readString() {
+  readString(quote) {
     const start = this.position;
     this.position++;
     let value = "";
-    while (this.position < this.input.length && this.input[this.position] !== '"') {
+    while (this.position < this.input.length && this.input[this.position] !== quote) {
       value += this.input[this.position];
       this.position++;
     }
@@ -4102,54 +4430,135 @@ class Parser {
 }
 // src/files.ts
 var import_gray_matter = __toESM(require_gray_matter(), 1);
+var import_ignore = __toESM(require_ignore(), 1);
 import { readdir, readFile, writeFile } from "fs/promises";
-import { join, basename } from "path";
+import { join, basename, relative, isAbsolute } from "path";
+var DEFAULT_OPTIONS = {
+  depth: 0,
+  hidden: false,
+  ignore: true
+};
 
 class FileOps {
-  static async readFiles(dir) {
-    try {
-      const entries = await readdir(dir, { withFileTypes: true });
-      const mdFiles = entries.filter((e) => e.isFile() && e.name.endsWith(".md"));
-      const files = [];
-      for (const entry of mdFiles) {
-        const filepath = join(dir, entry.name);
-        const content = await readFile(filepath, "utf-8");
-        const { data } = import_gray_matter.default(content);
-        const id = data.id?.toString() || basename(entry.name, ".md");
-        files.push({
-          ...data,
-          id,
-          filepath,
-          content
-        });
+  static async readFiles(dir, options2 = {}) {
+    if (options2.files && options2.files.length > 0) {
+      const files2 = [];
+      for (const f of options2.files) {
+        const file = await this.read(dir, f);
+        if (file)
+          files2.push(file);
       }
-      return files;
-    } catch (error) {
-      return [];
+      return files2;
+    }
+    const opts = { ...DEFAULT_OPTIONS, ...options2 };
+    const files = [];
+    await this.walk(dir, dir, opts, [], files);
+    return files;
+  }
+  static async walk(root, currentDir, opts, parentIgnores, out) {
+    let entries;
+    try {
+      entries = await readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const ignores = [...parentIgnores];
+    if (opts.ignore) {
+      try {
+        const gi = await readFile(join(currentDir, ".gitignore"), "utf-8");
+        ignores.push({ dir: currentDir, ig: import_ignore.default().add(gi) });
+      } catch {}
+    }
+    const dirs = [];
+    for (const entry of entries) {
+      const name = entry.name;
+      const fullPath = join(currentDir, name);
+      if (name === ".git")
+        continue;
+      if (!opts.hidden && name.startsWith("."))
+        continue;
+      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        dirs.push(entry);
+      } else if (entry.isFile() && name.endsWith(".md")) {
+        const file = await this.read(root, fullPath);
+        if (file)
+          out.push(file);
+      }
+    }
+    const canRecurse = opts.depth === -1 || opts.depth > 0;
+    if (canRecurse) {
+      const nextDepth = opts.depth === -1 ? -1 : opts.depth - 1;
+      for (const dir of dirs) {
+        await this.walk(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+      }
     }
   }
-  static async writeFile(dir, data, content) {
-    const id = data.id?.toString() || "0";
-    const filepath = join(dir, `task-${id.padStart(3, "0")}.md`);
+  static isIgnored(layers, fullPath, isDir) {
+    for (const layer of layers) {
+      const rel = relative(layer.dir, fullPath);
+      if (rel.startsWith("..") || isAbsolute(rel))
+        continue;
+      if (layer.ig.ignores(rel))
+        return true;
+      if (isDir && layer.ig.ignores(rel + "/"))
+        return true;
+    }
+    return false;
+  }
+  static async read(root, filepath) {
+    try {
+      const content = await readFile(filepath, "utf-8");
+      const { data } = import_gray_matter.default(content);
+      const filename = basename(filepath, ".md");
+      const rel = relative(root, filepath);
+      return {
+        ...data,
+        filename,
+        path: rel,
+        abspath: filepath,
+        filepath,
+        content
+      };
+    } catch {
+      return null;
+    }
+  }
+  static async writeFile(target, data, content) {
+    let filepath;
+    if (target.endsWith(".md")) {
+      filepath = target;
+    } else {
+      const name = data.filename || data.file || "task";
+      filepath = join(target, `${name}.md`);
+    }
+    const frontmatter = Object.entries(data).filter(([key]) => !["filename", "path", "abspath", "filepath", "file", "content"].includes(key)).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(`
+`);
     const fileContent = `---
-${Object.entries(data).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(`
-`)}
+${frontmatter}
 ---
 
 ${content}`;
     await writeFile(filepath, fileContent, "utf-8");
+    return filepath;
   }
 }
 
 // src/executor.ts
+import { isAbsolute as isAbsolute2, join as join2 } from "path";
+
 class Executor {
   dir;
   context;
   triggerContext;
-  constructor(dir, context, triggerContext) {
+  readOptions;
+  constructor(dir, context, triggerContext, readOptions = {}) {
     this.dir = dir;
     this.context = context;
     this.triggerContext = triggerContext;
+    this.readOptions = readOptions;
   }
   async execute(query) {
     const ast = new Parser(query).parse();
@@ -4174,14 +4583,14 @@ class Executor {
   async executePipe(node) {
     const result = await this.executeAST(node.expr);
     if (node.fn === "clipboard" && result.data) {
-      const values = result.data.map((f) => f.id || f.title || "").join(`
+      const values = result.data.map((f) => f.filename || f.title || "").join(`
 `);
       await navigator.clipboard?.writeText(values);
     }
     return result;
   }
   async executeSelect(node) {
-    let files = await FileOps.readFiles(this.dir);
+    let files = await FileOps.readFiles(this.dir, this.readOptions);
     if (node.where) {
       files = files.filter((f) => this.evaluateWhere(f, node.where));
     }
@@ -4206,12 +4615,16 @@ class Executor {
     if (node.distinct) {
       files = this.distinct(files, node.fields);
     }
-    if (node.fields[0] !== "*" && !node.fields.some((f) => typeof f === "object")) {
+    const hasAggregates = node.fields.some((f) => typeof f === "object" && f.type === "aggregate");
+    if (node.fields[0] !== "*" || hasAggregates) {
       files = files.map((f) => {
         const selected = {};
         for (const field of node.fields) {
           if (typeof field === "string") {
             selected[field] = f[field];
+          } else if (typeof field === "object" && field.type === "aggregate") {
+            const key = `${field.func}(${field.field})`;
+            selected[key] = f[key];
           }
         }
         return selected;
@@ -4242,18 +4655,18 @@ class Executor {
       return true;
     });
   }
-  async executeJoin(files, join2) {
-    const joinedFiles = await FileOps.readFiles(join2.table);
+  async executeJoin(files, join3) {
+    const joinedFiles = await FileOps.readFiles(join3.table);
     const result = [];
     for (const file of files) {
       for (const joined of joinedFiles) {
         const merged = { ...file };
         for (const [key, value] of Object.entries(joined)) {
           if (key !== "id" && key !== "filepath" && key !== "content") {
-            merged[`${join2.table}.${key}`] = value;
+            merged[`${join3.table}.${key}`] = value;
           }
         }
-        if (this.evaluateWhere(merged, join2.on)) {
+        if (this.evaluateWhere(merged, join3.on)) {
           result.push(merged);
         }
       }
@@ -4261,53 +4674,72 @@ class Executor {
     return result;
   }
   async executeUpdate(node) {
-    const files = await FileOps.readFiles(this.dir);
-    let updated = 0;
-    for (const file of files) {
-      if (node.where && !this.evaluateWhere(file, node.where)) {
-        continue;
-      }
+    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const matches = node.where ? files.filter((f) => this.evaluateWhere(f, node.where)) : files;
+    if (matches.length === 0) {
+      throw new Error(this.noMatchError(node.where));
+    }
+    for (const file of matches) {
       for (const [key, value] of Object.entries(node.set)) {
         file[key] = this.evaluateValue(value);
       }
-      await FileOps.writeFile(this.dir, file, file.content);
-      updated++;
+      await FileOps.writeFile(file.filepath, file, file.content);
     }
     return {
       type: "update",
-      updated
+      updated: matches.length
     };
   }
   async executeCreate(node) {
     const newFile = {
-      id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
     for (const [key, value] of Object.entries(node.fields)) {
       newFile[key] = this.evaluateValue(value);
     }
-    await FileOps.writeFile(this.dir, newFile, "");
+    let target;
+    if (newFile.abspath) {
+      target = newFile.abspath;
+    } else if (newFile.path) {
+      target = this.resolveTargetPath(newFile.path);
+    } else if (newFile.file || newFile.filename) {
+      target = this.dir;
+    } else {
+      throw new Error("create requires path to file");
+    }
+    await FileOps.writeFile(target, newFile, "");
     return {
       type: "create",
       created: 1
     };
   }
   async executeDelete(node) {
-    const files = await FileOps.readFiles(this.dir);
-    let deleted = 0;
-    for (const file of files) {
-      if (node.where && !this.evaluateWhere(file, node.where)) {
-        continue;
-      }
+    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const matches = node.where ? files.filter((f) => this.evaluateWhere(f, node.where)) : files;
+    if (matches.length === 0) {
+      throw new Error(this.noMatchError(node.where));
+    }
+    for (const file of matches) {
       const { unlink } = await import("fs/promises");
       await unlink(file.filepath);
-      deleted++;
     }
     return {
       type: "delete",
-      deleted
+      deleted: matches.length
     };
+  }
+  noMatchError(where) {
+    if (where && where.type === "comparison" && where.field) {
+      const value = where.value && where.value.type === "string" ? where.value.value : "";
+      return `no file with ${where.field} '${value}'`;
+    }
+    return "no files matched the query";
+  }
+  resolveTargetPath(p) {
+    if (isAbsolute2(p))
+      return p;
+    return join2(this.dir, p);
   }
   evaluateWhere(file, where) {
     switch (where.type) {
@@ -4599,6 +5031,9 @@ class Builtins {
   }
 }
 // src/formatter.ts
+var MIN_COLUMN_WIDTH = 3;
+var DEFAULT_TERMINAL_WIDTH = 80;
+
 class Formatter {
   static format(result, format) {
     switch (format) {
@@ -4611,6 +5046,51 @@ class Formatter {
       default:
         return this.toJSON(result);
     }
+  }
+  static toTable(result, terminalWidth = 0) {
+    if (!result.data || result.data.length === 0) {
+      return "No results";
+    }
+    const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
+    const headers = Object.keys(result.data[0]);
+    const rows = result.data.map((row) => headers.map((h) => String(row[h] ?? "")));
+    const rawWidths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length || 0)));
+    const separators = headers.length > 0 ? (headers.length - 1) * 3 : 0;
+    const totalRaw = rawWidths.reduce((a, b) => a + b, 0) + separators;
+    let widths;
+    if (totalRaw <= width) {
+      widths = rawWidths;
+    } else {
+      widths = this.shrink(rawWidths, width - separators);
+    }
+    const headerLine = headers.map((h, i) => pad(h, widths[i])).join(" | ");
+    const separatorLine = widths.map((w) => "-".repeat(w)).join(" | ");
+    const dataLines = rows.map((row) => row.map((cell, i) => pad(cell, widths[i])).join(" | "));
+    return [headerLine, separatorLine, ...dataLines].join(`
+`);
+  }
+  static shrink(rawWidths, budget) {
+    const n = rawWidths.length;
+    if (n === 0)
+      return [];
+    const rawTotal = rawWidths.reduce((a, b) => a + b, 0);
+    const scaled = rawWidths.map((w) => w <= MIN_COLUMN_WIDTH ? w : Math.max(MIN_COLUMN_WIDTH, Math.floor(w / rawTotal * budget)));
+    if (sum(scaled) <= budget)
+      return scaled;
+    let over = sum(scaled) - budget;
+    while (over > 0) {
+      let candidate = -1;
+      for (let i = 0;i < n; i++) {
+        if (scaled[i] > 1 && (candidate === -1 || scaled[i] > scaled[candidate])) {
+          candidate = i;
+        }
+      }
+      if (candidate === -1)
+        break;
+      scaled[candidate]--;
+      over--;
+    }
+    return scaled;
   }
   static toJSON(result) {
     if (result.data) {
@@ -4627,31 +5107,52 @@ class Formatter {
       summary.count = result.count;
     return JSON.stringify(summary, null, 2);
   }
-  static toTable(result) {
-    if (!result.data || result.data.length === 0) {
-      return "No results";
-    }
-    const headers = Object.keys(result.data[0]);
-    const rows = result.data.map((row) => headers.map((h) => String(row[h] || "")));
-    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length || 0)));
-    const headerLine = headers.map((h, i) => h.padEnd(widths[i])).join(" | ");
-    const separator = widths.map((w) => "-".repeat(w)).join(" | ");
-    const dataLines = rows.map((row) => row.map((cell, i) => cell.padEnd(widths[i])).join(" | "));
-    return [headerLine, separator, ...dataLines].join(`
-`);
-  }
   static toCSV(result) {
     if (!result.data || result.data.length === 0) {
       return "";
     }
     const headers = Object.keys(result.data[0]);
     const rows = result.data.map((row) => headers.map((h) => {
-      const val = String(row[h] || "");
+      const val = String(row[h] ?? "");
       return val.includes(",") ? `"${val}"` : val;
     }).join(","));
     return [headers.join(","), ...rows].join(`
 `);
   }
+}
+function pad(value, width) {
+  return value.length > width ? ellipsize(value, width) : value.padEnd(width);
+}
+function ellipsize(value, width) {
+  if (width <= 1)
+    return value.slice(0, width);
+  return value.slice(0, width - 1) + "…";
+}
+function sum(values) {
+  return values.reduce((a, b) => a + b, 0);
+}
+function defaultWidth() {
+  const columns = detectColumns();
+  return columns > 0 ? columns : DEFAULT_TERMINAL_WIDTH;
+}
+function detectColumns() {
+  if (typeof process.stdout.columns === "number" && process.stdout.columns > 0) {
+    return process.stdout.columns;
+  }
+  const envColumns = Number(process.env.COLUMNS);
+  if (Number.isFinite(envColumns) && envColumns > 0) {
+    return envColumns;
+  }
+  try {
+    const { execFileSync } = __require("node:child_process");
+    const out = execFileSync("sh", ["-c", "tput cols < /dev/tty"], {
+      stdio: ["ignore", "pipe", "ignore"]
+    }).toString().trim();
+    const n = Number(out);
+    if (Number.isFinite(n) && n > 0)
+      return n;
+  } catch {}
+  return 0;
 }
 export {
   Parser,

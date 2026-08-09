@@ -2,97 +2,197 @@
 // src/cli.ts
 import { Executor } from './executor';
 import { Formatter, OutputFormat } from './formatter';
+import { VERSION } from './version';
+import { readFile } from 'fs/promises';
+import { createInterface } from 'readline';
+
+const MANUAL = `mdquery ${VERSION}
+
+Query YAML frontmatter of markdown files with a SQL-like language.
+
+Usage:
+  mdquery <query> [options]
+  mdquery [options] < query.txt
+
+Options:
+  -h, --help            Show this manual and exit
+  -v, --version         Print the version and exit
+  --dir=<directory>     Directory to query (default: .)
+  -f, --file=<file>     Query specific markdown file(s); repeatable or comma-separated
+  -d, --depth=<n>       Directory depth: 0 = top level (default), 1 = one subdir, -1 = recursive
+  -H, --hidden          Include hidden files/dirs (except .git)
+  --no-ignore           Do not respect .gitignore
+  -y, --yes             Skip confirmation prompts for update/delete
+  --format=<format>     Output format: json | table | csv (default: json)
+
+Examples:
+  mdquery "select where status = 'done'"
+  mdquery --dir=tasks/ "select order by priority"
+  mdquery -f task.md -f other.md "select title, status"
+  mdquery -d -1 "select filename, path"
+  mdquery -H --no-ignore "select filename"
+  mdquery --format=table "select filename, title"
+  echo "select" | mdquery
+
+Query language (compact):
+  select [distinct] <fields> [where <cond>] [group by <f>] [having <cond>]
+      [order by <f> [asc|desc]] [limit <n>] [offset <n>] [join <dir> on <cond>]
+  update [where <cond>] set <field> = <value>, ...
+  create set <field> = <value>, ...
+  delete [where <cond>]
+
+  where: <field> <op> <value>  combined with and | or, not (<expr>)
+  ops: = != < <= > >= contains starts_with ends_with is [not] empty
+       in (...), any <op>, all <op>, exists (<select>)
+  aggregates: count(*) | sum(f) | avg(f) | min(f) | max(f)
+  pipes: <statement> | <fn>(<args>)
+  triggers: before|after create|update|delete ... deny|set|run
+
+  Every row exposes: filename (basename minus .md), path (relative), abspath (absolute).
+  create targets: set path = 'rel.md' | abspath = '/abs.md' | file = 'name' (in --dir).
+
+Full documentation: docs/syntax.md
+`;
+
+function fail(message: string): never {
+  console.error(`Error: ${message}`);
+  console.error('Try "mdquery --help" for more information.');
+  process.exit(1);
+}
+
+function parseDepth(value: string): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) fail(`Invalid depth: ${value}`);
+  return n;
+}
+
+function splitFiles(value: string): string[] {
+  return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+async function confirm(message: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    fail('confirmation requires a terminal; use -y to skip');
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  const answer = await new Promise<string>(resolve => {
+    rl.question(`${message} (y/N) `, resolve);
+  });
+  rl.close();
+  return answer.trim().toLowerCase() === 'y';
+}
 
 async function main() {
   const args = process.argv.slice(2);
-  
-  if (args.length === 0) {
-    console.error('Usage: mdquery <query> [--format json|table|csv] [--dir <directory>] [--file <file>]');
-    console.error('');
-    console.error('Examples:');
-    console.error('  mdquery "select where status = \'done\'"');
-    console.error('  mdquery --dir=tasks/ "select order by priority"');
-    console.error('  mdquery --file=task.md "select title, status"');
-    console.error('  echo "select" | mdquery');
-    process.exit(1);
+
+  if (args.length === 0 || args.includes('-h') || args.includes('--help')) {
+    console.log(MANUAL);
+    process.exit(0);
   }
-  
+
+  if (args.includes('-v') || args.includes('--version')) {
+    console.log(VERSION);
+    process.exit(0);
+  }
+
   let query = '';
   let format: OutputFormat = 'json';
   let dir = '.';
-  let file: string | undefined;
-  
+  let files: string[] = [];
+  let depth = 0;
+  let hidden = false;
+  let ignore = true;
+  let yes = false;
+
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--format' && args[i + 1]) {
+    const arg = args[i];
+    if (arg === '--format' && args[i + 1]) {
       format = args[i + 1] as OutputFormat;
       i++;
-    } else if (args[i] === '--dir' && args[i + 1]) {
+    } else if (arg === '--dir' && args[i + 1]) {
       dir = args[i + 1];
       i++;
-    } else if (args[i] === '--file' && args[i + 1]) {
-      file = args[i + 1];
+    } else if ((arg === '--file' || arg === '-f') && args[i + 1]) {
+      files.push(...splitFiles(args[i + 1]));
       i++;
-    } else if (args[i].startsWith('--dir=')) {
-      dir = args[i].split('=')[1];
-    } else if (args[i].startsWith('--file=')) {
-      file = args[i].split('=')[1];
-    } else if (args[i].startsWith('--format=')) {
-      format = args[i].split('=')[1] as OutputFormat;
-    } else if (!args[i].startsWith('--')) {
-      query = args[i];
+    } else if ((arg === '--depth' || arg === '-d') && args[i + 1]) {
+      depth = parseDepth(args[i + 1]);
+      i++;
+    } else if (arg === '-H' || arg === '--hidden') {
+      hidden = true;
+    } else if (arg === '--no-ignore') {
+      ignore = false;
+    } else if (arg === '-y' || arg === '--yes') {
+      yes = true;
+    } else if (arg.startsWith('--dir=')) {
+      dir = arg.split('=')[1];
+    } else if (arg.startsWith('--file=')) {
+      files.push(...splitFiles(arg.split('=')[1]));
+    } else if (arg.startsWith('-f=')) {
+      files.push(...splitFiles(arg.slice(3)));
+    } else if (arg.startsWith('--depth=')) {
+      depth = parseDepth(arg.split('=')[1]);
+    } else if (arg.startsWith('-d=')) {
+      depth = parseDepth(arg.split('=')[1]);
+    } else if (arg.startsWith('--format=')) {
+      format = arg.split('=')[1] as OutputFormat;
+    } else if (arg.startsWith('--')) {
+      fail(`Unknown option: ${arg}`);
+    } else if (!query) {
+      query = arg;
     }
   }
-  
+
+  if (!['json', 'table', 'csv'].includes(format)) {
+    fail(`Invalid format: ${format}`);
+  }
+
   // Check for stdin pipe
-  if (!query && process.stdin.isTTY === false) {
+  if (!query && !process.stdin.isTTY) {
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) {
       chunks.push(chunk);
     }
     query = Buffer.concat(chunks).toString().trim();
   }
-  
+
   if (!query) {
-    console.error('Error: No query provided');
-    process.exit(1);
+    fail('No query provided');
   }
-  
-  // If file is specified, create a temporary directory-like context
-  const executor = new Executor(dir);
-  
-  try {
-    let result;
-    
-    if (file) {
-      // Read single file and execute query
-      const { readFile } = await import('fs/promises');
-      const { join } = await import('path');
-      const matter = (await import('gray-matter')).default;
-      
-      const content = await readFile(file, 'utf-8');
-      const { data } = matter(content);
-      
-      // Create a temporary executor with the file's data
-      const tempExecutor = new Executor(dir);
-      const fileData = {
-        id: data.id?.toString() || '0',
-        filepath: file,
-        content,
-        ...data
-      };
-      
-      // For single file, we still need to execute the query
-      // This is a simplified version - in production, you'd want to handle this more robustly
-      result = await tempExecutor.execute(query);
-    } else {
-      result = await executor.execute(query);
+
+  // Confirmation for destructive operations
+  const op = query.trim().split(/\s+/)[0].toLowerCase();
+  if ((op === 'update' || op === 'delete') && !yes) {
+    const ok = await confirm(`are you sure you want to ${op}?`);
+    if (!ok) {
+      console.error('Aborted.');
+      process.exit(1);
     }
-    
+  }
+
+  const executor = new Executor(dir, undefined, undefined, {
+    depth,
+    hidden,
+    ignore,
+    files: files.length > 0 ? files : undefined
+  });
+
+  try {
+    if (files.length > 0) {
+      // Validate each file parses as markdown frontmatter
+      const matter = (await import('gray-matter')).default;
+      for (const f of files) {
+        const content = await readFile(f, 'utf-8');
+        matter(content);
+      }
+    }
+
+    const result = await executor.execute(query);
+
     const output = Formatter.format(result, format);
     console.log(output);
   } catch (error: any) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
+    fail(error.message);
   }
 }
 

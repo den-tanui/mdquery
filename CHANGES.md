@@ -1,0 +1,4 @@
+- [ ] Mdquery --help info
+- [ ] improved table view - use the terminal width
+- [ ] install scripts
+- [ ] Docs with syntax, README, wiki

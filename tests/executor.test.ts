@@ -119,7 +119,7 @@ This is the third test task.
   describe('CREATE', () => {
     it('creates a new task', async () => {
       const executor = new Executor(FIXTURES_DIR);
-      const result = await executor.execute('create title = "New Task" status = "todo" projectId = 1');
+      const result = await executor.execute('create title = "New Task" status = "todo" projectId = 1 file = "new-task"');
       expect(result.created).toBe(1);
       
       // Verify creation
@@ -128,6 +128,11 @@ This is the third test task.
       
       // Clean up
       await executor.execute('delete where title = "New Task"');
+    });
+
+    it('create without a target errors', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      await expect(executor.execute('create title = "No Target"')).rejects.toThrow('create requires path to file');
     });
   });
 
@@ -142,7 +147,7 @@ This is the third test task.
       expect(selectResult.data).toHaveLength(2);
       
       // Recreate for other tests
-      await executor.execute('create id = 3 title = "Third Task" status = "doing" projectId = 2 priority = 1');
+      await executor.execute('create id = 3 title = "Third Task" status = "doing" projectId = 2 priority = 1 file = "task-003"');
     });
   });
 });
