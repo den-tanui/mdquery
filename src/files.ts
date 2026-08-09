@@ -4,6 +4,12 @@ import { join, basename, dirname, relative, isAbsolute, resolve } from 'path';
 import matter from 'gray-matter';
 import ignore from 'ignore';
 
+export interface Section {
+  level: number;
+  title: string;
+  content: string;
+}
+
 export interface FileData {
   id?: string;
   filename: string;
@@ -11,6 +17,8 @@ export interface FileData {
   abspath: string;
   filepath: string;
   content: string;
+  sections?: Map<string, Section>;
+  'section.TODO'?: string;
   [key: string]: any;
 }
 
@@ -144,6 +152,7 @@ export class FileOps {
       const { data } = matter(content);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
+      const sections = parseSections(content);
 
       return {
         ...data,
@@ -151,7 +160,8 @@ export class FileOps {
         path: rel,
         abspath: filepath,
         filepath,
-        content
+        content,
+        sections
       };
     } catch {
       return null;
@@ -165,6 +175,7 @@ export class FileOps {
       const { data } = matter(content);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
+      const sections = parseSections(content);
 
       return {
         ...data,
@@ -172,7 +183,8 @@ export class FileOps {
         path: rel,
         abspath: filepath,
         filepath,
-        content
+        content,
+        sections
       };
     } catch {
       return null;
@@ -282,4 +294,72 @@ function stripFrontmatter(content: string): string {
   const end = content.indexOf('\n---', 3);
   if (end === -1) return content;
   return content.slice(end + 4).replace(/^\n+/, '');
+}
+
+export function parseSections(content: string): Map<string, Section> {
+  const sections = new Map<string, Section>();
+  const lines = content.split('\n');
+  let currentSection: Section | null = null;
+  let currentContent: string[] = [];
+  
+  for (const line of lines) {
+    const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    
+    if (headerMatch) {
+      // Save previous section
+      if (currentSection) {
+        currentSection.content = currentContent.join('\n').trim();
+        sections.set(currentSection.title, currentSection);
+      }
+      
+      // Start new section
+      const level = headerMatch[1].length;
+      const title = headerMatch[2].trim();
+      currentSection = { level, title, content: '' };
+      currentContent = [];
+    } else if (currentSection) {
+      currentContent.push(line);
+    }
+  }
+  
+  // Save last section
+  if (currentSection) {
+    currentSection.content = currentContent.join('\n').trim();
+    sections.set(currentSection.title, currentSection);
+  }
+  
+  return sections;
+}
+
+export function formatTocAsTree(sections: Section[]): string {
+  if (sections.length === 0) return '';
+  
+  const lines: string[] = [];
+  const stack: number[] = [];
+  
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const isLast = i === sections.length - 1;
+    const prefix = stack.map((_, idx) => idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   ').join('');
+    
+    lines.push(`${prefix}${section.title}`);
+    
+    // Update stack for next iteration
+    if (i < sections.length - 1) {
+      const nextSection = sections[i + 1];
+      if (nextSection.level > section.level) {
+        stack.push(section.level);
+      } else if (nextSection.level < section.level) {
+        while (stack.length > 0 && stack[stack.length - 1] >= nextSection.level) {
+          stack.pop();
+        }
+      }
+    }
+  }
+  
+  return lines.join('\n');
+}
+
+export function formatTocIndented(sections: Section[]): string {
+  return sections.map(s => '  '.repeat(s.level - 1) + s.title).join('\n');
 }

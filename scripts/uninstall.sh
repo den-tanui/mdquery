@@ -1,13 +1,22 @@
-#!/usr/bin/env bash
-# Remove the mdquery binary installed by scripts/install.sh
-set -euo pipefail
+#!/bin/bash
+set -e
 
-target_dir="${MDQUERY_INSTALL_DIR:-$HOME/.local/bin}"
-target="$target_dir/mdquery"
+# mdquery uninstaller
+# Usage: bash scripts/uninstall.sh
 
-if [[ -f "$target" ]]; then
-  rm -f "$target"
-  echo "Removed $target"
+BINARY_NAME="mdquery"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
+BINARY_PATH="${INSTALL_DIR}/${BINARY_NAME}"
+
+echo "Uninstalling ${BINARY_NAME}..."
+echo ""
+
+if [ -f "$BINARY_PATH" ]; then
+  rm "$BINARY_PATH"
+  echo "Removed ${BINARY_PATH}"
 else
-  echo "mdquery is not installed at $target" >&2
+  echo "Note: ${BINARY_PATH} not found"
 fi
+
+echo ""
+echo "Uninstall complete!"

@@ -1,4 +1,6 @@
 // src/builtins.ts
+import { formatTocAsTree, formatTocIndented, Section } from './files';
+
 export class Builtins {
   static now(): string {
     return new Date().toISOString();
@@ -123,6 +125,37 @@ export class Builtins {
     return context?.projectTitle || '';
   }
 
+  static fields(context?: Record<string, any>, includeValues?: boolean): string[] | Record<string, any> {
+    if (!context) return includeValues ? {} : [];
+    
+    // Filter out internal fields
+    const internalFields = ['filename', 'path', 'abspath', 'filepath', 'content', 'sections'];
+    const fields = Object.keys(context).filter(key => !internalFields.includes(key));
+    
+    if (includeValues) {
+      const result: Record<string, any> = {};
+      for (const key of fields) {
+        result[key] = context[key];
+      }
+      return result;
+    }
+    
+    return fields;
+  }
+
+  static toc(context?: Record<string, any>, structured?: boolean): string[] | Section[] {
+    if (!context?.sections) return [];
+    
+    const sections: Section[] = Array.from(context.sections.values());
+    
+    if (structured) {
+      return sections;
+    }
+    
+    // Return flat list with indentation
+    return formatTocIndented(sections).split('\n');
+  }
+
   static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[]): any {
     const builtin = (this as any)[name];
     if (!builtin) {
@@ -151,6 +184,14 @@ export class Builtins {
     
     if (name === 'projectName') {
       return builtin(context);
+    }
+    
+    if (name === 'fields') {
+      return builtin(context, args[0]);
+    }
+    
+    if (name === 'toc') {
+      return builtin(context, args[0]);
     }
     
     return builtin(...args);

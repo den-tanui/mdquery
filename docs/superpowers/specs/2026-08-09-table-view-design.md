@@ -41,7 +41,7 @@ Fallback if a maintained renderer is later preferred: **`cli-table3`** (single d
 1. Every table fits the given terminal width (same guarantee the current tests assert).
 2. No single column starves its neighbors; every column keeps a readable floor.
 3. Multi-line cell values render as the first line, ellipsized with `…` when it exceeds the column width.
-4. Absent fields render as empty cells, aligning with ruki presence semantics.
+4. Absent fields render as empty cells, aligning with mdquery presence semantics.
 5. JSON/CSV outputs unchanged.
 6. New `--card` flag for expanded view with full content display.
 
@@ -272,4 +272,4 @@ Extend `tests/formatter.test.ts`:
 
 - Word-wrap across rows (compact mode).
 - `| run(...)` / `| clipboard()` pipe rendering (separate CLI/pipe work).
-- Data-side presence semantics are speced in the separate ruki-semantics design; this spec only defines how table cells render values.
+- Data-side presence semantics are speced in the separate mdquery-semantics design; this spec only defines how table cells render values.

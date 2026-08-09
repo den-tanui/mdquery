@@ -1,4 +1,4 @@
-# Ruki-Inspired Semantics & Expressions — Design
+# mdquery Semantics & Expressions — Design
 
 Date: 2026-08-09
 Status: Approved for implementation
@@ -14,7 +14,7 @@ mdquery models markdown frontmatter as rows of a "table" but has no notion of an
 - `delete` without a `where` deletes every file in the directory.
 - Identity fields are silently dropped on write (`files.ts:160` filter) rather than rejected.
 
-This design ports the presence-aware, expression-capable semantics of the `ruki` language (tiki docs) into mdquery (which stays schema-agnostic — every frontmatter key is a field).
+This design implements presence-aware, expression-capable semantics in mdquery (which stays schema-agnostic — every frontmatter key is a field).
 
 ## Scope
 
@@ -29,7 +29,7 @@ Deferred (separate designs): the trigger execution engine (currently only parsed
 2. `empty` as the canonical "clear/unset": `set x = empty` removes the frontmatter key; list arithmetic keeps the key but writes `[]`.
 3. No silently-wrong results: `exists(select ...)` and `count(select ...)` actually execute; subquery predicates support `outer.field` correlation.
 4. Lists become first-class values in `create`/`set`/`where`.
-5. Destructive/safety rules match ruki-spec: `delete` requires `where`.
+5. Destructive/safety rules: `delete` requires `where`.
 
 ## Behavioral contracts (presence)
 
@@ -49,7 +49,7 @@ For an absent field `x`, define `present(f, x) = hasOwnProperty(f, x)`:
 
 Decisions:
 
-- Ordering comparisons against an absent field are **safe no-match** (no error). This keeps sparse frontmatter queryable and mirrors how `order by` already handles missing keys (`|| ''`). If a stricter behavior (error like ruki) is later wanted it is isolated in `evaluateComparison`.
+- Ordering comparisons against an absent field are **safe no-match** (no error). This keeps sparse frontmatter queryable and mirrors how `order by` already handles missing keys (`|| ''`). If a stricter behavior (error on absent) is later wanted it is isolated in `evaluateComparison`.
 - `is empty` keeps accepting present-but-zero values (`0`, `false`, `''`, `[]`) as empty — it is the "zero-ish" check. `has(x)` is what you use to ask "declared at all".
 - `= empty`: treat absent as empty, and also match present empty/zero values (consistent with `is empty`).
 
@@ -63,7 +63,7 @@ Decisions:
 
 ### Binary `+` / `-`
 
-Left-associative, added in `parseValue` after a primary value (only one precedence level, matching ruki):
+Left-associative, added in `parseValue` after a primary value (only one precedence level):
 
 - number `+`/`-` number → number
 - string + string → string (concat)
@@ -126,10 +126,10 @@ Any other operand combination → parser/executor error (e.g. `1 + "a"`).
 
 - Existing tests: `is empty` semantics unchanged for present values; the presence table only affects absent fields. Existing fixture rows declare consistent keys, so contracts stay green except for intentionally changed behaviors listed below.
 - Intentional behavior changes:
-  1. `delete` without `where` now errors (was: delete-all). Returning to ruki's require-where rule.
+  1. `delete` without `where` now errors (was: delete-all). `delete` requires `where`.
   2. `set x = null` no longer writes `x: null`; `set x = empty` is the clearing idiom. `null` literal still parses as a value for odd frontmatter round-trips.
   3. Identity-field writes in `update` now error instead of silently dropping.
-  4. `x all c` on an **absent** field returns `true` (vacuous truth, per ruki); today `all` returns `false` for any non-array. Present-but-empty arrays were already `true` via `every()`. `any` on absent stays `false`.
+  4. `x all c` on an **absent** field returns `true` (vacuous truth); today `all` returns `false` for any non-array. Present-but-empty arrays were already `true` via `every()`. `any` on absent stays `false`.
 - JSON / CSV / table output of existing queries unchanged for present data.
 
 ## Docs

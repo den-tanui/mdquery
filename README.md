@@ -22,6 +22,11 @@ $ mdquery "select count(*) group by status"
 - Single markdown file or a whole directory
 - Recursive search with depth control, hidden-file and `.gitignore` awareness
 - Every row exposes `filename`, `path` (relative), and `abspath` (absolute)
+- Presence-aware queries with `has()`, `is empty`, `is not empty`
+- Subqueries with `count(select ...)`, `exists(select ...)`, and `outer.field` correlation
+- Set arithmetic: `+` (union), `-` (difference) on lists
+- Negated operators: `not contains`, `not starts_with`, `not ends_with`
+- Triggers: before/after create/update/delete with deny, set, run
 
 ## Install
 

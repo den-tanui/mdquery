@@ -2,7 +2,7 @@
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
 import { isAbsolute, join } from 'path';
-import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode } from './types';
+import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode, ExecutorHooks } from './types';
 
 export interface QueryResult {
   type: 'select' | 'update' | 'create' | 'delete';
@@ -24,17 +24,20 @@ export class Executor {
   private triggerContext?: TriggerContext;
   private readOptions: ReadOptions;
   private currentFile?: FileData;
+  private hooks?: ExecutorHooks;
 
   constructor(
     dir: string,
     context?: Record<string, any>,
     triggerContext?: TriggerContext,
-    readOptions: ReadOptions = {}
+    readOptions: ReadOptions = {},
+    hooks?: ExecutorHooks
   ) {
     this.dir = dir;
     this.context = context;
     this.triggerContext = triggerContext;
     this.readOptions = readOptions;
+    this.hooks = hooks;
   }
 
   async execute(query: string): Promise<QueryResult> {
@@ -59,6 +62,33 @@ export class Executor {
     }
   }
 
+  private async readFilesWithHooks(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
+    const files = await FileOps.readFiles(dir, options);
+    
+    // Apply onAfterRead hook if provided
+    if (this.hooks?.onAfterRead) {
+      return files.map(f => this.hooks!.onAfterRead!(f));
+    }
+    
+    return files;
+  }
+
+  private resolveField(file: FileData, field: string): any {
+    // Handle section.<name> virtual fields
+    if (field.startsWith('section.')) {
+      const sectionName = field.slice(8);
+      return file.sections?.get(sectionName)?.content || null;
+    }
+    
+    // Handle toc field
+    if (field === 'toc') {
+      return file.sections ? Array.from(file.sections.values()) : [];
+    }
+    
+    // Default: return regular field
+    return (file as any)[field];
+  }
+
   private async executePipe(node: any): Promise<QueryResult> {
     const result = await this.executeAST(node.expr);
     
@@ -72,7 +102,7 @@ export class Executor {
   }
 
   private async executeSelect(node: SelectNode): Promise<QueryResult> {
-    let files = await FileOps.readFiles(this.dir, this.readOptions);
+    let files = await this.readFilesWithHooks(this.dir, this.readOptions);
 
     // WHERE
     if (node.where) {
@@ -162,7 +192,7 @@ export class Executor {
 
   private async executeJoin(files: FileData[], join: any): Promise<FileData[]> {
     // Load the joined table
-    const joinedFiles = await FileOps.readFiles(join.table);
+    const joinedFiles = await this.readFilesWithHooks(join.table);
     
     // Perform the join
     const result: FileData[] = [];
@@ -190,7 +220,7 @@ export class Executor {
   }
 
   private async executeUpdate(node: UpdateNode): Promise<QueryResult> {
-    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const files = await this.readFilesWithHooks(this.dir, this.readOptions);
     const matches = node.where
       ? files.filter(f => this.evaluateWhere(f, node.where))
       : files;
@@ -213,6 +243,11 @@ export class Executor {
       // Update fields
       for (const [key, value] of Object.entries(node.set)) {
         (file as any)[key] = this.evaluateValue(value);
+      }
+
+      // Call hook if provided
+      if (this.hooks?.onBeforeWrite) {
+        this.hooks.onBeforeWrite(file, 'update');
       }
 
       // Write back to the original file path
@@ -248,6 +283,11 @@ export class Executor {
       throw new Error('create requires path to file');
     }
 
+    // Call hook if provided
+    if (this.hooks?.onBeforeWrite) {
+      this.hooks.onBeforeWrite(newFile, 'create');
+    }
+
     await FileOps.writeFile(target, newFile, '');
 
     return {
@@ -262,7 +302,7 @@ export class Executor {
       throw new Error('delete requires a where clause');
     }
 
-    const files = await FileOps.readFiles(this.dir, this.readOptions);
+    const files = await this.readFilesWithHooks(this.dir, this.readOptions);
     const matches = node.where ? files.filter(f => this.evaluateWhere(f, node.where)) : files;
 
     if (matches.length === 0) {
@@ -392,6 +432,12 @@ export class Executor {
   }
 
   private evaluateHas(file: FileData, field: string): boolean {
+    // Handle section.<name> virtual fields
+    if (field.startsWith('section.')) {
+      const sectionName = field.slice(8);
+      return file.sections?.has(sectionName) || false;
+    }
+    
     return (file as any)[field] !== undefined;
   }
 
@@ -478,10 +524,10 @@ export class Executor {
       } else if (prefix === 'old' && this.triggerContext.old) {
         fieldValue = (this.triggerContext.old as any)[fieldName];
       } else {
-        fieldValue = (file as any)[field];
+        fieldValue = this.resolveField(file, field);
       }
     } else {
-      fieldValue = (file as any)[field];
+      fieldValue = this.resolveField(file, field);
     }
 
     const compareValue = this.evaluateValue(value);
@@ -609,15 +655,24 @@ export class Executor {
   }
 
   private evaluateValue(value: ValueNode): any {
-    if (value.type === 'string') return value.value;
-    if (value.type === 'number') return value.value;
-    if (value.type === 'boolean') return value.value;
-    if (value.type === 'null') return null;
-    if (value.type === 'empty') return null;
-    if (value.type === 'field') return this.currentFile ? (this.currentFile as any)[value.name] : null;
-    if (value.type === 'array') return value.items.map(item => this.evaluateValue(item));
-    if (value.type === 'binary') return this.evaluateBinary(value);
-    return value;
+    let result: any;
+    
+    if (value.type === 'string') result = value.value;
+    else if (value.type === 'number') result = value.value;
+    else if (value.type === 'boolean') result = value.value;
+    else if (value.type === 'null') result = null;
+    else if (value.type === 'empty') result = null;
+    else if (value.type === 'field') result = this.currentFile ? this.resolveField(this.currentFile, value.name) : null;
+    else if (value.type === 'array') result = value.items.map(item => this.evaluateValue(item));
+    else if (value.type === 'binary') result = this.evaluateBinary(value);
+    else result = value;
+    
+    // Call hook if provided
+    if (this.hooks?.onEvaluateValue && result !== undefined) {
+      result = this.hooks.onEvaluateValue(result, '');
+    }
+    
+    return result;
   }
 
   private evaluateBinary(expr: { op: '+' | '-'; left: ValueNode; right: ValueNode }): any {

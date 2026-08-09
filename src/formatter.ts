@@ -36,7 +36,14 @@ export class Formatter {
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
 
     const headers = Object.keys(result.data[0]);
-    const rows = result.data.map(row => headers.map(h => String((row as any)[h] ?? '')));
+    const rows = result.data.map(row => headers.map(h => {
+      const value = (row as any)[h];
+      // Format toc and section fields specially
+      if (h === 'toc' || h.startsWith('section.')) {
+        return formatTocForTable(value);
+      }
+      return String(value ?? '');
+    }));
 
     // Apply semantic caps to cell values (first-line extraction + truncation)
     const cappedRows = rows.map(row =>
@@ -103,13 +110,15 @@ export class Formatter {
     for (const row of result.data) {
       const filename = String((row as any).filename ?? 'unknown');
       const content = String((row as any).content ?? '');
+      const toc = (row as any).toc;
       const hasExplicitContent = headers.includes('content');
+      const hasExplicitToc = headers.includes('toc');
 
       // Header line
       const cardLines: string[] = [`--- ${filename} ---`];
 
-      // Metadata fields (excluding content)
-      const metaFields = headers.filter(h => h !== 'content');
+      // Metadata fields (excluding content and toc)
+      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc');
       const metaLines: string[] = [];
       let currentLine = '';
 
@@ -153,6 +162,13 @@ export class Formatter {
       }
 
       cardLines.push(...expandedLines);
+
+      // TOC block
+      if (hasExplicitToc && toc) {
+        cardLines.push('');  // Empty line before TOC
+        cardLines.push('toc:');
+        cardLines.push(formatTocForCard(toc));
+      }
 
       // Content block
       if (hasExplicitContent) {
@@ -264,6 +280,47 @@ function formatFieldValue(field: string, value: string): string {
     return firstLine.length > 60 ? ellipsize(firstLine, 60) : firstLine;
   }
   return value;
+}
+
+function formatTocForTable(value: any): string {
+  if (!Array.isArray(value)) return String(value);
+  
+  // Handle structured TOC (array of Section objects)
+  if (value.length > 0 && value[0]?.level !== undefined) {
+    return value.map((s: any) => '  '.repeat(s.level - 1) + s.title).join('\n');
+  }
+  
+  // Handle flat TOC (already formatted with indentation)
+  return value.join('\n');
+}
+
+function formatTocForCard(value: any): string {
+  if (!Array.isArray(value)) return String(value);
+  
+  // Handle structured TOC (array of Section objects)
+  if (value.length > 0 && value[0]?.level !== undefined) {
+    return formatTree(value.map((s: any) => ({ level: s.level, title: s.title })));
+  }
+  
+  // Handle flat TOC (already formatted with indentation)
+  return value.join('\n');
+}
+
+function formatTree(items: { level: number; title: string }[]): string {
+  if (items.length === 0) return '';
+  
+  const lines: string[] = [];
+  
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const indent = '  '.repeat(item.level - 1);
+    const isLast = i === items.length - 1;
+    const prefix = isLast ? '└── ' : '├── ';
+    
+    lines.push(`${indent}${prefix}${item.title}`);
+  }
+  
+  return lines.join('\n');
 }
 
 function sum(values: number[]): number {

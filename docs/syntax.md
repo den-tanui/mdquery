@@ -2,6 +2,34 @@
 
 `mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path). `id` is a plain frontmatter field — it is only present when the file declares it.
 
+## What's implemented
+
+mdquery is feature-complete for CLI use with arbitrary markdown files:
+
+- Full CRUD: SELECT, UPDATE, CREATE, DELETE
+- WHERE with comparison, string, membership, and quantifier operators
+- GROUP BY, HAVING, ORDER BY, LIMIT, OFFSET
+- JOIN across directories
+- Subqueries: `count(select ...)`, `exists(select ...)`
+- Correlated subqueries: `outer.field`
+- Triggers: before/after with deny, set, run
+- Pipes: `clipboard()`
+- Builtins: now, today, len, upper, lower, trim, etc.
+- Aggregates: count, sum, avg, min, max
+- Table view: compact + card modes
+
+## Not yet implemented (projext layer)
+
+These features are planned for projext library mode:
+
+- Date/duration types: `2026-03-25`, `2day`
+- Date arithmetic: `date - date`, `date + duration`
+- Type system with strict coercion
+- Schema validation
+- `has()` with qualified fields: `has(new.status)`
+- Pipe `| run()` action
+- Time triggers: `every 1hour ...`
+
 ## Statements
 
 ### SELECT

@@ -187,3 +187,18 @@ export interface Schema {
   fields: Record<string, FieldSpec>;
   fieldOrder: string[];
 }
+
+// Hooks for extending Executor behavior
+export interface ExecutorHooks {
+  // Transform AST before execution
+  onBeforeExecute?: (ast: ASTNode) => ASTNode;
+  
+  // Validate/coerce values during evaluation
+  onEvaluateValue?: (value: any, field: string) => any;
+  
+  // Validate before writing (create/update/delete)
+  onBeforeWrite?: (file: any, operation: 'create' | 'update' | 'delete') => void;
+  
+  // Transform after reading
+  onAfterRead?: (file: any) => any;
+}
