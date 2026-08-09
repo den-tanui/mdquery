@@ -117,7 +117,10 @@ export type ValueNode =
   | { type: 'number'; value: number }
   | { type: 'boolean'; value: boolean }
   | { type: 'null'; value: null }
+  | { type: 'empty' }
+  | { type: 'field'; name: string }
   | { type: 'array'; items: ValueNode[] }
+  | { type: 'binary'; op: '+' | '-'; left: ValueNode; right: ValueNode }
   | BuiltinNode
   | SelectNode;
 

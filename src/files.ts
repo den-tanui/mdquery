@@ -52,6 +52,22 @@ export class FileOps {
     return files;
   }
 
+  static readFilesSync(dir: string, options: ReadOptions = {}): FileData[] {
+    if (options.files && options.files.length > 0) {
+      const files: FileData[] = [];
+      for (const f of options.files) {
+        const file = this.readSync(dir, f);
+        if (file) files.push(file);
+      }
+      return files;
+    }
+
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const files: FileData[] = [];
+    this.walkSync(dir, dir, opts, [], files);
+    return files;
+  }
+
   private static async walk(
     root: string,
     currentDir: string,
@@ -139,6 +155,89 @@ export class FileOps {
       };
     } catch {
       return null;
+    }
+  }
+
+  private static readSync(root: string, filepath: string): FileData | null {
+    try {
+      const { readFileSync } = require('fs');
+      const content = readFileSync(filepath, 'utf-8');
+      const { data } = matter(content);
+      const filename = basename(filepath, '.md');
+      const rel = relative(root, filepath);
+
+      return {
+        ...data,
+        filename,
+        path: rel,
+        abspath: filepath,
+        filepath,
+        content
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private static walkSync(
+    root: string,
+    currentDir: string,
+    opts: Required<Omit<ReadOptions, 'files'>>,
+    parentIgnores: IgnoreLayer[],
+    out: FileData[]
+  ): void {
+    const { readdirSync } = require('fs');
+    let entries;
+    try {
+      entries = readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    // Load this directory's .gitignore (if any), layered on top of parents
+    const ignores = [...parentIgnores];
+    if (opts.ignore) {
+      try {
+        const { readFileSync } = require('fs');
+        const gi = readFileSync(join(currentDir, '.gitignore'), 'utf-8');
+        ignores.push({ dir: currentDir, ig: ignore().add(gi) });
+      } catch {
+        // no .gitignore here
+      }
+    }
+
+    const dirs: import('fs').Dirent[] = [];
+
+    for (const entry of entries) {
+      const name = entry.name;
+      const fullPath = join(currentDir, name);
+
+      // Always skip .git
+      if (name === '.git') continue;
+
+      // Skip hidden entries unless requested
+      if (!opts.hidden && name.startsWith('.')) continue;
+
+      // Respect .gitignore (dirs and files)
+      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        dirs.push(entry);
+      } else if (entry.isFile() && name.endsWith('.md')) {
+        const file = this.readSync(root, fullPath);
+        if (file) out.push(file);
+      }
+    }
+
+    // Recurse into subdirectories up to the depth limit
+    const canRecurse = opts.depth === -1 || opts.depth > 0;
+    if (canRecurse) {
+      const nextDepth = opts.depth === -1 ? -1 : opts.depth - 1;
+      for (const dir of dirs) {
+        this.walkSync(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+      }
     }
   }
 

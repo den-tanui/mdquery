@@ -337,6 +337,26 @@ export class Parser {
       if (['count', 'sum', 'avg', 'min', 'max'].includes(func)) {
         this.advance(); // skip function name
         this.expect('LPAREN');
+        
+        // Check for subquery: count(select ...)
+        if (this.current().type === 'SELECT') {
+          const subquery = this.parseSelect();
+          this.expect('RPAREN');
+          
+          // Parse optional comparison: count(select ...) > n
+          let op: string | undefined;
+          let value: ValueNode | undefined;
+          if (this.current().type === 'EQUALS' || this.current().type === 'NOT_EQUALS' ||
+              this.current().type === 'LT' || this.current().type === 'GT' ||
+              this.current().type === 'LTE' || this.current().type === 'GTE') {
+            op = this.getOperator();
+            this.advance();
+            value = this.parseValue();
+          }
+          
+          return { type: 'comparison', field: `${func}(select)`, fieldPath: `${func}(select)`, op, value, subquery };
+        }
+        
         let field = '*';
         if (this.current().type === 'IDENTIFIER') {
           field = this.current().value;
@@ -470,6 +490,74 @@ export class Parser {
     if (token.type === 'IDENTIFIER' && token.value.toLowerCase() === 'null') {
       this.advance();
       return { type: 'null', value: null };
+    }
+
+    if (token.type === 'EMPTY') {
+      this.advance();
+      return { type: 'empty' };
+    }
+
+    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
+      const result = this.parseBuiltin();
+      return this.parseBinarySuffix(result);
+    }
+
+    if (token.type === 'IDENTIFIER') {
+      this.advance();
+      return this.parseBinarySuffix({ type: 'field', name: token.value });
+    }
+
+    // Array literal [a, b, c]
+    if (token.type === 'LBRACKET') {
+      this.advance(); // skip [
+      const items: ValueNode[] = [];
+      while (this.current().type !== 'RBRACKET') {
+        items.push(this.parseValue());
+        if (this.current().type === 'COMMA') this.advance();
+      }
+      this.expect('RBRACKET');
+      return this.parseBinarySuffix({ type: 'array', items });
+    }
+
+    throw new Error(`Unexpected token in value: ${token.value}`);
+  }
+
+  private parseBinarySuffix(left: ValueNode): ValueNode {
+    while (this.current().type === 'PLUS' || this.current().type === 'MINUS') {
+      const op = this.current().type === 'PLUS' ? '+' : '-';
+      this.advance();
+      const right = this.parsePrimary();
+      left = { type: 'binary', op, left, right };
+    }
+    return left;
+  }
+
+  private parsePrimary(): ValueNode {
+    const token = this.current();
+
+    if (token.type === 'STRING') {
+      this.advance();
+      return { type: 'string', value: token.value };
+    }
+
+    if (token.type === 'NUMBER') {
+      this.advance();
+      return { type: 'number', value: parseInt(token.value) };
+    }
+
+    if (token.type === 'BOOLEAN') {
+      this.advance();
+      return { type: 'boolean', value: token.value === 'true' };
+    }
+
+    if (token.type === 'IDENTIFIER' && token.value.toLowerCase() === 'null') {
+      this.advance();
+      return { type: 'null', value: null };
+    }
+
+    if (token.type === 'EMPTY') {
+      this.advance();
+      return { type: 'empty' };
     }
 
     if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {

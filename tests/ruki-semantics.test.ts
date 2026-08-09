@@ -156,4 +156,57 @@ Task without tags.
       await expect(executor.execute('delete')).rejects.toThrow('delete requires a where clause');
     });
   });
+
+  describe('set arithmetic', () => {
+    it('parses number addition in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      // This tests that the parser can handle expressions in set clauses
+      const result = await executor.execute('update where id = 1 set priority = priority + 1');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses number subtraction in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set priority = priority - 1');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses string concatenation in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set title = title + " updated"');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses array union in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set tags = tags + ["newtag"]');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses array difference in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set tags = tags - ["auth"]');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses array add element in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set tags = tags + "newtag"');
+      expect(result.updated).toBe(1);
+    });
+
+    it('parses array remove element in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set tags = tags - "auth"');
+      expect(result.updated).toBe(1);
+    });
+  });
+
+  describe('empty literal', () => {
+    it('clears field with empty literal in set clause', async () => {
+      const executor = new Executor(FIXTURES_DIR);
+      const result = await executor.execute('update where id = 1 set projectId = empty');
+      expect(result.updated).toBe(1);
+    });
+  });
 });

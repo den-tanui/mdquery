@@ -23,6 +23,7 @@ export class Executor {
   private context?: Record<string, any>;
   private triggerContext?: TriggerContext;
   private readOptions: ReadOptions;
+  private currentFile?: FileData;
 
   constructor(
     dir: string,
@@ -206,6 +207,9 @@ export class Executor {
     }
 
     for (const file of matches) {
+      // Set current file for field references
+      this.currentFile = file;
+
       // Update fields
       for (const [key, value] of Object.entries(node.set)) {
         (file as any)[key] = this.evaluateValue(value);
@@ -417,7 +421,27 @@ export class Executor {
     }
   }
 
-  private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string): boolean {
+  private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string, subquery?: any): boolean {
+    // Handle count(select ...) with outer field correlation
+    if (field === 'count(select)' && subquery) {
+      const compareValue = value ? this.evaluateValue(value) : null;
+      const count = this.evaluateSubqueryCount(file, subquery);
+      
+      if (!op || compareValue === null) {
+        return count > 0;
+      }
+      
+      switch (op) {
+        case '=': return count === compareValue;
+        case '!=': return count !== compareValue;
+        case '<': return count < compareValue;
+        case '>': return count > compareValue;
+        case '<=': return count <= compareValue;
+        case '>=': return count >= compareValue;
+        default: return false;
+      }
+    }
+
     // Handle aggregate functions in comparisons (e.g., count(*) > 1)
     const aggregateMatch = field.match(/^(count|sum|avg|min|max)\((.+)\)$/);
     if (aggregateMatch) {
@@ -515,13 +539,129 @@ export class Executor {
     }
   }
 
+  private evaluateSubqueryCount(file: FileData, subquery: any): number {
+    // Run the subquery and count results
+    try {
+      // For correlated subqueries with outer.field references,
+      // we need to replace outer.field with actual values
+      if (subquery.where) {
+        const correlatedWhere = this.correlateSubquery(subquery.where, file);
+        subquery = { ...subquery, where: correlatedWhere };
+      }
+      
+      // Create a new executor for the subquery
+      const subExecutor = new Executor(this.dir, this.context, this.triggerContext, this.readOptions);
+      const result = subExecutor.executeSubquerySync(subquery);
+      return result;
+    } catch {
+      return 0;
+    }
+  }
+
+  private correlateSubquery(where: any, file: FileData): any {
+    // Replace outer.field references with actual values from the outer file
+    if (where.type === 'comparison') {
+      if (where.fieldPath && where.fieldPath.startsWith('outer.')) {
+        const outerField = where.fieldPath.slice(6); // Remove 'outer.' prefix
+        const outerValue = (file as any)[outerField];
+        return { ...where, field: outerField, fieldPath: outerField, value: { type: typeof outerValue === 'string' ? 'string' : 'number', value: outerValue } };
+      }
+    }
+    
+    if (where.type === 'and' || where.type === 'or') {
+      return {
+        ...where,
+        left: this.correlateSubquery(where.left, file),
+        right: this.correlateSubquery(where.right, file)
+      };
+    }
+    
+    if (where.type === 'not') {
+      return {
+        ...where,
+        expr: this.correlateSubquery(where.expr, file)
+      };
+    }
+    
+    return where;
+  }
+
+  executeSubquerySync(subquery: any): number {
+    // Synchronous version for subquery evaluation
+    try {
+      const files = FileOps.readFilesSync(this.dir, this.readOptions);
+      let count = 0;
+      
+      for (const file of files) {
+        if (subquery.where) {
+          if (this.evaluateWhere(file, subquery.where)) {
+            count++;
+          }
+        } else {
+          count++;
+        }
+      }
+      
+      return count;
+    } catch {
+      return 0;
+    }
+  }
+
   private evaluateValue(value: ValueNode): any {
     if (value.type === 'string') return value.value;
     if (value.type === 'number') return value.value;
     if (value.type === 'boolean') return value.value;
     if (value.type === 'null') return null;
+    if (value.type === 'empty') return null;
+    if (value.type === 'field') return this.currentFile ? (this.currentFile as any)[value.name] : null;
     if (value.type === 'array') return value.items.map(item => this.evaluateValue(item));
+    if (value.type === 'binary') return this.evaluateBinary(value);
     return value;
+  }
+
+  private evaluateBinary(expr: { op: '+' | '-'; left: ValueNode; right: ValueNode }): any {
+    const left = this.evaluateValue(expr.left);
+    const right = this.evaluateValue(expr.right);
+
+    // number +/- number → number
+    if (typeof left === 'number' && typeof right === 'number') {
+      return expr.op === '+' ? left + right : left - right;
+    }
+
+    // string + string → concat
+    if (typeof left === 'string' && typeof right === 'string' && expr.op === '+') {
+      return left + right;
+    }
+
+    // list +/- list → set union/difference
+    if (Array.isArray(left) && Array.isArray(right)) {
+      if (expr.op === '+') {
+        // Union (dedupe)
+        return [...new Set([...left, ...right])];
+      } else {
+        // Difference
+        return left.filter(item => !right.includes(item));
+      }
+    }
+
+    // list +/- scalar → add/remove element
+    if (Array.isArray(left) && !Array.isArray(right)) {
+      if (expr.op === '+') {
+        // Add element (dedupe)
+        return left.includes(right) ? left : [...left, right];
+      } else {
+        // Remove element
+        return left.filter(item => item !== right);
+      }
+    }
+
+    // scalar + list (string) → list prepend (dedupe)
+    if (!Array.isArray(left) && Array.isArray(right) && expr.op === '+' && typeof left === 'string') {
+      return right.includes(left) ? right : [left, ...right];
+    }
+
+    throw new Error(`Cannot apply ${expr.op} to ${typeof left} and ${typeof right}`);
   }
 
   private groupBy(files: FileData[], fields: string[]): FileData[] {
