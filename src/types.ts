@@ -7,11 +7,11 @@ export type TokenType =
   | 'LIMIT' | 'OFFSET' | 'DISTINCT'
   | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'ANY' | 'ALL'
   | 'EXISTS' | 'IS' | 'EMPTY' | 'HAS'
-  | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN'
+  | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN' | 'AS'
   | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN'
   | 'COMMA' | 'DOT' | 'LPAREN' | 'RPAREN' | 'LBRACKET' | 'RBRACKET'
   | 'EQUALS' | 'NOT_EQUALS' | 'LT' | 'GT' | 'LTE' | 'GTE'
-  | 'PLUS' | 'MINUS' | 'STAR' | 'PIPE'
+  | 'PLUS' | 'MINUS' | 'STAR' | 'PIPE' | 'COLON'
   | 'EOF';
 
 export interface Token {
@@ -59,12 +59,12 @@ export interface JoinNode {
 export interface UpdateNode {
   type: 'update';
   where: WhereNode;
-  set: Record<string, ValueNode>;
+  set: Record<string, { value: ValueNode; type?: string }>;
 }
 
 export interface CreateNode {
   type: 'create';
-  fields: Record<string, ValueNode>;
+  fields: Record<string, { value: ValueNode; type?: string }>;
 }
 
 export interface DeleteNode {
@@ -110,6 +110,7 @@ export interface WhereNode {
 export interface FieldNode {
   type: 'field';
   name: string;
+  alias?: string;
 }
 
 export type ValueNode =
@@ -118,7 +119,7 @@ export type ValueNode =
   | { type: 'boolean'; value: boolean }
   | { type: 'null'; value: null }
   | { type: 'empty' }
-  | { type: 'field'; name: string }
+  | { type: 'field'; name: string; alias?: string }
   | { type: 'array'; items: ValueNode[] }
   | { type: 'binary'; op: '+' | '-'; left: ValueNode; right: ValueNode }
   | BuiltinNode
@@ -128,12 +129,14 @@ export interface BuiltinNode {
   type: 'builtin';
   name: string;
   args: (FieldNode | ValueNode)[];
+  alias?: string;
 }
 
 export interface AggregateNode {
   type: 'aggregate';
   func: 'count' | 'sum' | 'avg' | 'min' | 'max';
   field: string;
+  alias?: string;
 }
 
 export interface OrderByNode {

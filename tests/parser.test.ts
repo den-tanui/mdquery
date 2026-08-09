@@ -11,7 +11,10 @@ describe('Parser', () => {
 
     it('parses select with specific fields', () => {
       const ast = new Parser('select id, title, status').parse();
-      expect(ast).toEqual({ type: 'select', fields: ['id', 'title', 'status'] });
+      expect(ast).toEqual({
+        type: 'select',
+        fields: [{ type: 'field', name: 'id' }, { type: 'field', name: 'title' }, { type: 'field', name: 'status' }]
+      });
     });
 
     it('parses select with where', () => {
@@ -59,7 +62,7 @@ describe('Parser', () => {
       const ast = new Parser('select status, count(*) group by status').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: ['status', { type: 'aggregate', func: 'count', field: '*' }],
+        fields: [{ type: 'field', name: 'status' }, { type: 'aggregate', func: 'count', field: '*' }],
         groupBy: ['status']
       });
     });

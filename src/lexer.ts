@@ -32,6 +32,7 @@ const KEYWORDS: Record<string, TokenType> = {
   after: 'AFTER',
   deny: 'DENY',
   run: 'RUN',
+  as: 'AS',
   true: 'BOOLEAN',
   false: 'BOOLEAN',
 };
@@ -147,6 +148,7 @@ export class Lexer {
       ',': 'COMMA',
       '.': 'DOT',
       '|': 'PIPE',
+      ':': 'COLON',
     };
 
     // Check two-char operators

@@ -215,7 +215,15 @@ export class Parser {
               this.advance();
             }
             this.expect('RPAREN');
-            fields.push({ type: 'aggregate', func: func as any, field });
+            
+            // Check for alias
+            let alias: string | undefined;
+            if (this.current().type === 'AS') {
+              this.advance();
+              alias = this.expect('IDENTIFIER').value;
+            }
+            
+            fields.push({ type: 'aggregate', func: func as any, field, alias });
           } else {
             // Regular function call (like fields, toc, contains, etc.) - parse as builtin
             this.advance(); // skip function name
@@ -226,11 +234,28 @@ export class Parser {
               if (this.current().type === 'COMMA') this.advance();
             }
             this.expect('RPAREN');
-            fields.push({ type: 'builtin', name: token.value, args });
+            
+            // Check for alias
+            let alias: string | undefined;
+            if (this.current().type === 'AS') {
+              this.advance();
+              alias = this.expect('IDENTIFIER').value;
+            }
+            
+            fields.push({ type: 'builtin', name: token.value, args, alias });
           }
         } else {
-          fields.push(token.value);
+          // Plain field reference
           this.advance();
+          
+          // Check for alias
+          let alias: string | undefined;
+          if (this.current().type === 'AS') {
+            this.advance();
+            alias = this.expect('IDENTIFIER').value;
+          }
+          
+          fields.push({ type: 'field', name: token.value, alias });
         }
       } else if (token.type === 'STAR') {
         fields.push('*');
@@ -601,19 +626,27 @@ export class Parser {
     return { type: 'builtin', name, args };
   }
 
-  private parseSetClause(): Record<string, ValueNode> {
-    const set: Record<string, ValueNode> = {};
+  private parseSetClause(): Record<string, { value: ValueNode; type?: string }> {
+    const set: Record<string, { value: ValueNode; type?: string }> = {};
 
     while (this.current().type !== 'EOF') {
       if (this.current().type !== 'IDENTIFIER') break;
       
       const field = this.expect('IDENTIFIER').value;
+      
+      // Check for type annotation (e.g., field:type)
+      let typeAnnotation: string | undefined;
+      if (this.current().type === 'COLON') {
+        this.advance();
+        typeAnnotation = this.expect('IDENTIFIER').value;
+      }
+      
       this.expect('EQUALS');
-      set[field] = this.parseValue();
+      set[field] = { value: this.parseValue(), type: typeAnnotation };
 
       if (this.current().type === 'COMMA') {
         this.advance();
-      } else if (this.current().type === 'IDENTIFIER' && this.peek().type === 'EQUALS') {
+      } else if (this.current().type === 'IDENTIFIER' && (this.peek().type === 'EQUALS' || this.peek().type === 'COLON')) {
         continue;
       } else {
         break;

@@ -9,7 +9,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'update',
         where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'todo' } },
-        set: { status: { type: 'string', value: 'doing' } }
+        set: { status: { value: { type: 'string', value: 'doing' } } }
       });
     });
 
@@ -19,8 +19,8 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
         type: 'update',
         where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
         set: {
-          status: { type: 'string', value: 'done' },
-          assignee: { type: 'string', value: 'jane' }
+          status: { value: { type: 'string', value: 'done' } },
+          assignee: { value: { type: 'string', value: 'jane' } }
         }
       });
     });
@@ -30,7 +30,7 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'update',
         where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
-        set: { priority: { type: 'number', value: 5 } }
+        set: { priority: { value: { type: 'number', value: 5 } } }
       });
     });
 
@@ -39,7 +39,16 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'update',
         where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
-        set: { completed: { type: 'boolean', value: true } }
+        set: { completed: { value: { type: 'boolean', value: true } } }
+      });
+    });
+
+    it('parses update with type annotation', () => {
+      const ast = new Parser('update where id = 1 set status:str = "doing"').parse();
+      expect(ast).toEqual({
+        type: 'update',
+        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
+        set: { status: { value: { type: 'string', value: 'doing' }, type: 'str' } }
       });
     });
   });
@@ -50,8 +59,8 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'create',
         fields: {
-          title: { type: 'string', value: 'My Task' },
-          status: { type: 'string', value: 'todo' }
+          title: { value: { type: 'string', value: 'My Task' } },
+          status: { value: { type: 'string', value: 'todo' } }
         }
       });
     });
@@ -61,9 +70,21 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'create',
         fields: {
-          title: { type: 'string', value: 'Task' },
-          priority: { type: 'number', value: 3 },
-          completed: { type: 'boolean', value: false }
+          title: { value: { type: 'string', value: 'Task' } },
+          priority: { value: { type: 'number', value: 3 } },
+          completed: { value: { type: 'boolean', value: false } }
+        }
+      });
+    });
+
+    it('parses create with type annotations', () => {
+      const ast = new Parser('create title:str = "Task" priority:int = 5 status:str = "todo"').parse();
+      expect(ast).toEqual({
+        type: 'create',
+        fields: {
+          title: { value: { type: 'string', value: 'Task' }, type: 'str' },
+          priority: { value: { type: 'number', value: 5 }, type: 'int' },
+          status: { value: { type: 'string', value: 'todo' }, type: 'str' }
         }
       });
     });

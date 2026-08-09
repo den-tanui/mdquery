@@ -32,7 +32,7 @@ describe('Parser - Triggers', () => {
         type: 'trigger',
         event: 'after',
         operation: 'create',
-        action: { type: 'update', set: { completed: { type: 'boolean', value: true } } }
+        action: { type: 'update', set: { completed: { value: { type: 'boolean', value: true } } } }
       });
     });
 

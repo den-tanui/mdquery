@@ -155,21 +155,70 @@ export class Executor {
         for (const field of node.fields) {
           if (typeof field === 'string') {
             selected[field] = (f as any)[field];
-          } else if (typeof field === 'object' && field.type === 'aggregate') {
-            // Aggregate fields are already computed by groupBy
-            const key = `${field.func}(${field.field})`;
-            selected[key] = (f as any)[key];
-          } else if (typeof field === 'object' && (field as any).type === 'builtin') {
-            // Evaluate builtin function
-            const builtinNode = field as any;
-            const args = builtinNode.args.map((arg: any) => this.evaluateValue(arg));
-            const result = Builtins.call(builtinNode.name, args, f, undefined, this.hooks);
-            // Use full expression as key to avoid overwriting duplicate function calls
-            const key = `${builtinNode.name}(${builtinNode.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
-            selected[key] = result;
+          } else if (typeof field === 'object') {
+            const fieldObj = field as any;
+            if (fieldObj.type === 'field') {
+              // Field node
+              selected[fieldObj.name] = (f as any)[fieldObj.name];
+            } else if (fieldObj.type === 'aggregate') {
+              // Aggregate fields are already computed by groupBy
+              const key = `${fieldObj.func}(${fieldObj.field})`;
+              selected[key] = (f as any)[key];
+            } else if (fieldObj.type === 'builtin') {
+              // Evaluate builtin function
+              const args = fieldObj.args.map((arg: any) => this.evaluateValue(arg));
+              const result = Builtins.call(fieldObj.name, args, f, undefined, this.hooks);
+              
+              // Determine key: use field name if first arg is a field reference, otherwise use builtin name
+              const firstArg = fieldObj.args[0];
+              let key: string;
+              if (firstArg && firstArg.type === 'field') {
+                key = firstArg.name;
+              } else {
+                key = `${fieldObj.name}(${fieldObj.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
+              }
+              selected[key] = result;
+            }
           }
         }
         return selected;
+      });
+    }
+
+    // Apply aliases at the end
+    const aliasMap = new Map<string, string>();
+    for (const field of node.fields) {
+      if (typeof field === 'object') {
+        const fieldObj = field as any;
+        if (fieldObj.alias) {
+          let originalKey: string;
+          if (fieldObj.type === 'aggregate') {
+            originalKey = `${fieldObj.func}(${fieldObj.field})`;
+          } else if (fieldObj.type === 'builtin') {
+            const firstArg = fieldObj.args[0];
+            if (firstArg && firstArg.type === 'field') {
+              originalKey = firstArg.name;
+            } else {
+              originalKey = `${fieldObj.name}(${fieldObj.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
+            }
+          } else if (fieldObj.type === 'field') {
+            originalKey = fieldObj.name;
+          } else {
+            continue;
+          }
+          aliasMap.set(originalKey, fieldObj.alias);
+        }
+      }
+    }
+
+    if (aliasMap.size > 0) {
+      files = files.map(row => {
+        const newRow: any = {};
+        for (const [key, value] of Object.entries(row)) {
+          const alias = aliasMap.get(key);
+          newRow[alias || key] = value;
+        }
+        return newRow;
       });
     }
 
@@ -187,8 +236,14 @@ export class Executor {
         if (typeof field === 'string') {
           return String((f as any)[field]);
         }
-        if (typeof field === 'object' && field.type === 'aggregate') {
-          return `${field.func}(${field.field})`;
+        if (typeof field === 'object') {
+          const fieldObj = field as any;
+          if (fieldObj.type === 'field') {
+            return String((f as any)[fieldObj.name]);
+          }
+          if (fieldObj.type === 'aggregate') {
+            return `${fieldObj.func}(${fieldObj.field})`;
+          }
         }
         return '';
       }).join('|');
@@ -251,9 +306,13 @@ export class Executor {
       // Set current file for field references
       this.currentFile = file;
 
-      // Update fields
-      for (const [key, value] of Object.entries(node.set)) {
-        (file as any)[key] = this.evaluateValue(value);
+      // Update fields with type conversion
+      for (const [key, { value, type }] of Object.entries(node.set)) {
+        let result = this.evaluateValue(value);
+        if (type) {
+          result = this.convertToType(result, type);
+        }
+        (file as any)[key] = result;
       }
 
       // Call hook if provided
@@ -277,9 +336,13 @@ export class Executor {
       updatedAt: new Date().toISOString()
     };
 
-    // Set fields
-    for (const [key, value] of Object.entries(node.fields)) {
-      newFile[key] = this.evaluateValue(value);
+    // Set fields with type conversion
+    for (const [key, { value, type }] of Object.entries(node.fields)) {
+      let result = this.evaluateValue(value);
+      if (type) {
+        result = this.convertToType(result, type);
+      }
+      newFile[key] = result;
     }
 
     // Determine target: abspath > path > file/filename > error
@@ -708,6 +771,33 @@ export class Executor {
     }
     
     return result;
+  }
+
+  private convertToType(value: any, type: string): any {
+    switch (type.toLowerCase()) {
+      case 'str':
+      case 'string':
+        return Builtins.str(value);
+      case 'int':
+      case 'integer':
+        return Builtins.int(value);
+      case 'float':
+      case 'number':
+        return Builtins.float(value);
+      case 'bool':
+      case 'boolean':
+        return Builtins.bool(value);
+      case 'array':
+        return Builtins.array(value);
+      case 'date':
+        if (typeof value === 'string') {
+          const date = new Date(value);
+          return isNaN(date.getTime()) ? value : date;
+        }
+        return value;
+      default:
+        return value;
+    }
   }
 
   private evaluateBinary(expr: { op: '+' | '-'; left: ValueNode; right: ValueNode }): any {
