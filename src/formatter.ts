@@ -1,5 +1,6 @@
 // src/formatter.ts
 import { QueryResult } from './executor';
+import { formatTocAsTree, Section } from './files';
 
 export type OutputFormat = 'json' | 'table' | 'csv' | 'card';
 
@@ -299,28 +300,11 @@ function formatTocForCard(value: any): string {
   
   // Handle structured TOC (array of Section objects)
   if (value.length > 0 && value[0]?.level !== undefined) {
-    return formatTree(value.map((s: any) => ({ level: s.level, title: s.title })));
+    return formatTocAsTree(value.map((s: any) => ({ level: s.level, title: s.title, content: '' })));
   }
   
   // Handle flat TOC (already formatted with indentation)
   return value.join('\n');
-}
-
-function formatTree(items: { level: number; title: string }[]): string {
-  if (items.length === 0) return '';
-  
-  const lines: string[] = [];
-  
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const indent = '  '.repeat(item.level - 1);
-    const isLast = i === items.length - 1;
-    const prefix = isLast ? '└── ' : '├── ';
-    
-    lines.push(`${indent}${prefix}${item.title}`);
-  }
-  
-  return lines.join('\n');
 }
 
 function sum(values: number[]): number {

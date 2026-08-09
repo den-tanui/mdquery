@@ -3,6 +3,7 @@ import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
 import { isAbsolute, join } from 'path';
 import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode, ExecutorHooks } from './types';
+import { copyToClipboard } from './clipboard';
 
 export interface QueryResult {
   type: 'select' | 'update' | 'create' | 'delete';
@@ -95,7 +96,7 @@ export class Executor {
     // Handle clipboard function
     if (node.fn === 'clipboard' && result.data) {
       const values = result.data.map((f: any) => f.filename || f.title || '').join('\n');
-      await navigator.clipboard?.writeText(values);
+      copyToClipboard(values);
     }
     
     return result;
@@ -665,6 +666,11 @@ export class Executor {
     else if (value.type === 'field') result = this.currentFile ? this.resolveField(this.currentFile, value.name) : null;
     else if (value.type === 'array') result = value.items.map(item => this.evaluateValue(item));
     else if (value.type === 'binary') result = this.evaluateBinary(value);
+    else if (value.type === 'builtin') {
+      const args = value.args.map(arg => this.evaluateValue(arg));
+      const { Builtins } = require('./builtins');
+      result = Builtins.call(value.name, args, this.context, undefined, this.hooks);
+    }
     else result = value;
     
     // Call hook if provided

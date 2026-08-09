@@ -1,5 +1,5 @@
 // src/builtins.ts
-import { formatTocAsTree, formatTocIndented, Section } from './files';
+import { formatTocIndented, Section } from './files';
 
 export class Builtins {
   static now(): string {
@@ -48,16 +48,6 @@ export class Builtins {
     return array.join(delimiter);
   }
 
-  static project(field: string, context: Record<string, any>): any {
-    const key = `project${field.charAt(0).toUpperCase() + field.slice(1)}`;
-    return context[key];
-  }
-
-  static sprint(field: string, context: Record<string, any>): any {
-    const key = `sprint${field.charAt(0).toUpperCase() + field.slice(1)}`;
-    return context[key];
-  }
-
   static id(context?: Record<string, any>): string {
     return context?.id || '';
   }
@@ -87,8 +77,8 @@ export class Builtins {
   }
 
   static clipboard(value: string): string {
-    // In a real implementation, this would copy to clipboard
-    // For now, just return the value
+    // Clipboard copy is handled by the executor pipe handler
+    // This builtin just passes the value through
     return value;
   }
 
@@ -119,10 +109,6 @@ export class Builtins {
     }
     
     return now.toISOString().split('T')[0];
-  }
-
-  static projectName(context?: Record<string, any>): string {
-    return context?.projectTitle || '';
   }
 
   static fields(context?: Record<string, any>, includeValues?: boolean): string[] | Record<string, any> {
@@ -156,44 +142,35 @@ export class Builtins {
     return formatTocIndented(sections).split('\n');
   }
 
-  static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[]): any {
+  static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[], hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any }): any {
     const builtin = (this as any)[name];
-    if (!builtin) {
-      throw new Error(`Unknown builtin: ${name}`);
+    
+    // Try built-in methods first
+    if (builtin) {
+      if (name === 'id' || name === 'user') {
+        return builtin(context);
+      }
+      
+      if (name === 'nextEnum' || name === 'prevEnum') {
+        return builtin(args[0], enumValues || []);
+      }
+      
+      if (name === 'nextDate') {
+        return builtin(args[0]);
+      }
+      
+      if (name === 'fields' || name === 'toc') {
+        return builtin(context, args[0]);
+      }
+      
+      return builtin(...args);
     }
     
-    if (name === 'project' || name === 'sprint') {
-      return builtin(args[0], context || {});
+    // Try hook for custom builtins (e.g., project(), sprint() in projext)
+    if (hooks?.onBuiltinCall) {
+      return hooks.onBuiltinCall(name, args, context);
     }
     
-    if (name === 'id') {
-      return builtin(context);
-    }
-    
-    if (name === 'user') {
-      return builtin(context);
-    }
-    
-    if (name === 'nextEnum' || name === 'prevEnum') {
-      return builtin(args[0], enumValues || []);
-    }
-    
-    if (name === 'nextDate') {
-      return builtin(args[0]);
-    }
-    
-    if (name === 'projectName') {
-      return builtin(context);
-    }
-    
-    if (name === 'fields') {
-      return builtin(context, args[0]);
-    }
-    
-    if (name === 'toc') {
-      return builtin(context, args[0]);
-    }
-    
-    return builtin(...args);
+    throw new Error(`Unknown builtin: ${name}`);
   }
 }

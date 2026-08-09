@@ -88,18 +88,4 @@ describe('Builtins', () => {
       expect(result).toBe('a,b,c');
     });
   });
-
-  describe('project()', () => {
-    it('returns project info from context', () => {
-      const result = Builtins.project('title', { projectTitle: 'My Project' });
-      expect(result).toBe('My Project');
-    });
-  });
-
-  describe('sprint()', () => {
-    it('returns sprint info from context', () => {
-      const result = Builtins.sprint('name', { sprintName: 'Sprint 1' });
-      expect(result).toBe('Sprint 1');
-    });
-  });
 });

@@ -201,4 +201,7 @@ export interface ExecutorHooks {
   
   // Transform after reading
   onAfterRead?: (file: any) => any;
+  
+  // Handle custom builtin function calls
+  onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any;
 }

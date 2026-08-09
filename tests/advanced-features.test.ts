@@ -135,16 +135,3 @@ describe('next_date() builtin', () => {
     }
   });
 });
-
-describe('project_name() builtin', () => {
-  it('returns project name from context', async () => {
-    const dir = createFixtures();
-    try {
-      const executor = new Executor(dir, { projectTitle: 'My Project' });
-      const result = await executor.execute('select project_name()');
-      expect(result).toBeDefined();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
