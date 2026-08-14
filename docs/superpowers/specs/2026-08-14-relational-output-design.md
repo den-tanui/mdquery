@@ -240,7 +240,7 @@ No `mtime`/`updatedAt`/`createdAt` handling. **Moved to a separate plan** (see �
 
 ## 7. File Metadata — SEPARATE PLAN (not in this implementation)
 
-A dedicated future plan (own spec → plan → implementation cycle). Scope:
+A dedicated future plan with its own spec: **[2026-08-14-file-metadata-design.md](./2026-08-14-file-metadata-design.md)**. Summary:
 
 - **`file()` builtin** returns a **single map object** — the metadata of the current file (the row being evaluated), like `fields()` / `section("name")` are per-row: `{abspath, mtime, atime, ctime, owner, group, size, mode, ...}`.
 - Access via property only: `file().abspath`, `file().mtime`, `file().ctime`, `file().owner`, etc. **`file().mtime()` is NOT valid** — a map is not callable; data types are respected (property access via `.property`, never `()` on a map).
