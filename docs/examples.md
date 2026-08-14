@@ -140,6 +140,15 @@ mdquery --dir=tasks "select filename, path, status"
 ]
 ```
 
+## Body and frontmatter fields
+
+Every row also exposes `body` (markdown body without the frontmatter block) and `frontmatter` (the raw parsed object):
+
+```sh
+mdquery --dir=tasks "select title, body where has_section('Setup')"
+mdquery --dir=tasks "select title, frontmatter"
+```
+
 ## Recursive search, hidden files, and gitignore
 
 ```sh

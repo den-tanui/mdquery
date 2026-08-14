@@ -22,13 +22,15 @@ $ mdquery "select count(*) group by status"
 - Single markdown file or a whole directory
 - Recursive search with depth control, hidden-file and `.gitignore` awareness
 - Every row exposes `filename`, `path` (relative), and `abspath` (absolute)
+- `body` (markdown body without frontmatter) and `frontmatter` (raw parsed object) fields on every row
 - Presence-aware queries with `has()`, `is empty`, `is not empty`
 - Subqueries with `count(select ...)`, `exists(select ...)`, and `outer.field` correlation
 - Set arithmetic: `+` (union), `-` (difference) on lists
 - Negated operators: `not contains`, `not starts_with`, `not ends_with`
 - Triggers: before/after create/update/delete with deny, set, run
-- Markdown body parsing with `section.<name>` and `toc()` builtins
+- Markdown body parsing with `section.<name>`, `has_section()`, and `toc()` builtins
 - `fields()` builtin to list frontmatter fields
+- Immutable fields: `createdAt` and `updatedAt` cannot be changed via `update`
 
 ## Install
 
@@ -134,6 +136,8 @@ Every row exposes these fields regardless of frontmatter:
 | `filename` | File name without the `.md` extension (e.g. `task-001`) |
 | `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
 | `abspath` | Absolute path to the file |
+| `body` | Markdown body with the frontmatter block stripped |
+| `frontmatter` | Raw parsed frontmatter object as a single field |
 
 `id` is a plain frontmatter field — it is only present when the file defines it.
 
@@ -170,6 +174,8 @@ bun install
 bun run test    # vitest unit + integration tests
 bun run build   # build the library (dist/) and CLI binary (bin/mdquery)
 ```
+
+The query engine is a character-by-character lexer, a Pratt parser with a binding-power table, and an expression-tree executor. Supporting modules: `type-system.ts` (typed comparisons, coercion, array set arithmetic), `query-analyzer.ts` (pushdown predicates, lazy-loading analysis), and `content-extractor.ts` (remark-based body extraction). See `docs/superpowers/specs/2026-08-09-parser-rewrite-design.md` for the design.
 
 ## License
 

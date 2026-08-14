@@ -2,6 +2,13 @@
 
 `mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path). `id` is a plain frontmatter field — it is only present when the file declares it.
 
+Two extra fields are available on every row:
+
+- `body` — the markdown body with the frontmatter block stripped (useful for content queries and extraction)
+- `frontmatter` — the raw parsed frontmatter object as a single field
+
+`body` is selectable directly: `select title, body`.
+
 ## What's implemented
 
 mdquery is feature-complete for CLI use with arbitrary markdown files:
@@ -24,12 +31,13 @@ These features are planned for projext library mode via hooks:
 
 - Date/duration types: `2026-03-25`, `2day`
 - Date arithmetic: `date - date`, `date + duration`
-- Type system with strict coercion
 - Schema validation
 - `has()` with qualified fields: `has(new.status)`
 - Pipe `| run()` action
 - Time triggers: `every 1hour ...`
 - Custom builtins via `onBuiltinCall` hook
+
+> Note: the internal `TypeSystem` module (date/number/boolean coercion, array set arithmetic, typed comparisons) landed with the parser rewrite. It is wired into `update`/`create` `set` clauses via explicit type hints and into expression evaluation, but the full date/duration *literal* syntax above remains a projext-layer feature.
 
 ## Statements
 
@@ -126,6 +134,7 @@ Comparisons compose with `and`, `or`, `not`, and parentheses.
 | `exists (<subquery>)` | subquery existence |
 | `"value" in toc()` | check if heading exists in markdown body |
 | `has section("name")` | check if section exists in markdown body |
+| `has_section("name")` | function form of `has section("name")` |
 
 Examples:
 
