@@ -10,13 +10,22 @@ export interface Section {
   content: string;
 }
 
+export interface FileContent {
+  raw: string;
+  parsed?: any;
+}
+
 export interface FileData {
   id?: string;
   filename: string;
   path: string;
   abspath: string;
   filepath: string;
-  content: string;
+  frontmatter: Record<string, any>;
+  /** Full raw file content (legacy shape: string) */
+  content?: string;
+  /** Markdown body without frontmatter (for content extraction) */
+  body?: string;
   sections?: Map<string, Section>;
   'section.TODO'?: string;
   [key: string]: any;
@@ -149,11 +158,12 @@ export class FileOps {
 
   private static async read(root: string, filepath: string): Promise<FileData | null> {
     try {
-      const content = await readFile(filepath, 'utf-8');
-      const { data } = matter(content);
+      const { readFileSync } = require('fs');
+      const content = readFileSync(filepath, 'utf-8');
+      const { data, content: contentBody } = matter(content);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
-      const sections = parseSections(content);
+      const sections = parseSections(contentBody);
 
       return {
         ...parseDates(data),
@@ -161,7 +171,9 @@ export class FileOps {
         path: rel,
         abspath: filepath,
         filepath,
+        frontmatter: data,
         content,
+        body: contentBody,
         sections
       };
     } catch {
@@ -173,10 +185,10 @@ export class FileOps {
     try {
       const { readFileSync } = require('fs');
       const content = readFileSync(filepath, 'utf-8');
-      const { data } = matter(content);
+      const { data, content: contentBody } = matter(content);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
-      const sections = parseSections(content);
+      const sections = parseSections(contentBody);
 
       return {
         ...parseDates(data),
@@ -184,7 +196,9 @@ export class FileOps {
         path: rel,
         abspath: filepath,
         filepath,
+        frontmatter: data,
         content,
+        body: contentBody,
         sections
       };
     } catch {
@@ -306,7 +320,7 @@ function parseDates(data: Record<string, any>): Record<string, any> {
   return result;
 }
 
-function stripFrontmatter(content: string): string {
+export function stripFrontmatter(content: string): string {
   if (!content.startsWith('---')) return content;
   const end = content.indexOf('\n---', 3);
   if (end === -1) return content;

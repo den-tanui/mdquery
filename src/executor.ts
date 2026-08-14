@@ -1,32 +1,40 @@
 // src/executor.ts
+
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
 import { isAbsolute, join } from 'path';
-import { ASTNode, SelectNode, UpdateNode, CreateNode, DeleteNode, WhereNode, ValueNode, ExecutorHooks } from './types';
+import {
+  ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
+  BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode, ArrayIndexNode, MapIndexNode,
+  FieldNode, ValueNode, SubqueryNode, PipeNode, UnionNode, TriggerStatement, OrderByNode,
+  JoinNode, ExecutorHooks, QueryResult
+} from './types';
+import { ContentExtractor } from './content-extractor';
+import { TypeSystem } from './type-system';
 import { copyToClipboard } from './clipboard';
 import { Builtins } from './builtins';
 
-export interface QueryResult {
-  type: 'select' | 'update' | 'create' | 'delete';
-  data?: FileData[];
-  count?: number;
-  updated?: number;
-  created?: number;
-  deleted?: number;
+// Trigger context for before/after trigger evaluation
+export interface TriggerContext {
+  old?: FileData | Record<string, any>;
+  new?: FileData | Record<string, any>;
 }
 
-export interface TriggerContext {
-  old?: FileData;
-  new?: FileData;
+// Evaluation context
+export interface EvaluationContext {
+  file?: FileData | Record<string, any>;
+  variables?: Record<string, any>;
 }
+
+const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
 
 export class Executor {
   private dir: string;
   private context?: Record<string, any>;
   private triggerContext?: TriggerContext;
   private readOptions: ReadOptions;
-  private currentFile?: FileData;
   private hooks?: ExecutorHooks;
+  private contentExtractorCache: Map<string, ContentExtractor> = new Map();
 
   constructor(
     dir: string,
@@ -42,8 +50,14 @@ export class Executor {
     this.hooks = hooks;
   }
 
+  // Main execution method — parses the query and executes it
   async execute(query: string): Promise<QueryResult> {
     const ast = new Parser(query).parse();
+
+    if (this.hooks?.onBeforeExecute) {
+      this.hooks.onBeforeExecute(ast);
+    }
+
     return this.executeAST(ast);
   }
 
@@ -59,6 +73,10 @@ export class Executor {
         return this.executeDelete(ast);
       case 'pipe':
         return this.executePipe(ast);
+      case 'union':
+        return this.executeUnion(ast);
+      case 'trigger':
+        return this.executeTrigger(ast);
       default:
         throw new Error(`Unknown AST type: ${(ast as any).type}`);
     }
@@ -66,49 +84,22 @@ export class Executor {
 
   private async readFilesWithHooks(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
     const files = await FileOps.readFiles(dir, options);
-    
-    // Apply onAfterRead hook if provided
+
     if (this.hooks?.onAfterRead) {
       return files.map(f => this.hooks!.onAfterRead!(f));
     }
-    
+
     return files;
   }
 
-  private resolveField(file: FileData, field: string): any {
-    // Handle section.<name> virtual fields
-    if (field.startsWith('section.')) {
-      const sectionName = field.slice(8);
-      return file.sections?.get(sectionName)?.content || null;
-    }
-    
-    // Handle toc field
-    if (field === 'toc') {
-      return file.sections ? Array.from(file.sections.values()) : [];
-    }
-    
-    // Default: return regular field
-    return (file as any)[field];
-  }
+  // ===== SELECT =====
 
-  private async executePipe(node: any): Promise<QueryResult> {
-    const result = await this.executeAST(node.expr);
-    
-    // Handle clipboard function
-    if (node.fn === 'clipboard' && result.data) {
-      const values = result.data.map((f: any) => f.filename || f.title || '').join('\n');
-      copyToClipboard(values);
-    }
-    
-    return result;
-  }
-
-  private async executeSelect(node: SelectNode): Promise<QueryResult> {
+  private async executeSelect(node: SelectStatement): Promise<QueryResult> {
     let files = await this.readFilesWithHooks(this.dir, this.readOptions);
 
     // WHERE
     if (node.where) {
-      files = files.filter(f => this.evaluateWhere(f, node.where!));
+      files = files.filter(f => this.evaluateExpression(node.where!, { file: f }));
     }
 
     // GROUP BY
@@ -118,7 +109,7 @@ export class Executor {
 
     // HAVING
     if (node.having) {
-      files = files.filter(f => this.evaluateWhere(f, node.having!));
+      files = files.filter(f => this.evaluateExpression(node.having!, { file: f }));
     }
 
     // ORDER BY
@@ -146,108 +137,150 @@ export class Executor {
       files = this.distinct(files, node.fields);
     }
 
-    // Select specific fields (handle aggregates)
-    const hasAggregates = node.fields.some(f => typeof f === 'object' && f.type === 'aggregate');
-    if (node.fields[0] !== '*' || hasAggregates) {
-      files = files.map(f => {
-        this.currentFile = f;
-        const selected: any = {};
-        for (const field of node.fields) {
-          if (typeof field === 'string') {
-            selected[field] = (f as any)[field];
-          } else if (typeof field === 'object') {
-            const fieldObj = field as any;
-            if (fieldObj.type === 'field') {
-              // Field node
-              selected[fieldObj.name] = (f as any)[fieldObj.name];
-            } else if (fieldObj.type === 'aggregate') {
-              // Aggregate fields are already computed by groupBy
-              const key = `${fieldObj.func}(${fieldObj.field})`;
-              selected[key] = (f as any)[key];
-            } else if (fieldObj.type === 'builtin') {
-              // Evaluate builtin function
-              const args = fieldObj.args.map((arg: any) => this.evaluateValue(arg));
-              const result = Builtins.call(fieldObj.name, args, f, undefined, this.hooks);
-              
-              // Determine key: use field name if first arg is a field reference, otherwise use builtin name
-              const firstArg = fieldObj.args[0];
-              let key: string;
-              if (firstArg && firstArg.type === 'field') {
-                key = firstArg.name;
-              } else {
-                key = `${fieldObj.name}(${fieldObj.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
-              }
-              selected[key] = result;
-            }
-          }
-        }
-        return selected;
-      });
-    }
-
-    // Apply aliases at the end
-    const aliasMap = new Map<string, string>();
-    for (const field of node.fields) {
-      if (typeof field === 'object') {
-        const fieldObj = field as any;
-        if (fieldObj.alias) {
-          let originalKey: string;
-          if (fieldObj.type === 'aggregate') {
-            originalKey = `${fieldObj.func}(${fieldObj.field})`;
-          } else if (fieldObj.type === 'builtin') {
-            const firstArg = fieldObj.args[0];
-            if (firstArg && firstArg.type === 'field') {
-              originalKey = firstArg.name;
-            } else {
-              originalKey = `${fieldObj.name}(${fieldObj.args.map((a: any) => a.name || a.value || a.type).join(', ')})`;
-            }
-          } else if (fieldObj.type === 'field') {
-            originalKey = fieldObj.name;
-          } else {
-            continue;
-          }
-          aliasMap.set(originalKey, fieldObj.alias);
-        }
-      }
-    }
-
-    if (aliasMap.size > 0) {
-      files = files.map(row => {
-        const newRow: any = {};
-        for (const [key, value] of Object.entries(row)) {
-          const alias = aliasMap.get(key);
-          newRow[alias || key] = value;
-        }
-        return newRow;
-      });
-    }
+    // Projection
+    const data = files.map(f => this.project(f, node.fields));
 
     return {
       type: 'select',
-      data: files,
-      count: files.length
+      data,
+      count: data.length
     };
   }
 
-  private distinct(files: FileData[], fields: (string | any)[]): FileData[] {
+  // Project a file into the selected fields
+  private project(file: FileData, fields: Expression[]): Record<string, any> {
+    const result: Record<string, any> = {};
+
+    for (const field of fields) {
+      if (field.type === 'wildcard') {
+        Object.assign(result, this.flattenFileData(file));
+      } else if (field.type === 'field') {
+        const value = this.evaluateExpression(field, { file });
+        result[field.alias || field.name] = value;
+      } else if (field.type === 'function_call' && this.isAggregate(field.name)) {
+        const key = this.aggregateKey(field);
+        result[field.alias || key] = (file as any)[key];
+      } else if (field.type === 'function_call') {
+        const value = this.evaluateExpression(field, { file });
+        result[field.alias || this.generateFieldName(field)] = value;
+      } else {
+        const value = this.evaluateExpression(field, { file });
+        result[this.generateFieldName(field)] = value;
+      }
+    }
+
+    return result;
+  }
+
+  // Flatten file data for wildcard selection
+  private flattenFileData(file: FileData): Record<string, any> {
+    const result: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(file.frontmatter || {})) {
+      result[key] = value;
+    }
+
+    result['filename'] = file.filename;
+    result['path'] = file.path;
+    result['abspath'] = file.abspath;
+    result['filepath'] = file.filepath;
+
+    return result;
+  }
+
+  // Generate field name for complex expressions
+  private generateFieldName(expr: Expression): string {
+    switch (expr.type) {
+      case 'function_call': return `${expr.name}()`;
+      case 'method_call': return `${this.generateFieldName(expr.object)}.${expr.method}()`;
+      case 'array_index': return `${this.generateFieldName(expr.object)}[${this.generateFieldName(expr.index)}]`;
+      case 'map_index': return `${this.generateFieldName(expr.object)}.${this.generateFieldName(expr.key)}`;
+      case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
+      case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
+      default: return 'expr';
+    }
+  }
+
+  private isAggregate(name: string): boolean {
+    return AGGREGATE_FUNCTIONS.includes(name);
+  }
+
+  private aggregateKey(expr: FunctionCallNode): string {
+    const arg = expr.args[0];
+    const argName = arg && arg.type === 'field' ? arg.name : '*';
+    return `${expr.name}(${argName})`;
+  }
+
+  // Group files by fields and compute aggregates
+  private groupBy(files: FileData[], fields: string[]): FileData[] {
+    const groups = new Map<string, FileData[]>();
+
+    for (const file of files) {
+      const key = fields.map(f => String((file as any)[f])).join('|');
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(file);
+    }
+
+    const result: FileData[] = [];
+    for (const [, groupFiles] of groups) {
+      const aggregated: any = { ...groupFiles[0] };
+
+      aggregated['count(*)'] = groupFiles.length;
+      for (const field of fields) {
+        aggregated[`count(${field})`] = groupFiles.length;
+      }
+
+      result.push(aggregated as FileData);
+    }
+
+    return result;
+  }
+
+  // Sort files by order-by fields
+  private orderBy(files: FileData[], orderBy: OrderByNode[]): FileData[] {
+    return files.sort((a, b) => {
+      for (const { field, direction } of orderBy) {
+        const aVal = (a as any)[field];
+        const bVal = (b as any)[field];
+
+        if (aVal === bVal) continue;
+
+        // Handle dates
+        if (aVal instanceof Date && bVal instanceof Date) {
+          const compare = aVal.getTime() - bVal.getTime();
+          return direction === 'asc' ? compare : -compare;
+        }
+
+        // Handle date strings
+        if (typeof aVal === 'string' && typeof bVal === 'string') {
+          const isADate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(aVal);
+          const isBDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(bVal);
+          if (isADate && isBDate) {
+            const compare = new Date(aVal).getTime() - new Date(bVal).getTime();
+            return direction === 'asc' ? compare : -compare;
+          }
+        }
+
+        // Default comparison
+        const compare = aVal < bVal ? -1 : 1;
+        return direction === 'asc' ? compare : -compare;
+      }
+      return 0;
+    });
+  }
+
+  // Remove duplicate rows based on selected fields
+  private distinct(files: FileData[], fields: Expression[]): FileData[] {
     const seen = new Set<string>();
     return files.filter(f => {
       const key = fields.map(field => {
-        if (typeof field === 'string') {
-          return String((f as any)[field]);
-        }
-        if (typeof field === 'object') {
-          const fieldObj = field as any;
-          if (fieldObj.type === 'field') {
-            return String((f as any)[fieldObj.name]);
-          }
-          if (fieldObj.type === 'aggregate') {
-            return `${fieldObj.func}(${fieldObj.field})`;
-          }
-        }
+        if (field.type === 'field') return String((f as any)[field.name]);
+        if (field.type === 'wildcard') return JSON.stringify(this.flattenFileData(f));
         return '';
       }).join('|');
-      
+
       if (seen.has(key)) {
         return false;
       }
@@ -256,39 +289,36 @@ export class Executor {
     });
   }
 
-  private async executeJoin(files: FileData[], join: any): Promise<FileData[]> {
-    // Load the joined table
-    const joinedFiles = await this.readFilesWithHooks(join.table);
-    
-    // Perform the join
+  // Execute JOIN
+  private async executeJoin(files: FileData[], join: JoinNode): Promise<FileData[]> {
+    const joinedFiles = await this.readFilesWithHooks(join.right.table);
     const result: FileData[] = [];
-    
+
     for (const file of files) {
       for (const joined of joinedFiles) {
-        // Create a merged file-like object
         const merged: any = { ...file };
-        
-        // Add joined fields with prefix
+
         for (const [key, value] of Object.entries(joined)) {
           if (key !== 'id' && key !== 'filepath' && key !== 'content') {
-            merged[`${join.table}.${key}`] = value;
+            merged[`${join.right.table}.${key}`] = value;
           }
         }
-        
-        // Check ON condition
-        if (this.evaluateWhere(merged as FileData, join.on)) {
+
+        if (join.on && this.evaluateExpression(join.on, { file: merged })) {
           result.push(merged as FileData);
         }
       }
     }
-    
+
     return result;
   }
 
-  private async executeUpdate(node: UpdateNode): Promise<QueryResult> {
+  // ===== UPDATE =====
+
+  private async executeUpdate(node: UpdateStatement): Promise<QueryResult> {
     const files = await this.readFilesWithHooks(this.dir, this.readOptions);
     const matches = node.where
-      ? files.filter(f => this.evaluateWhere(f, node.where))
+      ? files.filter(f => this.evaluateExpression(node.where!, { file: f }))
       : files;
 
     if (matches.length === 0) {
@@ -303,16 +333,14 @@ export class Executor {
     }
 
     for (const file of matches) {
-      // Set current file for field references
-      this.currentFile = file;
-
       // Update fields with type conversion
       for (const [key, { value, type }] of Object.entries(node.set)) {
-        let result = this.evaluateValue(value);
+        let result = this.evaluateExpression(value, { file });
         if (type) {
-          result = this.convertToType(result, type);
+          result = TypeSystem.convertType(result, type);
         }
         (file as any)[key] = result;
+        file.frontmatter[key] = result;
       }
 
       // Call hook if provided
@@ -321,7 +349,7 @@ export class Executor {
       }
 
       // Write back to the original file path
-      await FileOps.writeFile(file.filepath, file, file.content);
+      await FileOps.writeFile(file.filepath, file, this.getFileBody(file));
     }
 
     return {
@@ -330,7 +358,9 @@ export class Executor {
     };
   }
 
-  private async executeCreate(node: CreateNode): Promise<QueryResult> {
+  // ===== CREATE =====
+
+  private async executeCreate(node: CreateStatement): Promise<QueryResult> {
     const newFile: any = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -338,9 +368,9 @@ export class Executor {
 
     // Set fields with type conversion
     for (const [key, { value, type }] of Object.entries(node.fields)) {
-      let result = this.evaluateValue(value);
+      let result = this.evaluateExpression(value, { file: newFile });
       if (type) {
-        result = this.convertToType(result, type);
+        result = TypeSystem.convertType(result, type);
       }
       newFile[key] = result;
     }
@@ -370,21 +400,22 @@ export class Executor {
     };
   }
 
-  private async executeDelete(node: DeleteNode): Promise<QueryResult> {
+  // ===== DELETE =====
+
+  private async executeDelete(node: DeleteStatement): Promise<QueryResult> {
     // Require where clause for delete
     if (!node.where) {
       throw new Error('delete requires a where clause');
     }
 
     const files = await this.readFilesWithHooks(this.dir, this.readOptions);
-    const matches = node.where ? files.filter(f => this.evaluateWhere(f, node.where)) : files;
+    const matches = node.where ? files.filter(f => this.evaluateExpression(node.where!, { file: f })) : files;
 
     if (matches.length === 0) {
       throw new Error(this.noMatchError(node.where));
     }
 
     for (const file of matches) {
-      // Delete file
       const { unlink } = await import('fs/promises');
       await unlink(file.filepath);
     }
@@ -395,10 +426,30 @@ export class Executor {
     };
   }
 
-  private noMatchError(where?: WhereNode): string {
-    if (where && where.type === 'comparison' && where.field) {
-      const value = where.value && where.value.type === 'string' ? where.value.value : '';
-      return `no file with ${where.field} '${value}'`;
+  // ===== PIPE / UNION / TRIGGER =====
+
+  private async executePipe(node: PipeNode): Promise<QueryResult> {
+    const result = await this.executeAST(node.expr);
+
+    if (node.fn === 'clipboard' && result.data) {
+      const values = result.data.map((f: any) => f.filename || f.title || '').join('\n');
+      copyToClipboard(values);
+    }
+
+    return result;
+  }
+
+  private async executeUnion(node: UnionNode): Promise<QueryResult> {
+    throw new Error('UNION execution not implemented');
+  }
+
+  private async executeTrigger(node: TriggerStatement): Promise<QueryResult> {
+    throw new Error('Trigger execution not implemented');
+  }
+
+  private noMatchError(where?: Expression): string {
+    if (where && where.type === 'binary_op' && where.left.type === 'field' && where.right.type === 'string') {
+      return `no file with ${where.left.name} '${where.right.value}'`;
     }
     return 'no files matched the query';
   }
@@ -408,528 +459,536 @@ export class Executor {
     return join(this.dir, p);
   }
 
-  private evaluateWhere(file: FileData, where: WhereNode): boolean {
-    switch (where.type) {
-      case 'and':
-        return this.evaluateWhere(file, where.left as WhereNode) &&
-               this.evaluateWhere(file, where.right as WhereNode);
-      case 'or':
-        return this.evaluateWhere(file, where.left as WhereNode) ||
-               this.evaluateWhere(file, where.right as WhereNode);
-      case 'not':
-        return !this.evaluateWhere(file, where.expr as WhereNode);
-      case 'comparison':
-        return this.evaluateComparison(file, where.field!, where.op!, where.value!, where.fieldPath);
-      case 'array_comparison':
-        return this.evaluateArrayComparison(file, where.field!, where.arrayOp!, where.arrayCondition!);
-      case 'in':
-        return this.evaluateIn(file, where.field!, where.value!, false);
-      case 'not_in':
-        return this.evaluateIn(file, where.field!, where.value!, true);
-      case 'has':
-        return this.evaluateHas(file, where.field!);
-      case 'has_section':
-        return this.evaluateHasSection(file, where.sectionName!);
-      case 'in_toc':
-        return this.evaluateInToc(file, where.tocValue!);
-      case 'exists':
-        return this.evaluateExists(file, where.subquery!);
+  // ===== Expression evaluation =====
+
+  // Evaluate expression tree
+  evaluateExpression(expr: Expression, context: EvaluationContext): any {
+    switch (expr.type) {
+      case 'binary_op': return this.evaluateBinaryOp(expr, context);
+      case 'unary_op': return this.evaluateUnaryOp(expr, context);
+      case 'function_call': return this.evaluateFunctionCall(expr, context);
+      case 'method_call': return this.evaluateMethodCall(expr, context);
+      case 'array_index': return this.evaluateArrayIndex(expr, context);
+      case 'map_index': return this.evaluateMapIndex(expr, context);
+      case 'field': return this.evaluateField(expr, context);
+      case 'subquery': return this.evaluateSubquery(expr, context);
+      case 'paren': return this.evaluateExpression(expr.expression, context);
+      case 'wildcard': return this.flattenFileData(context.file as FileData);
+      case 'exists': return false;
       default:
-        return false;
-    }
-  }
-
-  private evaluateArrayComparison(file: FileData, field: string, arrayOp: string, condition: WhereNode): boolean {
-    const arrayValue = (file as any)[field];
-    
-    if (!Array.isArray(arrayValue)) {
-      return false;
-    }
-
-    if (arrayOp === 'any') {
-      return arrayValue.some((item: any) => {
-        // For string arrays, create a temp file with a special value field
-        // For object arrays, spread the item properties
-        const tempFile = typeof item === 'object' 
-          ? { ...file, ...item }
-          : { ...file, _value: item };
-        
-        // If the condition has an empty field, use _value
-        if (condition.type === 'comparison' && condition.field === '') {
-          const tempCondition = { ...condition, field: '_value', fieldPath: '_value' };
-          return this.evaluateWhere(tempFile, tempCondition);
+        if (this.isValueNode(expr as Expression)) {
+          return this.evaluateValue(expr as ValueNode);
         }
-        
-        return this.evaluateWhere(tempFile, condition);
-      });
-    }
-
-    if (arrayOp === 'all') {
-      return arrayValue.every((item: any) => {
-        const tempFile = typeof item === 'object'
-          ? { ...file, ...item }
-          : { ...file, _value: item };
-        
-        if (condition.type === 'comparison' && condition.field === '') {
-          const tempCondition = { ...condition, field: '_value', fieldPath: '_value' };
-          return this.evaluateWhere(tempFile, tempCondition);
-        }
-        
-        return this.evaluateWhere(tempFile, condition);
-      });
-    }
-
-    return false;
-  }
-
-  private evaluateIn(file: FileData, field: string, value: ValueNode, negate: boolean): boolean {
-    const fieldValue = (file as any)[field];
-    const list = this.evaluateValue(value);
-    
-    if (!Array.isArray(list)) {
-      return false;
-    }
-
-    // Absent field: = v → false, != v → true
-    if (fieldValue === undefined) {
-      return negate; // not_in returns true for absent, in returns false
-    }
-
-    const found = list.some((item: any) => {
-      // Type coercion
-      if (typeof fieldValue === 'string' && typeof item === 'number') {
-        return fieldValue === String(item);
-      }
-      if (typeof fieldValue === 'number' && typeof item === 'string') {
-        return String(fieldValue) === item;
-      }
-      return fieldValue === item;
-    });
-
-    return negate ? !found : found;
-  }
-
-  private evaluateHas(file: FileData, field: string): boolean {
-    // Handle section.<name> virtual fields
-    if (field.startsWith('section.')) {
-      const sectionName = field.slice(8);
-      return file.sections?.has(sectionName) || false;
-    }
-    
-    return (file as any)[field] !== undefined;
-  }
-
-  private evaluateHasSection(file: FileData, sectionName: string): boolean {
-    return file.sections?.has(sectionName) || false;
-  }
-
-  private evaluateInToc(file: FileData, tocValue: any): boolean {
-    if (!file.sections) return false;
-    
-    // Get the string value to check
-    const searchValue = tocValue?.value || tocValue;
-    if (typeof searchValue !== 'string') return false;
-    
-    // Check if the value exists in any section title
-    for (const [title] of file.sections) {
-      if (title.toLowerCase().includes(searchValue.toLowerCase())) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private evaluateExists(file: FileData, subquery: any): boolean {
-    // Run the subquery synchronously by creating a temporary executor
-    // For now, we'll use a simplified approach: check if the subquery would return results
-    // This is a simplified version - in production, you'd want to handle this more robustly
-    try {
-      // Parse and evaluate the subquery
-      const parser = new (require('./parser').Parser)(subquery);
-      const ast = parser.parse();
-      
-      // For exists, we just need to know if there would be any results
-      // We'll use the same file context for the subquery
-      if (ast.type === 'select') {
-        const selectNode = ast as SelectNode;
-        // Simplified: check if where condition matches
-        if (selectNode.where) {
-          return this.evaluateWhere(file, selectNode.where);
-        }
-        // No where clause means all files match
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
+        throw new Error(`Unsupported expression type: ${(expr as Expression).type}`);
     }
   }
 
-  private evaluateComparison(file: FileData, field: string, op: string, value: ValueNode, fieldPath?: string, subquery?: any): boolean {
-    // Handle count(select ...) with outer field correlation
-    if (field === 'count(select)' && subquery) {
-      const compareValue = value ? this.evaluateValue(value) : null;
-      const count = this.evaluateSubqueryCount(file, subquery);
-      
-      if (!op || compareValue === null) {
-        return count > 0;
-      }
-      
-      switch (op) {
-        case '=': return count === compareValue;
-        case '!=': return count !== compareValue;
-        case '<': return count < compareValue;
-        case '>': return count > compareValue;
-        case '<=': return count <= compareValue;
-        case '>=': return count >= compareValue;
-        default: return false;
-      }
+  // Evaluate binary operations with type-specific behavior
+  private evaluateBinaryOp(expr: BinaryOpNode, context: EvaluationContext): any {
+    // Legacy `not x op y` semantics: a comparison whose left operand is NOT
+    // negates the whole comparison (e.g. `not status = "done"`).
+    if (expr.left.type === 'unary_op' && expr.left.op === 'NOT') {
+      const inner: BinaryOpNode = { ...expr, left: expr.left.operand };
+      return !this.evaluateBinaryOp(inner, context);
     }
 
-    // Handle aggregate functions in comparisons (e.g., count(*) > 1)
-    const aggregateMatch = field.match(/^(count|sum|avg|min|max)\((.+)\)$/);
-    if (aggregateMatch) {
-      const [, func, aggField] = aggregateMatch;
-      const compareValue = this.evaluateValue(value);
-      
-      // For aggregated comparisons, we need to evaluate against grouped data
-      // This is a simplified version - in production, you'd want to handle this more robustly
-      const fieldValue = (file as any)[field] || (file as any)[`${func}(${aggField})`];
-      
-      if (fieldValue === undefined) return false;
-      
-      const coercedFieldValue = typeof fieldValue === 'string' ? Number(fieldValue) : fieldValue;
-      const coercedCompareValue = typeof compareValue === 'string' ? Number(compareValue) : compareValue;
-      
-      switch (op) {
-        case '=': return coercedFieldValue === coercedCompareValue;
-        case '!=': return coercedFieldValue !== coercedCompareValue;
-        case '<': return coercedFieldValue < coercedCompareValue;
-        case '>': return coercedFieldValue > coercedCompareValue;
-        case '<=': return coercedFieldValue <= coercedCompareValue;
-        case '>=': return coercedFieldValue >= coercedCompareValue;
-        default: return false;
-      }
-    }
+    const left = this.evaluateExpression(expr.left, context);
+    const right = this.evaluateExpression(expr.right, context);
 
-    // Handle trigger variables (new.field, old.field)
-    let fieldValue: any;
-    if (fieldPath && this.triggerContext) {
-      const [prefix, ...rest] = fieldPath.split('.');
-      const fieldName = rest.join('.');
-      if (prefix === 'new' && this.triggerContext.new) {
-        fieldValue = (this.triggerContext.new as any)[fieldName];
-      } else if (prefix === 'old' && this.triggerContext.old) {
-        fieldValue = (this.triggerContext.old as any)[fieldName];
-      } else {
-        fieldValue = this.resolveField(file, field);
-      }
-    } else {
-      fieldValue = this.resolveField(file, field);
-    }
-
-    const compareValue = this.evaluateValue(value);
-
-    // Absent field contract: = v → false, != v → true
-    if (fieldValue === undefined) {
-      if (op === '=') return false;
-      if (op === '!=') return true;
-      // For other operators, absent field returns false
-      return false;
-    }
-
-    // Type coercion for comparison
-    let coercedFieldValue = fieldValue;
-    let coercedCompareValue = compareValue;
-    
-    // Convert to same type for comparison
-    if (typeof fieldValue === 'string' && typeof compareValue === 'number') {
-      coercedFieldValue = Number(fieldValue);
-    } else if (typeof fieldValue === 'number' && typeof compareValue === 'string') {
-      coercedCompareValue = Number(compareValue);
-    } else if (fieldValue instanceof Date && typeof compareValue === 'string') {
-      // Date vs string: parse string as date
-      const parsed = new Date(compareValue);
-      if (!isNaN(parsed.getTime())) {
-        coercedCompareValue = parsed;
-      }
-    } else if (typeof fieldValue === 'string' && compareValue instanceof Date) {
-      // String vs Date: parse string as date
-      const parsed = new Date(fieldValue);
-      if (!isNaN(parsed.getTime())) {
-        coercedFieldValue = parsed;
-      }
-    } else if (typeof fieldValue === 'string' && typeof compareValue === 'string') {
-      // Both strings: check if they look like dates
-      const isFieldDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(fieldValue);
-      const isCompareDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(compareValue);
-      if (isFieldDate && isCompareDate) {
-        coercedFieldValue = new Date(fieldValue);
-        coercedCompareValue = new Date(compareValue);
-      }
-    }
-
-    switch (op) {
+    switch (expr.op) {
       case '=':
-        return coercedFieldValue === coercedCompareValue;
       case '!=':
-        return coercedFieldValue !== coercedCompareValue;
-      case '<':
-        return coercedFieldValue < coercedCompareValue;
       case '>':
-        return coercedFieldValue > coercedCompareValue;
-      case '<=':
-        return coercedFieldValue <= coercedCompareValue;
+      case '<':
       case '>=':
-        return coercedFieldValue >= coercedCompareValue;
-      case 'contains':
-        return String(fieldValue).includes(String(compareValue));
-      case 'starts_with':
-        return String(fieldValue).startsWith(String(compareValue));
-      case 'ends_with':
-        return String(fieldValue).endsWith(String(compareValue));
-      case 'not_contains':
-        return !String(fieldValue).includes(String(compareValue));
-      case 'not_starts_with':
-        return !String(fieldValue).startsWith(String(compareValue));
-      case 'not_ends_with':
-        return !String(fieldValue).endsWith(String(compareValue));
-      case 'is_empty':
-        return !fieldValue || fieldValue === '';
-      case 'is_not_empty':
-        return fieldValue && fieldValue !== '';
+      case '<=':
+      case 'CONTAINS':
+      case 'STARTS_WITH':
+      case 'ENDS_WITH':
+        return TypeSystem.evaluateComparison(expr.op, left, right);
+      case 'NOT CONTAINS':
+        return !TypeSystem.evaluateComparison('CONTAINS', left, right);
+      case 'NOT STARTS_WITH':
+        return !TypeSystem.evaluateComparison('STARTS_WITH', left, right);
+      case 'NOT ENDS_WITH':
+        return !TypeSystem.evaluateComparison('ENDS_WITH', left, right);
+      case 'IN':
+        return this.evaluateIn(left, right);
+      case 'NOT IN':
+        return !this.evaluateIn(left, right);
+      case 'IS EMPTY':
+        return this.isEmpty(left);
+      case 'IS NOT EMPTY':
+        return !this.isEmpty(left);
+      case '+':
+      case '-':
+      case '*':
+      case '/':
+      case '%':
+      case '^':
+        return TypeSystem.evaluateArithmetic(expr.op, left, right);
+      case 'AND':
+        return Boolean(left) && Boolean(right);
+      case 'OR':
+        return Boolean(left) || Boolean(right);
       default:
-        return false;
-    }
-  }
-
-  private evaluateSubqueryCount(file: FileData, subquery: any): number {
-    // Run the subquery and count results
-    try {
-      // For correlated subqueries with outer.field references,
-      // we need to replace outer.field with actual values
-      if (subquery.where) {
-        const correlatedWhere = this.correlateSubquery(subquery.where, file);
-        subquery = { ...subquery, where: correlatedWhere };
-      }
-      
-      // Create a new executor for the subquery
-      const subExecutor = new Executor(this.dir, this.context, this.triggerContext, this.readOptions);
-      const result = subExecutor.executeSubquerySync(subquery);
-      return result;
-    } catch {
-      return 0;
-    }
-  }
-
-  private correlateSubquery(where: any, file: FileData): any {
-    // Replace outer.field references with actual values from the outer file
-    if (where.type === 'comparison') {
-      if (where.fieldPath && where.fieldPath.startsWith('outer.')) {
-        const outerField = where.fieldPath.slice(6); // Remove 'outer.' prefix
-        const outerValue = (file as any)[outerField];
-        return { ...where, field: outerField, fieldPath: outerField, value: { type: typeof outerValue === 'string' ? 'string' : 'number', value: outerValue } };
-      }
-    }
-    
-    if (where.type === 'and' || where.type === 'or') {
-      return {
-        ...where,
-        left: this.correlateSubquery(where.left, file),
-        right: this.correlateSubquery(where.right, file)
-      };
-    }
-    
-    if (where.type === 'not') {
-      return {
-        ...where,
-        expr: this.correlateSubquery(where.expr, file)
-      };
-    }
-    
-    return where;
-  }
-
-  executeSubquerySync(subquery: any): number {
-    // Synchronous version for subquery evaluation
-    try {
-      const files = FileOps.readFilesSync(this.dir, this.readOptions);
-      let count = 0;
-      
-      for (const file of files) {
-        if (subquery.where) {
-          if (this.evaluateWhere(file, subquery.where)) {
-            count++;
-          }
-        } else {
-          count++;
+        // ANY/ALL operators: op like 'ANY =', 'ALL CONTAINS'
+        if (expr.op.startsWith('ANY ')) {
+          return this.evaluateAny(left, expr.op.slice(4), right);
         }
-      }
-      
-      return count;
-    } catch {
-      return 0;
-    }
-  }
-
-  private evaluateValue(value: ValueNode): any {
-    let result: any;
-    
-    if (value.type === 'string') result = value.value;
-    else if (value.type === 'number') result = value.value;
-    else if (value.type === 'boolean') result = value.value;
-    else if (value.type === 'null') result = null;
-    else if (value.type === 'empty') result = null;
-    else if (value.type === 'field') result = this.currentFile ? this.resolveField(this.currentFile, value.name) : null;
-    else if (value.type === 'array') result = value.items.map(item => this.evaluateValue(item));
-    else if (value.type === 'binary') result = this.evaluateBinary(value);
-    else if (value.type === 'builtin') {
-      const args = value.args.map(arg => this.evaluateValue(arg));
-      result = Builtins.call(value.name, args, this.context, undefined, this.hooks);
-    }
-    else result = value;
-    
-    // Call hook if provided
-    if (this.hooks?.onEvaluateValue && result !== undefined) {
-      result = this.hooks.onEvaluateValue(result, '');
-    }
-    
-    return result;
-  }
-
-  private convertToType(value: any, type: string): any {
-    switch (type.toLowerCase()) {
-      case 'str':
-      case 'string':
-        return Builtins.str(value);
-      case 'int':
-      case 'integer':
-        return Builtins.int(value);
-      case 'float':
-      case 'number':
-        return Builtins.float(value);
-      case 'bool':
-      case 'boolean':
-        return Builtins.bool(value);
-      case 'array':
-        return Builtins.array(value);
-      case 'date':
-        if (typeof value === 'string') {
-          const date = new Date(value);
-          return isNaN(date.getTime()) ? value : date;
+        if (expr.op.startsWith('ALL ')) {
+          return this.evaluateAll(left, expr.op.slice(4), right);
         }
-        return value;
-      default:
-        return value;
+        throw new Error(`Unsupported binary operator: ${expr.op}`);
     }
   }
 
-  private evaluateBinary(expr: { op: '+' | '-'; left: ValueNode; right: ValueNode }): any {
-    const left = this.evaluateValue(expr.left);
-    const right = this.evaluateValue(expr.right);
-
-    // number +/- number → number
-    if (typeof left === 'number' && typeof right === 'number') {
-      return expr.op === '+' ? left + right : left - right;
+  // Evaluate IN operator
+  private evaluateIn(left: any, right: any): boolean {
+    // toc() returns array of { level, title } — match against titles
+    if (Array.isArray(right) && right.length > 0 &&
+        typeof right[0] === 'object' && right[0] !== null && 'title' in right[0]) {
+      const needle = String(left).toLowerCase();
+      return right.some(item => String((item as any).title).toLowerCase().includes(needle));
     }
 
-    // string + string → concat
-    if (typeof left === 'string' && typeof right === 'string' && expr.op === '+') {
-      return left + right;
+    if (Array.isArray(right)) {
+      return right.some(item => this.looseEqual(left, item));
     }
 
-    // list +/- list → set union/difference
-    if (Array.isArray(left) && Array.isArray(right)) {
-      if (expr.op === '+') {
-        // Union (dedupe)
-        return [...new Set([...left, ...right])];
-      } else {
-        // Difference
-        return left.filter(item => !right.includes(item));
-      }
+    if (Array.isArray(left)) {
+      return left.includes(right);
     }
 
-    // list +/- scalar → add/remove element
-    if (Array.isArray(left) && !Array.isArray(right)) {
-      if (expr.op === '+') {
-        // Add element (dedupe)
-        return left.includes(right) ? left : [...left, right];
-      } else {
-        // Remove element
-        return left.filter(item => item !== right);
-      }
-    }
-
-    // scalar + list (string) → list prepend (dedupe)
-    if (!Array.isArray(left) && Array.isArray(right) && expr.op === '+' && typeof left === 'string') {
-      return right.includes(left) ? right : [left, ...right];
-    }
-
-    throw new Error(`Cannot apply ${expr.op} to ${typeof left} and ${typeof right}`);
+    return false;
   }
 
-  private groupBy(files: FileData[], fields: string[]): FileData[] {
-    // Group files by the specified fields and calculate aggregates
-    const groups = new Map<string, FileData[]>();
-    
-    for (const file of files) {
-      const key = fields.map(f => String((file as any)[f])).join('|');
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(file);
-    }
-    
-    // Convert groups to aggregated results
-    const result: FileData[] = [];
-    for (const [, groupFiles] of groups) {
-      const aggregated: any = { ...groupFiles[0] };
-      
-      // Calculate count
-      aggregated['count(*)'] = groupFiles.length;
-      
-      // Store the count for each field
-      for (const field of fields) {
-        aggregated[`count(${field})`] = groupFiles.length;
-      }
-      
-      result.push(aggregated as FileData);
-    }
-    
-    return result;
+  // Loose equality with string/number coercion
+  private looseEqual(a: any, b: any): boolean {
+    if (a === b) return true;
+    if (typeof a === 'string' && typeof b === 'number') return a === String(b);
+    if (typeof a === 'number' && typeof b === 'string') return String(a) === b;
+    return false;
   }
 
-  private orderBy(files: FileData[], orderBy: { field: string; direction: 'asc' | 'desc' }[]): FileData[] {
-    return files.sort((a, b) => {
-      for (const { field, direction } of orderBy) {
-        const aVal = (a as any)[field];
-        const bVal = (b as any)[field];
-        
-        if (aVal === bVal) continue;
-        
-        // Handle dates
-        if (aVal instanceof Date && bVal instanceof Date) {
-          const compare = aVal.getTime() - bVal.getTime();
-          return direction === 'asc' ? compare : -compare;
-        }
-        
-        // Handle date strings
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
-          const isADate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(aVal);
-          const isBDate = /^\d{4}-\d{2}-\d{2}(T|\s)/.test(bVal);
-          if (isADate && isBDate) {
-            const aDate = new Date(aVal);
-            const bDate = new Date(bVal);
-            const compare = aDate.getTime() - bDate.getTime();
-            return direction === 'asc' ? compare : -compare;
-          }
-        }
-        
-        // Default comparison
-        const compare = aVal < bVal ? -1 : 1;
-        return direction === 'asc' ? compare : -compare;
-      }
-      return 0;
+  // Evaluate ANY operator: array.some(item => item <op> right)
+  private evaluateAny(left: any, subOp: string, right: any): boolean {
+    if (!Array.isArray(left)) return false;
+    return left.some(item => TypeSystem.evaluateComparison(subOp, item, right));
+  }
+
+  // Evaluate ALL operator: array.every(item => item <op> right)
+  private evaluateAll(left: any, subOp: string, right: any): boolean {
+    if (!Array.isArray(left)) return false;
+    return left.every(item => TypeSystem.evaluateComparison(subOp, item, right));
+  }
+
+  // Evaluate IS EMPTY
+  private isEmpty(value: any): boolean {
+    return value === undefined || value === null || value === '';
+  }
+
+  // Evaluate unary operations
+  private evaluateUnaryOp(expr: UnaryOpNode, context: EvaluationContext): any {
+    const operand = this.evaluateExpression(expr.operand, context);
+    return TypeSystem.evaluateUnary(expr.op, operand);
+  }
+
+  // Evaluate function calls
+  private evaluateFunctionCall(expr: FunctionCallNode, context: EvaluationContext): any {
+    const args = expr.args.map(arg => this.evaluateExpression(arg, context));
+
+    // Aggregates (precomputed by groupBy)
+    if (this.isAggregate(expr.name)) {
+      const key = this.aggregateKey(expr);
+      const file = context.file as any;
+      return file ? file[key] : undefined;
+    }
+
+    // Content-extraction builtins
+    switch (expr.name) {
+      case 'links': return this.evaluateLinks(args, context);
+      case 'images': return this.evaluateImages(args, context);
+      case 'codeblocks': return this.evaluateCodeblocks(args, context);
+      case 'section': return this.evaluateSection(args, context);
+      case 'grep': return this.evaluateGrep(args, context);
+      case 'toc': return this.evaluateToc(args, context);
+      case 'content': return this.evaluateContent(args, context);
+      case 'fields': return this.evaluateFields(args, context);
+      case 'has': return args[0] !== undefined && args[0] !== null;
+      case 'has_section': return this.evaluateHasSection(args, context);
+    }
+
+    // Apply hooks
+    if (this.hooks?.onBuiltinCall) {
+      const result = this.hooks.onBuiltinCall(expr.name, args, context.file as Record<string, any>);
+      if (result !== undefined) return result;
+    }
+
+    // Fallback to legacy builtins (now, next_date, upper, len, trim, ...)
+    return Builtins.call(expr.name, args, context.file as Record<string, any>, undefined, this.hooks);
+  }
+
+  // Evaluate method calls
+  private evaluateMethodCall(expr: MethodCallNode, context: EvaluationContext): any {
+    const object = this.evaluateExpression(expr.object, context);
+    const args = expr.args.map(arg => this.evaluateExpression(arg, context));
+
+    // Array methods
+    if (Array.isArray(object)) {
+      return this.evaluateArrayMethod(object, expr.method, args, context);
+    }
+
+    // String methods
+    if (typeof object === 'string') {
+      return this.evaluateStringMethod(object, expr.method, args, context);
+    }
+
+    // Object methods
+    if (typeof object === 'object' && object !== null) {
+      return this.evaluateObjectMethod(object, expr.method, args, context);
+    }
+
+    throw new Error(`Unsupported method call: ${expr.method} on ${typeof object}`);
+  }
+
+  // Evaluate array methods
+  private evaluateArrayMethod(array: any[], method: string, args: any[], context: EvaluationContext): any {
+    switch (method) {
+      case 'filter': return this.evaluateArrayFilter(array, args[0], context);
+      case 'map': return this.evaluateArrayMap(array, args[0], context);
+      case 'where': return this.evaluateArrayFilter(array, args[0], context);
+      case 'first': return array.length > 0 ? array[0] : undefined;
+      case 'last': return array.length > 0 ? array[array.length - 1] : undefined;
+      case 'sort': return this.evaluateArraySort(array, args[0], context);
+      case 'slice': return this.evaluateArraySlice(array, args);
+      case 'flatten': return this.evaluateArrayFlatten(array);
+      case 'unique': return this.evaluateArrayUnique(array);
+      case 'count': return array.length;
+      default: throw new Error(`Unsupported array method: ${method}`);
+    }
+  }
+
+  // Evaluate array filter
+  private evaluateArrayFilter(array: any[], predicate: any, context: EvaluationContext): any[] {
+    return array.filter(item => {
+      const itemContext = { ...context, variables: { ...context.variables, _: item } };
+      return this.evaluateExpression(predicate, itemContext);
     });
+  }
+
+  // Evaluate array map
+  private evaluateArrayMap(array: any[], mapper: any, context: EvaluationContext): any[] {
+    return array.map(item => {
+      const itemContext = { ...context, variables: { ...context.variables, _: item } };
+      return this.evaluateExpression(mapper, itemContext);
+    });
+  }
+
+  // Evaluate array sort
+  private evaluateArraySort(array: any[], comparator: any, context: EvaluationContext): any[] {
+    return [...array].sort((a, b) => {
+      const aContext = { ...context, variables: { ...context.variables, _: a } };
+      const bContext = { ...context, variables: { ...context.variables, _: b } };
+      const aValue = this.evaluateExpression(comparator, aContext);
+      const bValue = this.evaluateExpression(comparator, bContext);
+      return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+    });
+  }
+
+  // Evaluate array slice
+  private evaluateArraySlice(array: any[], args: any[]): any[] {
+    const start = args[0] || 0;
+    const end = args[1] || array.length;
+    return array.slice(start, end);
+  }
+
+  // Evaluate array flatten
+  private evaluateArrayFlatten(array: any[]): any[] {
+    return array.flat();
+  }
+
+  // Evaluate array unique
+  private evaluateArrayUnique(array: any[]): any[] {
+    return [...new Set(array)];
+  }
+
+  // Evaluate string methods
+  private evaluateStringMethod(str: string, method: string, args: any[], context: EvaluationContext): any {
+    switch (method) {
+      case 'length': return str.length;
+      case 'toLowerCase': return str.toLowerCase();
+      case 'toUpperCase': return str.toUpperCase();
+      case 'trim': return str.trim();
+      case 'startsWith': return str.startsWith(args[0]);
+      case 'endsWith': return str.endsWith(args[0]);
+      case 'includes': return str.includes(args[0]);
+      case 'slice': return str.slice(args[0], args[1]);
+      default: throw new Error(`Unsupported string method: ${method}`);
+    }
+  }
+
+  // Evaluate object methods
+  private evaluateObjectMethod(obj: Record<string, any>, method: string, args: any[], context: EvaluationContext): any {
+    switch (method) {
+      case 'keys': return Object.keys(obj);
+      case 'values': return Object.values(obj);
+      case 'entries': return Object.entries(obj);
+      case 'length': return Object.keys(obj).length;
+      default: throw new Error(`Unsupported object method: ${method}`);
+    }
+  }
+
+  // Evaluate array index
+  private evaluateArrayIndex(expr: ArrayIndexNode, context: EvaluationContext): any {
+    const array = this.evaluateExpression(expr.object, context);
+    const index = this.evaluateExpression(expr.index, context);
+
+    if (!Array.isArray(array)) {
+      throw new Error(`Cannot index non-array: ${typeof array}`);
+    }
+
+    if (typeof index !== 'number') {
+      throw new Error(`Array index must be number: ${typeof index}`);
+    }
+
+    // Handle negative indices (Python-style)
+    if (index < 0) {
+      return array[array.length + index];
+    }
+
+    return array[index];
+  }
+
+  // Evaluate map index (property access like new.status, item.title)
+  private evaluateMapIndex(expr: MapIndexNode, context: EvaluationContext): any {
+    const object = this.evaluateExpression(expr.object, context);
+    const key = this.evaluateExpression(expr.key, context);
+
+    if (typeof object !== 'object' || object === null) {
+      throw new Error(`Cannot index non-object: ${typeof object}`);
+    }
+
+    if (typeof key !== 'string') {
+      throw new Error(`Object key must be string: ${typeof key}`);
+    }
+
+    return object[key];
+  }
+
+  // Evaluate field reference
+  private evaluateField(expr: FieldNode, context: EvaluationContext): any {
+    // Trigger context: old / new
+    if (expr.name === 'old' && this.triggerContext?.old) {
+      return this.triggerContext.old;
+    }
+    if (expr.name === 'new' && this.triggerContext?.new) {
+      return this.triggerContext.new;
+    }
+
+    // Check variables first
+    if (context.variables && expr.name in context.variables) {
+      return context.variables[expr.name];
+    }
+
+    const file = context.file as FileData | undefined;
+    if (file) {
+      // Identity fields
+      switch (expr.name) {
+        case 'filename': return file.filename;
+        case 'path': return file.path;
+        case 'abspath': return file.abspath;
+        case 'filepath': return file.filepath;
+        case '_filename': return file.filename;
+        case '_path': return file.path;
+        case '_content': return this.getFileBody(file);
+      }
+
+      // Frontmatter fields
+      if (file.frontmatter && expr.name in file.frontmatter) {
+        const value = file.frontmatter[expr.name];
+
+        if (this.hooks?.onEvaluateValue) {
+          return this.hooks.onEvaluateValue(value, expr.name);
+        }
+
+        return value;
+      }
+
+      // Direct fields (set by update or spread onto the row)
+      if (expr.name in file) {
+        return (file as any)[expr.name];
+      }
+    }
+
+    // Missing field → undefined (absent-field contract)
+    return undefined;
+  }
+
+  // Type guard for ValueNode
+  private isValueNode(expr: Expression): expr is ValueNode {
+    return ['string', 'number', 'boolean', 'null', 'empty', 'regex', 'array'].includes(expr.type);
+  }
+
+  // Type guard for field update
+  private isFieldUpdate(update: any): update is { value: Expression } {
+    return typeof update === 'object' && update !== null && 'value' in update;
+  }
+
+  // Evaluate value literals
+  private evaluateValue(expr: ValueNode): any {
+    switch (expr.type) {
+      case 'string': return expr.value;
+      case 'number': return expr.value;
+      case 'boolean': return expr.value;
+      case 'null': return null;
+      case 'empty': return undefined;
+      case 'regex': return new RegExp(expr.value);
+      case 'array': return expr.items.map(item => this.evaluateValue(item));
+      case 'field': return this.evaluateField(expr, {});
+      case 'subquery': return this.evaluateSubquery(expr, {});
+      default: throw new Error(`Unsupported value type: ${(expr as ValueNode).type}`);
+    }
+  }
+
+  // Evaluate subquery
+  private evaluateSubquery(expr: SubqueryNode, context: EvaluationContext): any {
+    throw new Error('Subquery evaluation not implemented');
+  }
+
+  // ===== Content builtins =====
+
+  private evaluateLinks(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    return extractor.extractLinks();
+  }
+
+  private evaluateImages(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    return extractor.extractImages();
+  }
+
+  private evaluateCodeblocks(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    return extractor.extractCodeblocks();
+  }
+
+  private evaluateSection(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    return extractor.extractSections();
+  }
+
+  private evaluateGrep(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    return extractor.extractGrep(args[0]);
+  }
+
+  private evaluateToc(args: any[], context: EvaluationContext): any {
+    const file = context.file as FileData;
+    // Prefer precomputed regex-based sections (fast path, avoids remark parse)
+    if (file.sections && file.sections.size > 0) {
+      return Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+    }
+    if (!this.getFileBody(file)) {
+      return [];
+    }
+    const extractor = this.getContentExtractor(file);
+    return extractor.extractToc();
+  }
+
+  private evaluateContent(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return '';
+    }
+
+    const body = this.getFileBody(context.file);
+    if (args.length === 0) {
+      return body;
+    }
+
+    // Handle line range: content(start, end)
+    if (args.length === 2 && typeof args[0] === 'number' && typeof args[1] === 'number') {
+      const lines = body.split('\n');
+      return lines.slice(args[0] - 1, args[1]).join('\n');
+    }
+
+    return body;
+  }
+
+  private evaluateFields(args: any[], context: EvaluationContext): any {
+    if (!context.file) {
+      return [];
+    }
+
+    if (args.length === 0) {
+      return Object.keys(context.file.frontmatter || {});
+    }
+
+    // Handle fields('values')
+    if (args[0] === 'values') {
+      return Object.values(context.file.frontmatter || {});
+    }
+
+    return Object.keys(context.file.frontmatter || {});
+  }
+
+  // Evaluate has section("name")
+  private evaluateHasSection(args: any[], context: EvaluationContext): boolean {
+    const name = String(args[0] ?? '');
+    const file = context.file as FileData | undefined;
+    if (!file) return false;
+
+    // Prefer file.sections (from parseSections) — exact match
+    if (file.sections?.has(name)) {
+      return true;
+    }
+
+    // Fall back to ContentExtractor
+    if (this.getFileBody(file)) {
+      const extractor = this.getContentExtractor(file);
+      return extractor.extractSections().some(s => s.title === name);
+    }
+
+    return false;
+  }
+
+  // Resolve the markdown body for content extraction:
+  // prefers the precomputed `body`, falls back to legacy shapes.
+  private getFileBody(file: any): string {
+    if (!file) return '';
+    if (typeof file.body === 'string') return file.body;
+    if (typeof file.content === 'string') return file.content;
+    return file.content?.raw ?? '';
+  }
+
+  // Get or create content extractor
+  private getContentExtractor(file: FileData): ContentExtractor {
+    if (!this.getFileBody(file)) {
+      throw new Error('File content not loaded');
+    }
+
+    const cacheKey = file.path || file.filename;
+    if (this.contentExtractorCache.has(cacheKey)) {
+      return this.contentExtractorCache.get(cacheKey)!;
+    }
+
+    const extractor = new ContentExtractor(this.getFileBody(file));
+    this.contentExtractorCache.set(cacheKey, extractor);
+    return extractor;
   }
 }

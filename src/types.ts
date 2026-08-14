@@ -3,31 +3,91 @@
 // Token types
 export type TokenType =
   | 'SELECT' | 'UPDATE' | 'CREATE' | 'DELETE'
-  | 'WHERE' | 'SET' | 'ORDER' | 'BY' | 'GROUP' | 'HAVING'
+  | 'WHERE' | 'SET' | 'ORDER' | 'BY' | 'GROUP' | 'HAVING' | 'FROM'
   | 'LIMIT' | 'OFFSET' | 'DISTINCT'
   | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'ANY' | 'ALL'
   | 'EXISTS' | 'IS' | 'EMPTY' | 'HAS'
   | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN' | 'AS'
-  | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN'
-  | 'COMMA' | 'DOT' | 'LPAREN' | 'RPAREN' | 'LBRACKET' | 'RBRACKET'
+  | 'LEFT' | 'RIGHT' | 'INNER' | 'CROSS' | 'JOIN' | 'ON'
+  | 'UNION'
+  | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN' | 'REGEX'
+  | 'COMMA' | 'DOT' | 'LPAREN' | 'RPAREN' | 'LBRACKET' | 'RBRACKET' | 'SEMICOLON'
   | 'EQUALS' | 'NOT_EQUALS' | 'LT' | 'GT' | 'LTE' | 'GTE'
-  | 'PLUS' | 'MINUS' | 'STAR' | 'PIPE' | 'COLON'
+  | 'PLUS' | 'MINUS' | 'STAR' | 'SLASH' | 'PERCENT' | 'CARET'
+  | 'PIPE' | 'COLON'
   | 'EOF';
 
 export interface Token {
   type: TokenType;
   value: string;
   position: number;
+  line: number;
+  column: number;
+  offset: number;
 }
 
-// AST Node types
+// AST Node types for Pratt parser
 export type ASTNode =
-  | SelectNode
-  | UpdateNode
-  | CreateNode
-  | DeleteNode
-  | TriggerNode
-  | PipeNode;
+  | SelectStatement
+  | UpdateStatement
+  | CreateStatement
+  | DeleteStatement
+  | TriggerStatement
+  | PipeNode
+  | UnionNode;
+
+export type Expression =
+  | BinaryOpNode
+  | UnaryOpNode
+  | FunctionCallNode
+  | MethodCallNode
+  | ArrayIndexNode
+  | MapIndexNode
+  | FieldNode
+  | ValueNode
+  | ParenNode
+  | WildcardNode
+  | SubqueryNode
+  | { type: 'exists'; subquery: SelectStatement };
+
+// Statement nodes
+export interface SelectStatement {
+  type: 'select';
+  fields: Expression[];
+  distinct?: boolean;
+  from?: FromClause;
+  where?: Expression;
+  groupBy?: string[];
+  having?: Expression;
+  orderBy?: OrderByNode[];
+  limit?: number;
+  offset?: number;
+  join?: JoinNode;
+}
+
+export interface UpdateStatement {
+  type: 'update';
+  where?: Expression;
+  set: Record<string, { value: Expression; type?: string }>;
+}
+
+export interface CreateStatement {
+  type: 'create';
+  fields: Record<string, { value: Expression; type?: string }>;
+}
+
+export interface DeleteStatement {
+  type: 'delete';
+  where?: Expression;
+}
+
+export interface TriggerStatement {
+  type: 'trigger';
+  event: 'before' | 'after';
+  operation: 'create' | 'update' | 'delete';
+  where?: Expression;
+  action: TriggerAction;
+}
 
 export interface PipeNode {
   type: 'pipe';
@@ -36,51 +96,105 @@ export interface PipeNode {
   args?: ValueNode[];
 }
 
-export interface SelectNode {
-  type: 'select';
-  fields: (string | AggregateNode | BuiltinNode)[];
-  distinct?: boolean;
-  where?: WhereNode;
-  groupBy?: string[];
-  having?: WhereNode;
-  orderBy?: OrderByNode[];
-  limit?: number;
-  offset?: number;
-  join?: JoinNode;
+export interface UnionNode {
+  type: 'union';
+  queries: SelectStatement[];
+  all: boolean;
 }
 
-export interface JoinNode {
-  type: 'join';
-  table: string;
-  on: WhereNode;
+// Expression nodes
+export interface BinaryOpNode {
+  type: 'binary_op';
+  left: Expression;
+  op: string;
+  right: Expression;
+}
+
+export interface UnaryOpNode {
+  type: 'unary_op';
+  op: string;
+  operand: Expression;
+}
+
+export interface FunctionCallNode {
+  type: 'function_call';
+  name: string;
+  args: Expression[];
   alias?: string;
 }
 
-export interface UpdateNode {
-  type: 'update';
-  where: WhereNode;
-  set: Record<string, { value: ValueNode; type?: string }>;
+export interface MethodCallNode {
+  type: 'method_call';
+  object: Expression;
+  method: string;
+  args: Expression[];
 }
 
-export interface CreateNode {
-  type: 'create';
-  fields: Record<string, { value: ValueNode; type?: string }>;
+export interface ArrayIndexNode {
+  type: 'array_index';
+  object: Expression;
+  index: Expression;
 }
 
-export interface DeleteNode {
-  type: 'delete';
-  where: WhereNode;
+export interface MapIndexNode {
+  type: 'map_index';
+  object: Expression;
+  key: Expression;
 }
 
-export interface TriggerNode {
-  type: 'trigger';
-  event: 'before' | 'after';
-  operation: 'create' | 'update' | 'delete';
-  where?: WhereNode;
-  action: TriggerAction;
+export interface FieldNode {
+  type: 'field';
+  name: string;
+  alias?: string;
 }
 
-export type TriggerAction = DenyAction | UpdateNode | CreateNode | RunAction;
+export interface WildcardNode {
+  type: 'wildcard';
+}
+
+export interface ParenNode {
+  type: 'paren';
+  expression: Expression;
+}
+
+export interface SubqueryNode {
+  type: 'subquery';
+  query: SelectStatement;
+}
+
+// Value node types
+export type ValueNode =
+  | { type: 'string'; value: string }
+  | { type: 'number'; value: number }
+  | { type: 'boolean'; value: boolean }
+  | { type: 'null'; value: null }
+  | { type: 'empty' }
+  | { type: 'regex'; value: string }
+  | { type: 'array'; items: ValueNode[] }
+  | FieldNode
+  | SubqueryNode;
+
+// Other node types
+export interface JoinNode {
+  type: 'join';
+  joinType: 'left' | 'right' | 'inner' | 'cross';
+  left: FromClause;
+  right: FromClause;
+  on?: Expression;
+}
+
+export interface FromClause {
+  table: string;
+  alias?: string;
+}
+
+export interface OrderByNode {
+  field: string;
+  direction: 'asc' | 'desc';
+}
+
+// Trigger actions
+export type TriggerAction = DenyAction | UpdateStatement | CreateStatement | RunAction;
 
 export interface DenyAction {
   type: 'deny';
@@ -92,67 +206,13 @@ export interface RunAction {
   command: string;
 }
 
-export interface WhereNode {
-  type: 'and' | 'or' | 'not' | 'comparison' | 'exists' | 'in' | 'not_in' | 'has' | 'has_section' | 'in_toc' | 'any' | 'all' | 'array_comparison';
-  left?: WhereNode | FieldNode;
-  expr?: WhereNode;
-  op?: string;
-  right?: WhereNode | ValueNode | SelectNode;
-  field?: string;
-  fieldPath?: string;
-  value?: ValueNode;
-  subquery?: SelectNode;
-  arrayOp?: string;
-  arrayField?: string;
-  arrayCondition?: WhereNode;
-  sectionName?: string;
-  tocValue?: ValueNode;
-}
-
-export interface FieldNode {
-  type: 'field';
-  name: string;
-  alias?: string;
-}
-
-export type ValueNode =
-  | { type: 'string'; value: string }
-  | { type: 'number'; value: number }
-  | { type: 'boolean'; value: boolean }
-  | { type: 'null'; value: null }
-  | { type: 'empty' }
-  | { type: 'field'; name: string; alias?: string }
-  | { type: 'array'; items: ValueNode[] }
-  | { type: 'binary'; op: '+' | '-'; left: ValueNode; right: ValueNode }
-  | BuiltinNode
-  | SelectNode;
-
-export interface BuiltinNode {
-  type: 'builtin';
-  name: string;
-  args: (FieldNode | ValueNode)[];
-  alias?: string;
-}
-
-export interface AggregateNode {
-  type: 'aggregate';
-  func: 'count' | 'sum' | 'avg' | 'min' | 'max';
-  field: string;
-  alias?: string;
-}
-
-export interface OrderByNode {
-  field: string;
-  direction: 'asc' | 'desc';
-}
-
 // Execution types
 export interface QueryOptions {
   dir?: string;
   files?: string[];
   query: string;
   context?: Record<string, any>;
-  triggers?: TriggerNode[];
+  triggers?: TriggerStatement[];
   format?: 'json' | 'table' | 'csv';
 }
 

@@ -1,6 +1,31 @@
 // src/parser.ts
-import { Token, ASTNode, SelectNode, WhereNode, ValueNode, FieldNode, AggregateNode, OrderByNode, BuiltinNode } from './types';
+import { Token, TokenType, ASTNode, Expression, SelectStatement, UpdateStatement, 
+  CreateStatement, DeleteStatement, TriggerStatement, PipeNode, UnionNode,
+  BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode, ArrayIndexNode,
+  MapIndexNode, FieldNode, ValueNode, ParenNode, WildcardNode, SubqueryNode,
+  JoinNode, FromClause, OrderByNode } from './types';
 import { Lexer } from './lexer';
+
+// Binding power table for Pratt parser
+const BINDING_POWER: Record<string, number> = {
+  // OR has lowest precedence
+  'OR': 10,
+  'AND': 20,
+  // Comparisons
+  '=': 30, '!=': 30, '<': 30, '>': 30, '<=': 30, '>=': 30,
+  'IN': 30, 'NOT IN': 30, 'CONTAINS': 30, 'STARTS_WITH': 30, 'ENDS_WITH': 30,
+  'IS': 30, 'ANY': 30, 'ALL': 30,
+  // Additive
+  '+': 40, '-': 40,
+  // Multiplicative
+  '*': 50, '/': 50, '%': 50,
+  // Exponentiation (right associative)
+  '^': 60,
+  // Unary
+  'NOT': 70, '!': 70, 'UNARY_MINUS': 70, 'UNARY_PLUS': 70,
+  // Function calls, method calls, indexing
+  'CALL': 80, 'METHOD': 90, 'INDEX': 80
+};
 
 export class Parser {
   private tokens: Token[];
@@ -13,6 +38,11 @@ export class Parser {
   parse(): ASTNode {
     const token = this.current();
 
+    // Check for UNION first
+    if (token.type === 'UNION') {
+      return this.parseUnion(this.parseSelect());
+    }
+    
     let ast: ASTNode;
     
     if (token.type === 'SELECT') ast = this.parseSelect();
@@ -36,60 +66,18 @@ export class Parser {
       return { type: 'pipe', expr: ast, fn, args };
     }
 
+    // Check for UNION after the query
+    if (this.current().type === 'UNION') {
+      return this.parseUnion(ast as SelectStatement);
+    }
+
     return ast;
   }
 
-  private parseTrigger(): any {
-    const event = this.advance().type === 'BEFORE' ? 'before' : 'after';
-    const opToken = this.current();
-    let operation: 'create' | 'update' | 'delete';
-    
-    if (opToken.type === 'CREATE') {
-      operation = 'create';
-    } else if (opToken.type === 'UPDATE') {
-      operation = 'update';
-    } else if (opToken.type === 'DELETE') {
-      operation = 'delete';
-    } else {
-      throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
-    }
-    
-    this.advance();
-
-    const node: any = {
-      type: 'trigger',
-      event,
-      operation
-    };
-
-    // WHERE
-    if (this.current().type === 'WHERE') {
-      this.advance();
-      node.where = this.parseWhere();
-    }
-
-    // Action
-    const actionToken = this.current();
-    if (actionToken.type === 'DENY') {
-      this.advance();
-      const message = this.expect('STRING').value;
-      node.action = { type: 'deny', message };
-    } else if (actionToken.type === 'SET') {
-      this.advance();
-      node.action = { type: 'update', set: this.parseSetClause() };
-    } else if (actionToken.type === 'RUN') {
-      this.advance();
-      const command = this.expect('STRING').value;
-      node.action = { type: 'run', command };
-    }
-
-    return node;
-  }
-
-  private parseSelect(): SelectNode {
+  private parseSelect(): SelectStatement {
     this.advance(); // skip SELECT
 
-    const node: SelectNode = { type: 'select', fields: ['*'] };
+    const node: SelectStatement = { type: 'select', fields: [] };
 
     // DISTINCT
     if (this.current().type === 'DISTINCT') {
@@ -98,14 +86,24 @@ export class Parser {
     }
 
     // Parse fields if not a keyword
-    if (this.current().type !== 'EOF' && !this.isKeyword()) {
+    if (this.current().type !== 'EOF' && !this.isKeyword() && this.current().type !== 'FROM') {
       node.fields = this.parseFieldList();
+    } else if (node.fields.length === 0) {
+      // Default to wildcard if no fields specified
+      node.fields = [{ type: 'wildcard' }];
+    }
+
+    // FROM clause
+    if (this.current().type === 'FROM') {
+      this.advance();
+      const fromClause = this.parseFromClause();
+      node.from = fromClause;
     }
 
     // WHERE
     if (this.current().type === 'WHERE') {
       this.advance();
-      node.where = this.parseWhere();
+      node.where = this.parseExpression();
     }
 
     // GROUP BY
@@ -118,7 +116,7 @@ export class Parser {
     // HAVING
     if (this.current().type === 'HAVING') {
       this.advance();
-      node.having = this.parseWhere();
+      node.having = this.parseExpression();
     }
 
     // ORDER BY
@@ -141,25 +139,90 @@ export class Parser {
     }
 
     // JOIN
-    if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'join') {
-      this.advance();
-      const table = this.expect('IDENTIFIER').value;
-      this.expect('ON');
-      const on = this.parseWhere();
-      node.join = { type: 'join', table, on };
+    if (this.current().type === 'LEFT' || this.current().type === 'RIGHT' ||
+        this.current().type === 'INNER' || this.current().type === 'CROSS') {
+      node.join = this.parseJoin();
+    } else if (this.current().type === 'JOIN') {
+      node.join = this.parseJoin();
     }
 
     return node;
   }
 
-  private parseUpdate(): any {
+  private parseUnion(firstQuery: SelectStatement): UnionNode {
+    const queries = [firstQuery];
+    let all = false;
+
+    while (this.current().type === 'UNION') {
+      this.advance();
+      if (this.current().type === 'ALL') {
+        all = true;
+        this.advance();
+      }
+      queries.push(this.parseSelect());
+    }
+
+    return { type: 'union', queries, all };
+  }
+
+  private parseJoin(): JoinNode {
+    let joinType: 'left' | 'right' | 'inner' | 'cross' = 'cross';
+    
+    if (this.current().type === 'LEFT') {
+      joinType = 'left';
+      this.advance();
+      this.expect('JOIN');
+    } else if (this.current().type === 'RIGHT') {
+      joinType = 'right';
+      this.advance();
+      this.expect('JOIN');
+    } else if (this.current().type === 'INNER') {
+      joinType = 'inner';
+      this.advance();
+      this.expect('JOIN');
+    } else if (this.current().type === 'CROSS') {
+      joinType = 'cross';
+      this.advance();
+      if (this.current().type === 'JOIN') {
+        this.advance();
+      }
+    } else {
+      this.expect('JOIN');
+    }
+    
+    const right = this.parseFromClause();
+    let on: Expression | undefined;
+    
+    if (joinType !== 'cross' && this.current().type === 'ON') {
+      this.advance();
+      on = this.parseExpression();
+    }
+    
+    // For now, we'll use a default left table
+    const left: FromClause = { table: 'current', alias: 'a' };
+    
+    return { type: 'join', joinType, left, right, on };
+  }
+
+  private parseFromClause(): FromClause {
+    const table = this.expect('IDENTIFIER').value;
+    let alias: string | undefined;
+    
+    if (this.current().type === 'IDENTIFIER' && this.current().value !== 'ON') {
+      alias = this.advance().value;
+    }
+    
+    return { table, alias };
+  }
+
+  private parseUpdate(): UpdateStatement {
     this.advance(); // skip UPDATE
-    const node: any = { type: 'update', set: {} };
+    const node: UpdateStatement = { type: 'update', set: {} };
 
     // WHERE
     if (this.current().type === 'WHERE') {
       this.advance();
-      node.where = this.parseWhere();
+      node.where = this.parseExpression();
     }
 
     // SET
@@ -171,98 +234,96 @@ export class Parser {
     return node;
   }
 
-  private parseCreate(): any {
+  private parseCreate(): CreateStatement {
     this.advance(); // skip CREATE
-    const node: any = { type: 'create', fields: {} };
+    const node: CreateStatement = { type: 'create', fields: {} };
 
     node.fields = this.parseSetClause();
 
     return node;
   }
 
-  private parseDelete(): any {
+  private parseDelete(): DeleteStatement {
     this.advance(); // skip DELETE
-    const node: any = { type: 'delete' };
+    const node: DeleteStatement = { type: 'delete' };
 
     // WHERE
     if (this.current().type === 'WHERE') {
       this.advance();
-      node.where = this.parseWhere();
+      node.where = this.parseExpression();
     }
 
     return node;
   }
 
-  private parseFieldList(): (string | AggregateNode | BuiltinNode)[] {
-    const fields: (string | AggregateNode | BuiltinNode)[] = [];
+  private parseTrigger(): TriggerStatement {
+    const event = this.advance().type === 'BEFORE' ? 'before' : 'after';
+    const opToken = this.current();
+    let operation: 'create' | 'update' | 'delete';
+    
+    if (opToken.type === 'CREATE') {
+      operation = 'create';
+    } else if (opToken.type === 'UPDATE') {
+      operation = 'update';
+    } else if (opToken.type === 'DELETE') {
+      operation = 'delete';
+    } else {
+      throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
+    }
+    
+    this.advance();
+
+    const node: TriggerStatement = {
+      type: 'trigger',
+      event,
+      operation,
+      action: { type: 'deny', message: '' } // default
+    };
+
+    // WHERE
+    if (this.current().type === 'WHERE') {
+      this.advance();
+      node.where = this.parseExpression();
+    }
+
+    // Action
+    const actionToken = this.current();
+    if (actionToken.type === 'DENY') {
+      this.advance();
+      const message = this.expect('STRING').value;
+      node.action = { type: 'deny', message };
+    } else if (actionToken.type === 'SET') {
+      this.advance();
+      node.action = { type: 'update', set: this.parseSetClause() };
+    } else if (actionToken.type === 'RUN') {
+      this.advance();
+      const command = this.expect('STRING').value;
+      node.action = { type: 'run', command };
+    }
+
+    return node;
+  }
+
+  private parseFieldList(): Expression[] {
+    const fields: Expression[] = [];
 
     while (this.current().type !== 'EOF' && !this.isKeyword()) {
-      const token = this.current();
-
-      if (token.type === 'IDENTIFIER' || token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
-        if (this.peek().type === 'LPAREN') {
-          // Check if it's an aggregate function or regular function
-          const func = token.value.toLowerCase();
-          if (['count', 'sum', 'avg', 'min', 'max'].includes(func)) {
-            // Aggregate function
-            this.advance(); // skip function name
-            this.expect('LPAREN');
-            let field = '*';
-            if (this.current().type === 'IDENTIFIER') {
-              field = this.current().value;
-              this.advance();
-            } else if (this.current().type === 'STAR') {
-              this.advance();
-            }
-            this.expect('RPAREN');
-            
-            // Check for alias
-            let alias: string | undefined;
-            if (this.current().type === 'AS') {
-              this.advance();
-              alias = this.expect('IDENTIFIER').value;
-            }
-            
-            fields.push({ type: 'aggregate', func: func as any, field, alias });
-          } else {
-            // Regular function call (like fields, toc, contains, etc.) - parse as builtin
-            this.advance(); // skip function name
-            this.expect('LPAREN');
-            const args: (FieldNode | ValueNode)[] = [];
-            while (this.current().type !== 'RPAREN' && this.current().type !== 'EOF') {
-              args.push(this.parseValue());
-              if (this.current().type === 'COMMA') this.advance();
-            }
-            this.expect('RPAREN');
-            
-            // Check for alias
-            let alias: string | undefined;
-            if (this.current().type === 'AS') {
-              this.advance();
-              alias = this.expect('IDENTIFIER').value;
-            }
-            
-            fields.push({ type: 'builtin', name: token.value, args, alias });
-          }
-        } else {
-          // Plain field reference
-          this.advance();
-          
-          // Check for alias
-          let alias: string | undefined;
-          if (this.current().type === 'AS') {
-            this.advance();
-            alias = this.expect('IDENTIFIER').value;
-          }
-          
-          fields.push({ type: 'field', name: token.value, alias });
-        }
-      } else if (token.type === 'STAR') {
-        fields.push('*');
+      const expr = this.parseExpression();
+      
+      // Check for AS alias
+      let alias: string | undefined;
+      if (this.current().type === 'AS') {
         this.advance();
-      } else if (token.type === 'RPAREN') {
-        break;
+        alias = this.expect('IDENTIFIER').value;
+        // Add alias to the last field
+        if (expr.type === 'field') {
+          expr.alias = alias;
+        } else if (expr.type === 'function_call') {
+          expr.alias = alias;
+        }
       }
+      
+      fields.push(expr);
 
       if (this.current().type === 'COMMA') {
         this.advance();
@@ -274,363 +335,403 @@ export class Parser {
     return fields;
   }
 
-  private parseWhere(): WhereNode {
-    return this.parseOrExpression();
-  }
-
-  private parseOrExpression(): WhereNode {
-    let left = this.parseAndExpression();
-
-    while (this.current().type === 'OR') {
-      this.advance();
-      const right = this.parseAndExpression();
-      left = { type: 'or', left, right };
+  private parseExpression(rbp: number = 0): Expression {
+    let left = this.parsePrefix();
+    
+    while (rbp < this.getBindingPower(this.current())) {
+      left = this.parseInfix(left);
     }
-
+    
     return left;
   }
 
-  private parseAndExpression(): WhereNode {
-    let left = this.parseComparison();
-
-    while (this.current().type === 'AND') {
-      this.advance();
-      const right = this.parseComparison();
-      left = { type: 'and', left, right };
-    }
-
-    return left;
-  }
-
-  private parseArrayCondition(): WhereNode {
+  private parsePrefix(): Expression {
     const token = this.current();
     
-    // Handle simple comparisons like = "value" or contains "value"
-    if (token.type === 'EQUALS' || token.type === 'NOT_EQUALS' || 
-        token.type === 'LT' || token.type === 'GT' || 
-        token.type === 'LTE' || token.type === 'GTE') {
-      const op = this.getOperator();
+    // Unary operators
+    if (this.isTokenType(token, 'NOT') || this.isTokenType(token, 'MINUS') || this.isTokenType(token, 'PLUS')) {
+      const op = this.isTokenType(token, 'NOT') ? 'NOT' : token.value;
       this.advance();
-      const value = this.parseValue();
-      return { type: 'comparison', field: '', op, value };
+      const operand = this.parseExpression(BINDING_POWER[op]);
+      return { type: 'unary_op', op, operand };
     }
     
-    if (token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
-      const op = token.value;
-      this.advance();
-      const value = this.parseValue();
-      return { type: 'comparison', field: '', op, value };
+    // Parentheses
+    if (token.type === 'LPAREN') {
+      this.advance(); // skip (
+      const expr = this.parseExpression();
+      this.expect('RPAREN');
+      return { type: 'paren', expression: expr };
     }
     
-    // Fall back to regular comparison parsing
-    return this.parseComparison();
+    // Function call
+    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
+      return this.parseFunctionCall();
+    }
+    
+    // Array literal
+    if (token.type === 'LBRACKET') {
+      return this.parseArrayLiteral();
+    }
+    
+    // Value literals
+    if (token.type === 'STRING' || token.type === 'NUMBER' || token.type === 'BOOLEAN' ||
+        token.type === 'REGEX' || token.value === 'null' || token.type === 'EMPTY') {
+      return this.parseValue();
+    }
+    
+    // HAS keyword
+    if (token.type === 'HAS') {
+      return this.parseHas();
+    }
+    
+    // EXISTS keyword
+    if (token.type === 'EXISTS') {
+      return this.parseExists();
+    }
+    
+    // Field reference
+    if (token.type === 'IDENTIFIER') {
+      this.advance();
+      return { type: 'field', name: token.value };
+    }
+    
+    // Wildcard
+    if (token.type === 'STAR') {
+      this.advance();
+      return { type: 'wildcard' };
+    }
+    
+    throw new Error(`Unexpected token in prefix: ${token.value}`);
   }
 
-  private parseComparison(): WhereNode {
+  private parseInfix(left: Expression): Expression {
     const token = this.current();
-
-    // NOT
-    if (token.type === 'NOT') {
-      this.advance();
-      const expr = this.parseComparison();
-      return { type: 'not', expr };
-    }
-
-    // EXISTS subquery
+    
+    // EXISTS operator
     if (token.type === 'EXISTS') {
       this.advance();
       this.expect('LPAREN');
-      const subquery = this.parseSelect();
+      const query = this.parseSelect();
       this.expect('RPAREN');
-      return { type: 'exists', subquery };
+      return { type: 'exists', subquery: query };
     }
-
-    // HAS function
-    if (token.type === 'HAS') {
+    
+    // EXISTS operator
+    if (this.isTokenType(token, 'EXISTS')) {
       this.advance();
-      
-      // Handle has section("name") syntax
-      if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'section') {
-        this.advance(); // skip section
-        this.expect('LPAREN');
-        const sectionName = this.expect('STRING').value;
-        this.expect('RPAREN');
-        return { type: 'has_section', sectionName };
-      }
-      
-      // Handle has(field) syntax
       this.expect('LPAREN');
-      const field = this.expect('IDENTIFIER').value;
+      const query = this.parseSelect();
       this.expect('RPAREN');
-      return { type: 'has', field };
+      return { type: 'exists', subquery: query };
     }
-
-    // "value" in toc() syntax
-    if (token.type === 'STRING') {
-      const value = this.parseValue(); // parses the string
-      if (this.current().type === 'IN') {
-        this.advance(); // skip IN
-        // Check for toc()
-        if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'toc') {
-          this.advance(); // skip toc
-          this.expect('LPAREN');
-          // Parse optional levels
-          let levels: number[] = [];
-          if (this.current().type === 'NUMBER') {
-            levels.push(parseInt(this.current().value));
-            this.advance();
-            while (this.current().type === 'COMMA') {
-              this.advance();
-              levels.push(parseInt(this.expect('NUMBER').value));
-            }
-          }
-          this.expect('RPAREN');
-          return { type: 'in_toc', tocValue: value, field: 'toc', value: { type: 'array', items: [] } };
-        }
-      }
-      // If not "in toc()", fall through to regular comparison
-      // Restore state by re-parsing would be complex, so handle differently
-    }
-
-    // Handle aggregate functions in comparisons (e.g., count(*) > 1)
-    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
-      const func = token.value.toLowerCase();
-      if (['count', 'sum', 'avg', 'min', 'max'].includes(func)) {
-        this.advance(); // skip function name
-        this.expect('LPAREN');
-        
-        // Check for subquery: count(select ...)
-        if (this.current().type === 'SELECT') {
-          const subquery = this.parseSelect();
-          this.expect('RPAREN');
-          
-          // Parse optional comparison: count(select ...) > n
-          let op: string | undefined;
-          let value: ValueNode | undefined;
-          if (this.current().type === 'EQUALS' || this.current().type === 'NOT_EQUALS' ||
-              this.current().type === 'LT' || this.current().type === 'GT' ||
-              this.current().type === 'LTE' || this.current().type === 'GTE') {
-            op = this.getOperator();
-            this.advance();
-            value = this.parseValue();
-          }
-          
-          return { type: 'comparison', field: `${func}(select)`, fieldPath: `${func}(select)`, op, value, subquery };
-        }
-        
-        let field = '*';
-        if (this.current().type === 'IDENTIFIER') {
-          field = this.current().value;
-          this.advance();
-        } else if (this.current().type === 'STAR') {
-          this.advance();
-        }
-        this.expect('RPAREN');
-        
-        const opToken = this.current();
-        const op = this.getOperator();
-        this.advance();
-        
-        const value = this.parseValue();
-        return { type: 'comparison', field: `${func}(${field})`, fieldPath: `${func}(${field})`, op, value };
-      }
-    }
-
-    // field operator value (including new.field, old.field)
-    if (token.type === 'IDENTIFIER') {
-      let field = token.value;
-      let fieldPath = token.value;
-      this.advance();
-
-      // Handle new.field or old.field
-      if (this.current().type === 'DOT' && this.peek().type === 'IDENTIFIER') {
-        const prefix = field;
-        this.advance(); // skip dot
-        const fieldPart = this.expect('IDENTIFIER').value;
-        field = fieldPart;
-        fieldPath = `${prefix}.${fieldPart}`;
-      }
-
-      // ANY/ALL array operators
-      if (this.current().type === 'ANY' || this.current().type === 'ALL') {
-        const arrayOp = this.current().value;
-        this.advance();
-        
-        // Parse the condition for each element
-        // The condition should be a comparison like = "backend" or contains "ui"
-        const condition = this.parseArrayCondition();
-        
-        return { type: 'array_comparison', field, fieldPath, arrayOp, arrayCondition: condition };
-      }
-
-      // IS [NOT] EMPTY
-      if (this.current().type === 'IS') {
-        this.advance();
-        const notEmpty = this.current().type === 'NOT';
-        if (notEmpty) this.advance();
-        this.expect('EMPTY');
-        return { type: 'comparison', field, fieldPath, op: notEmpty ? 'is_not_empty' : 'is_empty', value: { type: 'null', value: null } };
-      }
-
-      // IN list
-      if (this.current().type === 'IN') {
-        this.advance();
-        this.expect('LPAREN');
-        const items: ValueNode[] = [];
-        while (this.current().type !== 'RPAREN') {
-          items.push(this.parseValue());
-          if (this.current().type === 'COMMA') this.advance();
-        }
-        this.expect('RPAREN');
-        return { type: 'in', field, fieldPath, value: { type: 'array', items } };
-      }
-
-      // NOT IN list
-      if (this.current().type === 'NOT' && this.peek().type === 'IN') {
-        this.advance(); // skip NOT
-        this.advance(); // skip IN
-        this.expect('LPAREN');
-        const items: ValueNode[] = [];
-        while (this.current().type !== 'RPAREN') {
-          items.push(this.parseValue());
-          if (this.current().type === 'COMMA') this.advance();
-        }
-        this.expect('RPAREN');
-        return { type: 'not_in', field, fieldPath, value: { type: 'array', items } };
-      }
-
-      // CONTAINS, STARTS_WITH, ENDS_WITH
-      if (this.current().type === 'CONTAINS' || this.current().type === 'STARTS_WITH' || this.current().type === 'ENDS_WITH') {
-        const op = this.current().value;
-        this.advance();
-        const value = this.parseValue();
-        return { type: 'comparison', field, fieldPath, op, value };
-      }
-
-      // NOT CONTAINS, NOT STARTS_WITH, NOT ENDS_WITH
-      if (this.current().type === 'NOT') {
-        const nextType = this.peek().type;
-        if (nextType === 'CONTAINS' || nextType === 'STARTS_WITH' || nextType === 'ENDS_WITH') {
-          this.advance(); // skip NOT
-          const op = `not_${this.current().value}`;
-          this.advance();
-          const value = this.parseValue();
-          return { type: 'comparison', field, fieldPath, op, value };
-        }
-      }
-
-      const opToken = this.current();
+    
+    // Binary operators
+    if (token.type === 'EQUALS' || token.type === 'NOT_EQUALS' ||
+        token.type === 'LT' || token.type === 'GT' ||
+        token.type === 'LTE' || token.type === 'GTE' ||
+        token.type === 'PLUS' || token.type === 'MINUS' ||
+        token.type === 'STAR' || token.type === 'SLASH' ||
+        token.type === 'PERCENT' || token.type === 'AND' || token.type === 'OR') {
       const op = this.getOperator();
       this.advance();
+      
+      // Check for subquery in right operand
+      let right: Expression;
+      if (this.current().type === 'LPAREN' && this.peek().type === 'SELECT') {
+        this.advance(); // skip (
+        const query = this.parseSelect();
+        this.expect('RPAREN');
+        right = { type: 'subquery', query };
+      } else {
+        right = this.parseExpression(BINDING_POWER[op]);
+      }
+      
+      return { type: 'binary_op', left, op, right };
+    }
+    
+    // Exponentiation (right associative)
+    if (token.type === 'CARET') {
+      const op = '^';
+      this.advance();
+      // Right associative: use current binding power - 1
+      const right = this.parseExpression(BINDING_POWER[op] - 1);
+      return { type: 'binary_op', left, op, right };
+    }
+    
+    // IN operator
+    
+    // IN operator
+    if (token.type === 'IN') {
+      this.advance();
+      let right: Expression;
+      
+      if (this.current().type === 'LPAREN') {
+        // Peek ahead to see if it's a subquery
+        const nextToken = this.peek();
+        if (nextToken.type === 'SELECT') {
+          // IN (subquery)
+          this.advance(); // skip (
+          const query = this.parseSelect();
+          this.expect('RPAREN');
+          right = { type: 'subquery', query };
+        } else {
+          // IN (list)
+          this.advance(); // skip (
+          const items: ValueNode[] = [];
+          while (this.current().type !== 'RPAREN') {
+            items.push(this.parseValue());
+            if (this.current().type === 'COMMA') this.advance();
+          }
+          this.expect('RPAREN');
+          right = { type: 'array', items };
+        }
+      } else {
+        // IN function_call
+        right = this.parseExpression(BINDING_POWER['IN']);
+      }
+      
+      return { type: 'binary_op', left, op: 'IN', right };
+    }
+    
+    // NOT IN operator
+    if (token.type === 'NOT' && this.peek().type === 'IN') {
+      this.advance(); // skip NOT
+      this.advance(); // skip IN
+      let right: Expression;
+      
+      if (this.current().type === 'LPAREN') {
+        this.advance(); // skip (
+        const items: ValueNode[] = [];
+        while (this.current().type !== 'RPAREN') {
+          items.push(this.parseValue());
+          if (this.current().type === 'COMMA') this.advance();
+        }
+        this.expect('RPAREN');
+        right = { type: 'array', items };
+      } else {
+        right = this.parseExpression(BINDING_POWER['IN']);
+      }
+      
+      return { type: 'binary_op', left, op: 'NOT IN', right };
+    }
+    
+    // CONTAINS, STARTS_WITH, ENDS_WITH
+    if (token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
+      const op = token.type;
+      this.advance();
+      const right = this.parseExpression(BINDING_POWER[op]);
+      return { type: 'binary_op', left, op, right };
+    }
+    
+    // NOT CONTAINS, NOT STARTS_WITH, NOT ENDS_WITH
+    if (token.type === 'NOT') {
+      const nextType = this.peek().type;
+      if (nextType === 'CONTAINS' || nextType === 'STARTS_WITH' || nextType === 'ENDS_WITH') {
+        this.advance(); // skip NOT
+        const op = `NOT ${this.current().type}`;
+        this.advance();
+        const right = this.parseExpression(BINDING_POWER[op]);
+        return { type: 'binary_op', left, op, right };
+      }
+    }
+    
+    // IS EMPTY / IS NOT EMPTY
+    if (token.type === 'IS') {
+      this.advance();
+      if (this.current().type === 'NOT') {
+        this.advance();
+        this.expect('EMPTY');
+        return { type: 'binary_op', left, op: 'IS NOT EMPTY', right: { type: 'empty' } };
+      }
+      this.expect('EMPTY');
+      return { type: 'binary_op', left, op: 'IS EMPTY', right: { type: 'empty' } };
+    }
+    
+    // ANY operator: field any <op> value (e.g. tags any = "backend")
+    if (token.type === 'ANY') {
+      this.advance();
+      const subOp = this.getOperator();
+      this.advance();
+      const right = this.parseExpression(BINDING_POWER[subOp] || BINDING_POWER['=']);
+      return { type: 'binary_op', left, op: `ANY ${subOp}`, right };
+    }
+    
+    // ALL operator: field all <op> value (e.g. tags all contains "backend")
+    if (token.type === 'ALL') {
+      this.advance();
+      const subOp = this.getOperator();
+      this.advance();
+      const right = this.parseExpression(BINDING_POWER[subOp] || BINDING_POWER['=']);
+      return { type: 'binary_op', left, op: `ALL ${subOp}`, right };
+    }
+    
+    // Function call (postfix)
+    if (token.type === 'LPAREN') {
+      return this.parseFunctionCallArgs(left);
+    }
+    
+    // Method call (postfix) - only for chained methods like .filter(), .map()
+    if (token.type === 'DOT' && this.peek().type === 'IDENTIFIER' && 
+        this.isChainedMethod(this.peek().value)) {
+      return this.parseMethodCall(left);
+    }
+    
+    // Map index (postfix) - for property access like .text, .url
+    if (token.type === 'DOT' && this.peek().type === 'IDENTIFIER') {
+      return this.parseMapIndex(left);
+    }
+    
+    // Array index (postfix)
+    if (this.isTokenType(token, 'LBRACKET')) {
+      return this.parseArrayIndex(left);
+    }
+    
+    // Map index (postfix) - check if next token is STRING or IDENTIFIER
+    if (this.isTokenType(token, 'LBRACKET') && 
+        (this.peek().type === 'STRING' || this.peek().type === 'IDENTIFIER')) {
+      return this.parseMapIndex(left);
+    }
+    
+    throw new Error(`Unexpected token in infix: ${token.value}`);
+  }
 
-      const value = this.parseValue();
-      return { type: 'comparison', field, fieldPath, op, value };
+  private parseFunctionCall(): FunctionCallNode {
+    const name = this.expect('IDENTIFIER').value;
+    this.expect('LPAREN');
+    const args: Expression[] = [];
+    
+    while (this.current().type !== 'RPAREN') {
+      args.push(this.parseExpression());
+      if (this.current().type === 'COMMA') this.advance();
+    }
+    
+    this.expect('RPAREN');
+    
+    // Check for property accessor (e.g., grep(/TODO/g)('text'))
+    if (this.current().type === 'LPAREN') {
+      return this.parseFunctionCallArgs({ type: 'function_call', name, args });
+    }
+    
+    return { type: 'function_call', name, args };
+  }
+
+  private parseFunctionCallArgs(left: Expression): FunctionCallNode {
+    this.expect('LPAREN');
+    const args: Expression[] = [];
+
+    while (this.current().type !== 'RPAREN') {
+      args.push(this.parseExpression());
+      if (this.current().type === 'COMMA') this.advance();
     }
 
-    throw new Error(`Unexpected token in WHERE: ${token.value}`);
+    this.expect('RPAREN');
+    
+    // Handle property accessor pattern: grep(/TODO/g)('text')
+    if (left.type === 'function_call') {
+      return { type: 'function_call', name: left.name, args: [...left.args, ...args] };
+    }
+    
+    return { type: 'function_call', name: (left as FieldNode).name, args };
+  }
+
+  private isChainedMethod(method: string): boolean {
+    const chainedMethods = ['filter', 'map', 'where', 'first', 'last', 'sort', 'slice', 'flatten', 'unique', 'count'];
+    return chainedMethods.includes(method);
+  }
+
+  private parseMethodCall(object: Expression): MethodCallNode {
+    this.expect('DOT');
+    const method = this.expect('IDENTIFIER').value;
+    this.expect('LPAREN');
+    const args: Expression[] = [];
+    
+    while (this.current().type !== 'RPAREN') {
+      args.push(this.parseExpression());
+      if (this.current().type === 'COMMA') this.advance();
+    }
+    
+    this.expect('RPAREN');
+    return { type: 'method_call', object, method, args };
+  }
+
+  private parseArrayIndex(object: Expression): Expression {
+    this.expect('LBRACKET');
+    const index = this.parseExpression();
+    this.expect('RBRACKET');
+    
+    return { type: 'array_index', object, index };
+  }
+
+  private parseMapIndex(object: Expression): MapIndexNode {
+    // Handle DOT syntax: .text, .url
+    if (this.current().type === 'DOT') {
+      this.advance(); // skip DOT
+      const key = this.expect('IDENTIFIER').value;
+      return { type: 'map_index', object, key: { type: 'string', value: key } };
+    }
+    
+    // Handle LBRACKET syntax: ['text'], ['url']
+    this.expect('LBRACKET');
+    const key = this.parseValue();
+    this.expect('RBRACKET');
+    return { type: 'map_index', object, key };
+  }
+
+  private parseArrayLiteral(): ValueNode {
+    this.expect('LBRACKET');
+    const items: ValueNode[] = [];
+    
+    while (this.current().type !== 'RBRACKET') {
+      items.push(this.parseValue());
+      if (this.current().type === 'COMMA') this.advance();
+    }
+    
+    this.expect('RBRACKET');
+    return { type: 'array', items };
   }
 
   private parseValue(): ValueNode {
     const token = this.current();
-
+    
+    // Handle negative numbers
+    if (token.type === 'MINUS' && this.peek().type === 'NUMBER') {
+      this.advance(); // skip MINUS
+      const numToken = this.advance(); // get NUMBER
+      return { type: 'number', value: -parseInt(numToken.value) };
+    }
+    
     if (token.type === 'STRING') {
       this.advance();
       return { type: 'string', value: token.value };
     }
-
+    
     if (token.type === 'NUMBER') {
       this.advance();
       return { type: 'number', value: parseInt(token.value) };
     }
-
+    
     if (token.type === 'BOOLEAN') {
       this.advance();
       return { type: 'boolean', value: token.value === 'true' };
     }
-
+    
+    if (token.type === 'REGEX') {
+      this.advance();
+      return { type: 'regex', value: token.value };
+    }
+    
     if (token.type === 'IDENTIFIER' && token.value.toLowerCase() === 'null') {
       this.advance();
       return { type: 'null', value: null };
     }
-
+    
     if (token.type === 'EMPTY') {
       this.advance();
       return { type: 'empty' };
     }
-
-    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
-      const result = this.parseBuiltin();
-      return this.parseBinarySuffix(result);
-    }
-
-    if (token.type === 'IDENTIFIER') {
-      this.advance();
-      return this.parseBinarySuffix({ type: 'field', name: token.value });
-    }
-
-    // Array literal [a, b, c]
-    if (token.type === 'LBRACKET') {
-      this.advance(); // skip [
-      const items: ValueNode[] = [];
-      while (this.current().type !== 'RBRACKET') {
-        items.push(this.parseValue());
-        if (this.current().type === 'COMMA') this.advance();
-      }
-      this.expect('RBRACKET');
-      return this.parseBinarySuffix({ type: 'array', items });
-    }
-
-    throw new Error(`Unexpected token in value: ${token.value}`);
-  }
-
-  private parseBinarySuffix(left: ValueNode): ValueNode {
-    while (this.current().type === 'PLUS' || this.current().type === 'MINUS') {
-      const op = this.current().type === 'PLUS' ? '+' : '-';
-      this.advance();
-      const right = this.parsePrimary();
-      left = { type: 'binary', op, left, right };
-    }
-    return left;
-  }
-
-  private parsePrimary(): ValueNode {
-    const token = this.current();
-
-    if (token.type === 'STRING') {
-      this.advance();
-      return { type: 'string', value: token.value };
-    }
-
-    if (token.type === 'NUMBER') {
-      this.advance();
-      return { type: 'number', value: parseInt(token.value) };
-    }
-
-    if (token.type === 'BOOLEAN') {
-      this.advance();
-      return { type: 'boolean', value: token.value === 'true' };
-    }
-
-    if (token.type === 'IDENTIFIER' && token.value.toLowerCase() === 'null') {
-      this.advance();
-      return { type: 'null', value: null };
-    }
-
-    if (token.type === 'EMPTY') {
-      this.advance();
-      return { type: 'empty' };
-    }
-
-    if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
-      return this.parseBuiltin();
-    }
-
-    if (token.type === 'IDENTIFIER') {
-      this.advance();
-      return { type: 'string', value: token.value };
-    }
-
-    // Array literal [a, b, c]
+    
+    // Array literal: [item, item, ...]
     if (token.type === 'LBRACKET') {
       this.advance(); // skip [
       const items: ValueNode[] = [];
@@ -641,31 +742,24 @@ export class Parser {
       this.expect('RBRACKET');
       return { type: 'array', items };
     }
-
+    
+    // Subquery
+    if (token.type === 'LPAREN') {
+      // Peek ahead to see if it's a subquery
+      const nextToken = this.peek();
+      if (nextToken.type === 'SELECT') {
+        this.advance(); // skip (
+        const query = this.parseSelect();
+        this.expect('RPAREN');
+        return { type: 'subquery', query };
+      }
+    }
+    
     throw new Error(`Unexpected token in value: ${token.value}`);
   }
 
-  private parseBuiltin(): BuiltinNode {
-    const name = this.expect('IDENTIFIER').value;
-    this.expect('LPAREN');
-    const args: (FieldNode | ValueNode)[] = [];
-
-    while (this.current().type !== 'RPAREN') {
-      if (this.current().type === 'IDENTIFIER') {
-        args.push({ type: 'field', name: this.current().value });
-        this.advance();
-      } else {
-        args.push(this.parseValue());
-      }
-      if (this.current().type === 'COMMA') this.advance();
-    }
-
-    this.expect('RPAREN');
-    return { type: 'builtin', name, args };
-  }
-
-  private parseSetClause(): Record<string, { value: ValueNode; type?: string }> {
-    const set: Record<string, { value: ValueNode; type?: string }> = {};
+  private parseSetClause(): Record<string, { value: Expression; type?: string }> {
+    const set: Record<string, { value: Expression; type?: string }> = {};
 
     while (this.current().type !== 'EOF') {
       if (this.current().type !== 'IDENTIFIER') break;
@@ -680,7 +774,7 @@ export class Parser {
       }
       
       this.expect('EQUALS');
-      set[field] = { value: this.parseValue(), type: typeAnnotation };
+      set[field] = { value: this.parseExpression(), type: typeAnnotation };
 
       if (this.current().type === 'COMMA') {
         this.advance();
@@ -707,6 +801,33 @@ export class Parser {
     }
 
     return identifiers;
+  }
+
+  private parseHas(): FunctionCallNode {
+    this.advance(); // skip HAS
+    
+    // Handle has section("name") syntax
+    if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'section') {
+      this.advance(); // skip section
+      this.expect('LPAREN');
+      const sectionName = this.expect('STRING').value;
+      this.expect('RPAREN');
+      return { type: 'function_call', name: 'has_section', args: [{ type: 'string', value: sectionName }] };
+    }
+    
+    // Handle has(field) syntax
+    this.expect('LPAREN');
+    const field = this.expect('IDENTIFIER').value;
+    this.expect('RPAREN');
+    return { type: 'function_call', name: 'has', args: [{ type: 'field', name: field }] };
+  }
+
+  private parseExists(): Expression {
+    this.advance(); // skip EXISTS
+    this.expect('LPAREN');
+    const subquery = this.parseSelect();
+    this.expect('RPAREN');
+    return { type: 'exists', subquery };
   }
 
   private parseOrderBy(): OrderByNode[] {
@@ -736,6 +857,24 @@ export class Parser {
     return items;
   }
 
+  private getBindingPower(token: Token): number {
+    // Check for postfix operators
+    if (token.type === 'LPAREN') return BINDING_POWER['CALL'];
+    if (token.type === 'DOT') return BINDING_POWER['METHOD'];
+    if (token.type === 'LBRACKET') return BINDING_POWER['INDEX'];
+    
+    // Check for binary operators
+    const op = this.getOperator();
+    if (op && BINDING_POWER[op]) return BINDING_POWER[op];
+    
+    // Default to 0 (lowest precedence)
+    return 0;
+  }
+
+  private isTokenType(token: Token, type: TokenType): boolean {
+    return token.type === type;
+  }
+
   private getOperator(): string {
     const token = this.current();
     const ops: Record<string, string> = {
@@ -745,21 +884,37 @@ export class Parser {
       GT: '>',
       LTE: '<=',
       GTE: '>=',
+      PLUS: '+',
+      MINUS: '-',
+      STAR: '*',
+      SLASH: '/',
+      PERCENT: '%',
+      CARET: '^',
+      AND: 'AND',
+      OR: 'OR',
+      IN: 'IN',
+      CONTAINS: 'CONTAINS',
+      STARTS_WITH: 'STARTS_WITH',
+      ENDS_WITH: 'ENDS_WITH',
+      IS: 'IS',
+      ANY: 'ANY',
+      ALL: 'ALL',
+      NOT: 'NOT'
     };
     return ops[token.type] || token.value;
   }
 
   private isKeyword(): boolean {
-    const keywords = ['WHERE', 'SET', 'ORDER', 'GROUP', 'LIMIT', 'OFFSET', 'AND', 'OR', 'BY'];
+    const keywords = ['WHERE', 'SET', 'ORDER', 'GROUP', 'LIMIT', 'OFFSET', 'AND', 'OR', 'BY', 'FROM', 'JOIN', 'UNION'];
     return keywords.includes(this.current().type);
   }
 
   private current(): Token {
-    return this.tokens[this.position] || { type: 'EOF', value: '', position: -1 };
+    return this.tokens[this.position] || { type: 'EOF', value: '', position: -1, line: -1, column: -1, offset: -1 };
   }
 
   private peek(): Token {
-    return this.tokens[this.position + 1] || { type: 'EOF', value: '', position: -1 };
+    return this.tokens[this.position + 1] || { type: 'EOF', value: '', position: -1, line: -1, column: -1, offset: -1 };
   }
 
   private advance(): Token {
@@ -768,10 +923,10 @@ export class Parser {
     return token;
   }
 
-  private expect(type: string): Token {
+  private expect(type: TokenType): Token {
     const token = this.current();
     if (token.type !== type) {
-      throw new Error(`Expected ${type}, got ${token.type} (${token.value})`);
+      throw new Error(`Expected ${type}, got ${token.type} (${token.value}) at line ${token.line}, column ${token.column}`);
     }
     return this.advance();
   }
