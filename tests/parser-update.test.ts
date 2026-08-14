@@ -8,7 +8,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where status = "todo" set status = "doing"').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'todo' } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'status' },
+          op: '=',
+          right: { type: 'string', value: 'todo' }
+        },
         set: { status: { value: { type: 'string', value: 'doing' } } }
       });
     });
@@ -17,7 +22,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set status = "done" assignee = "jane"').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'id' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        },
         set: {
           status: { value: { type: 'string', value: 'done' } },
           assignee: { value: { type: 'string', value: 'jane' } }
@@ -29,7 +39,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set priority = 5').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'id' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        },
         set: { priority: { value: { type: 'number', value: 5 } } }
       });
     });
@@ -38,7 +53,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set completed = true').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'id' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        },
         set: { completed: { value: { type: 'boolean', value: true } } }
       });
     });
@@ -47,7 +67,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('update where id = 1 set status:str = "doing"').parse();
       expect(ast).toEqual({
         type: 'update',
-        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'id' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        },
         set: { status: { value: { type: 'string', value: 'doing' }, type: 'str' } }
       });
     });
@@ -95,7 +120,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       const ast = new Parser('delete where status = "done"').parse();
       expect(ast).toEqual({
         type: 'delete',
-        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'status' },
+          op: '=',
+          right: { type: 'string', value: 'done' }
+        }
       });
     });
 
@@ -104,9 +134,20 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
       expect(ast).toEqual({
         type: 'delete',
         where: {
-          type: 'and',
-          left: { type: 'comparison', field: 'projectId', fieldPath: 'projectId', op: '=', value: { type: 'number', value: 1 } },
-          right: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
+          type: 'binary_op',
+          left: {
+            type: 'binary_op',
+            left: { type: 'field', name: 'projectId' },
+            op: '=',
+            right: { type: 'number', value: 1 }
+          },
+          op: 'AND',
+          right: {
+            type: 'binary_op',
+            left: { type: 'field', name: 'status' },
+            op: '=',
+            right: { type: 'string', value: 'done' }
+          }
         }
       });
     });

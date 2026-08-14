@@ -6,7 +6,7 @@ describe('Parser', () => {
   describe('SELECT', () => {
     it('parses select all', () => {
       const ast = new Parser('select').parse();
-      expect(ast).toEqual({ type: 'select', fields: ['*'] });
+      expect(ast).toEqual({ type: 'select', fields: [{ type: 'wildcard' }] });
     });
 
     it('parses select with specific fields', () => {
@@ -21,8 +21,13 @@ describe('Parser', () => {
       const ast = new Parser('select where status = "done"').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: ['*'],
-        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } }
+        fields: [{ type: 'wildcard' }],
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'status' },
+          op: '=',
+          right: { type: 'string', value: 'done' }
+        }
       });
     });
 
@@ -30,11 +35,22 @@ describe('Parser', () => {
       const ast = new Parser('select where status = "done" and assignee = "jane"').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: ['*'],
+        fields: [{ type: 'wildcard' }],
         where: {
-          type: 'and',
-          left: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } },
-          right: { type: 'comparison', field: 'assignee', fieldPath: 'assignee', op: '=', value: { type: 'string', value: 'jane' } }
+          type: 'binary_op',
+          left: {
+            type: 'binary_op',
+            left: { type: 'field', name: 'status' },
+            op: '=',
+            right: { type: 'string', value: 'done' }
+          },
+          op: 'AND',
+          right: {
+            type: 'binary_op',
+            left: { type: 'field', name: 'assignee' },
+            op: '=',
+            right: { type: 'string', value: 'jane' }
+          }
         }
       });
     });
@@ -43,7 +59,7 @@ describe('Parser', () => {
       const ast = new Parser('select order by priority desc').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: ['*'],
+        fields: [{ type: 'wildcard' }],
         orderBy: [{ field: 'priority', direction: 'desc' }]
       });
     });
@@ -52,7 +68,7 @@ describe('Parser', () => {
       const ast = new Parser('select order by priority limit 10').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: ['*'],
+        fields: [{ type: 'wildcard' }],
         orderBy: [{ field: 'priority', direction: 'asc' }],
         limit: 10
       });
@@ -62,7 +78,10 @@ describe('Parser', () => {
       const ast = new Parser('select status, count(*) group by status').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: [{ type: 'field', name: 'status' }, { type: 'aggregate', func: 'count', field: '*' }],
+        fields: [
+          { type: 'field', name: 'status' },
+          { type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] }
+        ],
         groupBy: ['status']
       });
     });
@@ -71,8 +90,13 @@ describe('Parser', () => {
       const ast = new Parser('select count(*) where projectId = 1').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: [{ type: 'aggregate', func: 'count', field: '*' }],
-        where: { type: 'comparison', field: 'projectId', fieldPath: 'projectId', op: '=', value: { type: 'number', value: 1 } }
+        fields: [{ type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] }],
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'projectId' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        }
       });
     });
   });

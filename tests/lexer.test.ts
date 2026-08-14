@@ -5,22 +5,22 @@ import { Lexer } from '../src/lexer';
 describe('Lexer', () => {
   it('tokenizes SELECT', () => {
     const tokens = new Lexer('select').tokenize();
-    expect(tokens[0]).toEqual({ type: 'SELECT', value: 'select', position: 0 });
+    expect(tokens[0]).toEqual({ type: 'SELECT', value: 'select', position: 0, line: 1, column: 1, offset: 0 });
   });
 
   it('tokenizes WHERE', () => {
     const tokens = new Lexer('where').tokenize();
-    expect(tokens[0]).toEqual({ type: 'WHERE', value: 'where', position: 0 });
+    expect(tokens[0]).toEqual({ type: 'WHERE', value: 'where', position: 0, line: 1, column: 1, offset: 0 });
   });
 
   it('tokenizes string value', () => {
     const tokens = new Lexer('"done"').tokenize();
-    expect(tokens[0]).toEqual({ type: 'STRING', value: 'done', position: 0 });
+    expect(tokens[0]).toEqual({ type: 'STRING', value: 'done', position: 0, line: 1, column: 1, offset: 0 });
   });
 
   it('tokenizes number value', () => {
     const tokens = new Lexer('42').tokenize();
-    expect(tokens[0]).toEqual({ type: 'NUMBER', value: '42', position: 0 });
+    expect(tokens[0]).toEqual({ type: 'NUMBER', value: '42', position: 0, line: 1, column: 1, offset: 0 });
   });
 
   it('tokenizes operators', () => {

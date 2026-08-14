@@ -10,7 +10,12 @@ describe('Parser - Triggers', () => {
         type: 'trigger',
         event: 'before',
         operation: 'create',
-        where: { type: 'comparison', field: 'status', fieldPath: 'status', op: '=', value: { type: 'string', value: 'done' } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'status' },
+          op: '=',
+          right: { type: 'string', value: 'done' }
+        },
         action: { type: 'deny', message: 'Cannot create done task' }
       });
     });
@@ -21,7 +26,12 @@ describe('Parser - Triggers', () => {
         type: 'trigger',
         event: 'before',
         operation: 'update',
-        where: { type: 'comparison', field: 'projectId', fieldPath: 'projectId', op: '!=', value: { type: 'number', value: 1 } },
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'projectId' },
+          op: '!=',
+          right: { type: 'number', value: 1 }
+        },
         action: { type: 'deny', message: 'Wrong project' }
       });
     });

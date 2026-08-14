@@ -114,8 +114,13 @@ describe('Pipe syntax', () => {
       type: 'pipe',
       expr: {
         type: 'select',
-        fields: ['*'],
-        where: { type: 'comparison', field: 'id', fieldPath: 'id', op: '=', value: { type: 'number', value: 1 } }
+        fields: [{ type: 'wildcard' }],
+        where: {
+          type: 'binary_op',
+          left: { type: 'field', name: 'id' },
+          op: '=',
+          right: { type: 'number', value: 1 }
+        }
       },
       fn: 'clipboard',
       args: []
