@@ -2,7 +2,7 @@
 
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
-import { FastFileOps, FileIOAnalysis } from './file-io';
+import { FastFileOps, FileIOAnalysis, isNegatedContentOp } from './file-io';
 import { QueryAnalyzer } from './query-analyzer';
 import { isAbsolute, join } from 'path';
 import {
@@ -93,8 +93,13 @@ export class Executor {
       const paths = await FastFileOps.listFiles(dir, options);
       const analysis = this.analyzeCurrentQuery();
       if (analysis.bodyPredicates.length > 0) {
-        const pattern = analysis.bodyPredicates[0].value;
-        const filtered = await FastFileOps.preFilterByContent(dir, paths, pattern);
+        const predicate = analysis.bodyPredicates[0];
+        const filtered = await FastFileOps.preFilterByContent(
+          dir,
+          paths,
+          predicate.value,
+          isNegatedContentOp(predicate.op)
+        );
         files = await FastFileOps.readFiles(dir, filtered, analysis);
       } else {
         files = await FastFileOps.readFiles(dir, paths, analysis);

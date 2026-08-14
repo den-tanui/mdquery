@@ -169,3 +169,79 @@ describe('Executor fast file I/O', () => {
     expect(result.data!.map((f: any) => f.title)).toEqual(['A']);
   });
 });
+
+describe('FastFileOps.preFilterByContent negate', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-pfn-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n\nHas BUG-123.\n');
+    writeFileSync(join(dir, 'b.md'), '---\ntitle: B\n---\n\nClean.\n');
+    // Every line matches the pattern (no frontmatter, no trailing newline) so
+    // invertMatch drops it. A trailing newline would create an empty final line
+    // that does not match, which grepts' line-based invertMatch would keep.
+    writeFileSync(join(dir, 'c.md'), 'BUG-123\nBUG-123');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('returns files with at least one non-matching line when negate is true', async () => {
+    const all = await FastFileOps.listFiles(dir);
+    const matches = await FastFileOps.preFilterByContent(dir, all, 'BUG-123', true);
+    const rel = matches.map(f => f.replace(dir + '/', '')).sort();
+    // a.md and b.md have non-matching lines; c.md's every line matches → dropped.
+    expect(rel).toEqual(['a.md', 'b.md']);
+  });
+
+  it('defaults to positive matching when negate is omitted', async () => {
+    const all = await FastFileOps.listFiles(dir);
+    const matches = await FastFileOps.preFilterByContent(dir, all, 'BUG-123');
+    const rel = matches.map(f => f.replace(dir + '/', '')).sort();
+    expect(rel).toEqual(['a.md', 'c.md']);
+  });
+});
+
+describe('Executor fast path negated content predicates', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-exneg-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), 'Alpha has BUG-123.\n');
+    writeFileSync(join(dir, 'b.md'), 'Beta is clean');
+    writeFileSync(join(dir, 'c.md'), 'BUG-123\nBUG-123\n');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  async function filenamesFor(query: string, fast: boolean): Promise<string[]> {
+    const executor = new Executor(dir, undefined, undefined, { fast });
+    const result = await executor.execute(query);
+    return result.data!.map((f: any) => f.filename).sort();
+  }
+
+  it('content NOT CONTAINS returns same results in fast and legacy mode', async () => {
+    const legacy = await filenamesFor('select filename where content NOT CONTAINS "BUG-123"', false);
+    const fast = await filenamesFor('select filename where content NOT CONTAINS "BUG-123"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['b']);
+  });
+
+  it('content NOT STARTS_WITH returns same results in fast and legacy mode', async () => {
+    const legacy = await filenamesFor('select filename where content NOT STARTS_WITH "Alpha"', false);
+    const fast = await filenamesFor('select filename where content NOT STARTS_WITH "Alpha"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['b', 'c']);
+  });
+
+  it('content NOT ENDS_WITH returns same results in fast and legacy mode', async () => {
+    const legacy = await filenamesFor('select filename where content NOT ENDS_WITH "clean"', false);
+    const fast = await filenamesFor('select filename where content NOT ENDS_WITH "clean"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['a', 'c']);
+  });
+
+  it('content != returns same results in fast and legacy mode', async () => {
+    const legacy = await filenamesFor('select filename where content != "Beta is clean"', false);
+    const fast = await filenamesFor('select filename where content != "Beta is clean"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['a', 'c']);
+  });
+});

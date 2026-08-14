@@ -12,6 +12,18 @@ export interface FileIOAnalysis {
   bodyPredicates: { field: string; op: string; value: string }[];
 }
 
+// Ops whose prefilter must invert the grepts match. For these, the files that
+// do NOT match the pattern are the superset the executor needs (it re-evaluates
+// the full WHERE afterward, so over-approximation is safe but dropping a
+// candidate is a bug). grepts' invertMatch is line-based, so a file passes the
+// sieve as long as at least one line does not match — a strict superset of the
+// negated predicate's true result set.
+const NEGATED_CONTENT_OPS = new Set(['NOT CONTAINS', 'NOT STARTS_WITH', 'NOT ENDS_WITH', '!=']);
+
+export function isNegatedContentOp(op: string): boolean {
+  return NEGATED_CONTENT_OPS.has(op);
+}
+
 const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
   depth: 0,
   hidden: false,
@@ -89,7 +101,8 @@ export class FastFileOps {
   static async preFilterByContent(
     dir: string,
     files: string[],
-    pattern: string
+    pattern: string,
+    negate = false
   ): Promise<string[]> {
     const { searchAsync } = await import('grepts');
     const results = await searchAsync({
@@ -97,7 +110,8 @@ export class FastFileOps {
       paths: [dir],
       glob: '*.md',
       hidden: true,
-      respectGitignore: false
+      respectGitignore: false,
+      invertMatch: negate
     } as SearchOptions);
     const matchSet = new Set(results.map(r => r.filePath));
     return files.filter(f => matchSet.has(f));
