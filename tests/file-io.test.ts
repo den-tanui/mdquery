@@ -19,6 +19,17 @@ function makeTree(): string {
   return root;
 }
 
+function makeGitignoreTree(): string {
+  const root = join(tmpdir(), `mdquery-fio-gi-${randomUUID()}`);
+  mkdirSync(join(root, 'sub'), { recursive: true });
+  mkdirSync(join(root, '.git'), { recursive: true });
+  writeFileSync(join(root, '.gitignore'), 'sub/\n');
+  writeFileSync(join(root, 'top.md'), '---\ntitle: Top\n---\n');
+  writeFileSync(join(root, 'sub', 'mid.md'), '---\ntitle: Mid\n---\n');
+  writeFileSync(join(root, '.git', 'config.md'), '---\ntitle: Git Config\n---\n');
+  return root;
+}
+
 describe('FastFileOps.listFiles', () => {
   let dir: string;
   beforeAll(() => { dir = makeTree(); });
@@ -52,5 +63,30 @@ describe('FastFileOps.listFiles', () => {
   it('returns absolute paths', async () => {
     const files = await FastFileOps.listFiles(dir);
     expect(files[0]).toMatch(/^\/.*\.md$/);
+  });
+});
+
+describe('FastFileOps.listFiles gitignore + .git handling', () => {
+  let dir: string;
+  beforeAll(() => { dir = makeGitignoreTree(); });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('respects .gitignore (excludes sub/)', async () => {
+    const files = await FastFileOps.listFiles(dir);
+    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    expect(rel).toEqual(['top.md']);
+  });
+
+  it('includes gitignored files when ignore: false', async () => {
+    const files = await FastFileOps.listFiles(dir, { ignore: false });
+    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    expect(rel).toEqual(['sub/mid.md', 'top.md']);
+  });
+
+  it('always skips .git even with hidden: true', async () => {
+    const files = await FastFileOps.listFiles(dir, { hidden: true });
+    expect(files.some(f => f.includes('.git'))).toBe(false);
+    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    expect(rel).toEqual(['top.md']);
   });
 });

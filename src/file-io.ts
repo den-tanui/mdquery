@@ -1,6 +1,6 @@
 // src/file-io.ts
 import { fdir } from 'fdir';
-import { join, relative, isAbsolute } from 'path';
+import { join, relative, isAbsolute, basename } from 'path';
 import { readFile } from 'fs/promises';
 import matter from 'gray-matter';
 import ignore from 'ignore';
@@ -23,12 +23,15 @@ export class FastFileOps {
 
     let crawler = new fdir()
       .withFullPaths()
-      .filter((path: string) => path.endsWith('.md'));
+      .filter((path: string) => path.endsWith('.md'))
+      // Always skip .git regardless of hidden (matches legacy FileOps and the
+      // ReadOptions contract: hidden = "include dot-entries (except .git)")
+      .exclude((dirName: string) => dirName === '.git');
 
     if (!opts.hidden) {
       crawler = crawler
         .exclude((dirName: string) => dirName.startsWith('.'))
-        .filter((path: string) => !path.split('/').pop()!.startsWith('.'));
+        .filter((path: string) => !basename(path).startsWith('.'));
     }
 
     // IMPORTANT: legacy depth semantics differ from fdir's withMaxDepth.
