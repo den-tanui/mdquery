@@ -243,8 +243,7 @@ No `mtime`/`updatedAt`/`createdAt` handling. **Moved to a separate plan** (see �
 A dedicated future plan (own spec → plan → implementation cycle). Scope:
 
 - **`file()` builtin** returns a **single map object** — the metadata of the current file (the row being evaluated), like `fields()` / `section("name")` are per-row: `{abspath, mtime, atime, ctime, owner, group, size, mode, ...}`.
-- Access via property: `file().abspath`, `file().mtime`, `file().ctime`, `file().owner`, etc.
-- **Both property and call syntax work**: `file().mtime` ≡ `file().mtime()` (the executor treats a zero-arg call on a metadata key as property access).
+- Access via property only: `file().abspath`, `file().mtime`, `file().ctime`, `file().owner`, etc. **`file().mtime()` is NOT valid** — a map is not callable; data types are respected (property access via `.property`, never `()` on a map).
 - **Define the type of each field**: `mtime`/`atime`/`ctime` → Date; `owner`/`group` → string; `size` → number; `mode` → string; `abspath` → string.
 - **Transform when necessary**: Date fields are real Date objects in memory so `ORDER BY file().mtime`, `WHERE file().mtime > ...`, and comparisons work via the TypeSystem; they serialize to ISO strings in JSON output.
 - **`updatedAt`/`createdAt` are NOT aliases** — they are explicit frontmatter fields (immutable via `update`), unrelated to file metadata. No aliasing.
