@@ -1,6 +1,6 @@
 # mdquery syntax reference
 
-`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path), plus the file metadata fields `mtime` (modification time), `updatedAt` (alias for `mtime`), and `createdAt` (creation time; may be `null` on some filesystems). `id` is a plain frontmatter field — it is only present when the file declares it.
+`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path). `id` is a plain frontmatter field — it is only present when the file declares it.
 
 Two extra fields are available on every row:
 

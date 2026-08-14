@@ -138,9 +138,6 @@ Every row exposes these fields regardless of frontmatter:
 | `filename` | File name without the `.md` extension (e.g. `task-001`) |
 | `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
 | `abspath` | Absolute path to the file |
-| `mtime` | File modification time (ISO date) |
-| `updatedAt` | Alias for `mtime` |
-| `createdAt` | File creation time (ISO date; may be `null` on some filesystems) |
 | `body` | Markdown body with the frontmatter block stripped |
 | `frontmatter` | Raw parsed frontmatter object as a single field |
 
