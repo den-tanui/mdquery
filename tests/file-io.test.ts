@@ -172,6 +172,44 @@ describe('Executor fast file I/O', () => {
   });
 });
 
+describe('Executor fast path body field references', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-body-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n\nHas BUG-123 in body.\n');
+    writeFileSync(join(dir, 'b.md'), '---\ntitle: B\n---\n\nClean body.\n');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('body contains works in fast mode (body loaded when referenced)', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title where body contains "BUG-123"');
+    expect(result.data!.map((f: any) => f.title)).toEqual(['A']);
+  });
+
+  it('body contains matches legacy mode', async () => {
+    const legacy = new Executor(dir, undefined, undefined, { fast: false });
+    const fast = new Executor(dir, undefined, undefined, { fast: true });
+    const legacyResult = await legacy.execute('select title where body contains "BUG-123"');
+    const fastResult = await fast.execute('select title where body contains "BUG-123"');
+    expect(fastResult.data!.map((f: any) => f.title)).toEqual(legacyResult.data!.map((f: any) => f.title));
+  });
+
+  it('select body in fast mode returns the body content', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select body where title = "A"');
+    expect(result.data![0].body).toContain('BUG-123');
+  });
+
+  it('select body with a body predicate in fast mode returns the body content', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select body where body contains "BUG-123"');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].body).toContain('BUG-123');
+  });
+});
+
 describe('FastFileOps.preFilterByContent negate', () => {
   let dir: string;
   beforeAll(() => {

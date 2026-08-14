@@ -181,6 +181,9 @@ export class QueryAnalyzer {
       case 'method_call':
         this.checkMethodCallForContent(expr, analysis);
         break;
+      case 'field':
+        this.checkFieldForContent(expr, analysis);
+        break;
       case 'binary_op':
         this.checkExpressionForContent(expr.left, analysis);
         this.checkExpressionForContent(expr.right, analysis);
@@ -233,6 +236,23 @@ export class QueryAnalyzer {
     // Check arguments
     for (const arg of expr.args) {
       this.checkExpressionForContent(arg, analysis);
+    }
+  }
+
+  // Check bare field references for content/body fields. A `body` (or
+  // `content`) field in a select field or WHERE predicate needs the body
+  // loaded in fast mode — without this, FastFileOps.readFiles leaves body
+  // undefined and the comparison throws. `content` is always loaded from raw,
+  // but flagging it too is harmless and keeps the analysis uniform.
+  private checkFieldForContent(
+    expr: FieldNode,
+    analysis: LazyLoadingAnalysis
+  ): void {
+    if (expr.name === 'body' || expr.name === 'content') {
+      if (!analysis.contentFields.includes(expr.name)) {
+        analysis.contentFields.push(expr.name);
+      }
+      analysis.requiresContent = true;
     }
   }
 
