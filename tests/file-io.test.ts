@@ -90,3 +90,34 @@ describe('FastFileOps.listFiles gitignore + .git handling', () => {
     expect(rel).toEqual(['top.md']);
   });
 });
+
+describe('FastFileOps.readFiles', () => {
+  let dir: string;
+  beforeAll(() => { dir = makeTree(); });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('loads frontmatter always, body only when requiresContent', async () => {
+    const paths = await FastFileOps.listFiles(dir, { depth: 1 });
+
+    const noBody = await FastFileOps.readFiles(dir, paths, { requiresContent: false, bodyPredicates: [] });
+    expect(noBody[0].title).toBe('Top');
+    expect(noBody[0].body).toBeUndefined();
+    expect(noBody[0].sections).toBeUndefined();
+    expect(noBody[0].content).toBeDefined();
+
+    const withBody = await FastFileOps.readFiles(dir, paths, { requiresContent: true, bodyPredicates: [] });
+    // top.md's body is empty (frontmatter only), so assert it is defined rather
+    // than containing a specific string.
+    expect(withBody[0].body).toBeDefined();
+    expect(withBody[0].sections).toBeDefined();
+  });
+
+  it('exposes filename, path, abspath, frontmatter', async () => {
+    const paths = await FastFileOps.listFiles(dir, { depth: 1 });
+    const files = await FastFileOps.readFiles(dir, paths, { requiresContent: false, bodyPredicates: [] });
+    const top = files.find(f => f.filename === 'top')!;
+    expect(top.path).toBe('top.md');
+    expect(top.abspath).toBe(join(dir, 'top.md'));
+    expect(top.frontmatter.title).toBe('Top');
+  });
+});

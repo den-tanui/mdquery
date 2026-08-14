@@ -4,7 +4,7 @@ import { join, relative, isAbsolute, basename } from 'path';
 import { readFile } from 'fs/promises';
 import matter from 'gray-matter';
 import ignore from 'ignore';
-import { ReadOptions } from './files';
+import { FileData, ReadOptions, parseDates, parseSections } from './files';
 
 export interface FileIOAnalysis {
   requiresContent: boolean;
@@ -49,6 +49,34 @@ export class FastFileOps {
       files = this.applyGitignore(dir, files);
     }
 
+    return files;
+  }
+
+  static async readFiles(
+    dir: string,
+    paths: string[],
+    analysis: FileIOAnalysis
+  ): Promise<FileData[]> {
+    const files: FileData[] = [];
+    for (const fp of paths) {
+      const raw = await readFile(fp, 'utf-8');
+      const { data, content: body } = matter(raw);
+      const filename = basename(fp, '.md');
+      const rel = relative(dir, fp);
+
+      const file: FileData = {
+        ...parseDates(data),
+        filename,
+        path: rel,
+        abspath: fp,
+        filepath: fp,
+        frontmatter: data,
+        content: raw,
+        body: analysis.requiresContent ? body : undefined,
+        sections: analysis.requiresContent ? parseSections(body) : undefined
+      };
+      files.push(file);
+    }
     return files;
   }
 
