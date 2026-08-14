@@ -51,6 +51,9 @@ interface GrepMatch {
   text: string;
   captures: string[];
   section: string[];
+  sentence?: string;
+  paragraph?: string;
+  ancestors?: { type: string; text?: string }[];
 }
 
 export class ContentExtractor {
@@ -165,36 +168,110 @@ export class ContentExtractor {
   // Extract grep matches
   extractGrep(pattern: RegExp): GrepMatch[] {
     const matches: GrepMatch[] = [];
-    
-    // Extract sections first for context
-    const sections = this.extractSections();
-    
-    // Search within each section
-    for (const section of sections) {
-      if (!section.content) continue;
-      
-      const lines = section.content.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const lineNumber = section.position?.start.line + i;
-        
-        let match;
-        while ((match = pattern.exec(line)) !== null) {
-          matches.push({
-            line: lineNumber,
-            column: match.index,
-            text: match[0],
-            captures: Array.from(match).slice(1),
-            section: section.hierarchy
-          });
+    const regex = this.ensureGlobal(pattern);
+
+    // mdast headings are siblings of their content, not ancestors, so section
+    // context cannot come from parent-walking. Maintain a positional heading
+    // stack during the pre-order traversal instead: push headings, pop when a
+    // heading of equal-or-lesser depth appears, and the stack at a text node is
+    // that text's section hierarchy.
+    const headingStack: Heading[] = [];
+
+    // Walk text nodes (not lines) so matches keep document structure: sentence,
+    // paragraph, section hierarchy, and the full ancestor chain come from mdast.
+    visitParents(this.ast, (node, ancestors) => {
+      if (node.type === 'heading') {
+        const heading = node as Heading;
+        while (
+          headingStack.length > 0 &&
+          headingStack[headingStack.length - 1].depth >= heading.depth
+        ) {
+          headingStack.pop();
         }
+        headingStack.push(heading);
+        return;
       }
-    }
-    
+
+      if (node.type !== 'text') return;
+
+      const textNode = node as Text;
+      const value = textNode.value;
+      if (!value) return;
+
+      for (const match of value.matchAll(regex)) {
+        const matchIndex = match.index;
+        const { line, column } = this.positionAt(textNode, matchIndex);
+        const paragraphNode = [...ancestors].reverse().find(a => a.type === 'paragraph');
+
+        matches.push({
+          line,
+          column,
+          text: match[0],
+          captures: Array.from(match).slice(1),
+          section: headingStack.map(h => this.extractText(h)),
+          sentence: this.sentenceAt(value, matchIndex),
+          paragraph: paragraphNode ? this.extractText(paragraphNode) : undefined,
+          ancestors: ancestors.map(a => {
+            const entry: { type: string; text?: string } = { type: a.type };
+            if (a.type === 'heading') entry.text = this.extractText(a);
+            return entry;
+          })
+        });
+      }
+    });
+
     return matches;
   }
 
   // Helper methods
+
+  // Return a copy of the pattern with the global flag so matchAll advances across the value.
+  private ensureGlobal(pattern: RegExp): RegExp {
+    const flags = pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g';
+    return new RegExp(pattern.source, flags);
+  }
+
+  // Compute 1-indexed line / 0-indexed column for a character offset within a text node.
+  private positionAt(node: Text, matchIndex: number): { line: number; column: number } {
+    const start = node.position?.start;
+    if (!start) return { line: 1, column: 0 };
+
+    const prefix = node.value.slice(0, matchIndex);
+    const newlines = (prefix.match(/\n/g) || []).length;
+    const lastNewline = prefix.lastIndexOf('\n');
+    const columnOffset = lastNewline === -1 ? prefix.length : prefix.length - lastNewline - 1;
+
+    return {
+      line: start.line + newlines,
+      column: start.column - 1 + columnOffset
+    };
+  }
+
+  // Split a text value into sentences (with their start offsets) on sentence-ending
+  // punctuation followed by whitespace. Simple by design — "e.g." splits like any period.
+  private splitSentences(value: string): { text: string; start: number }[] {
+    const sentences: { text: string; start: number }[] = [];
+    const boundary = /[.!?]\s+/g;
+    let start = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = boundary.exec(value)) !== null) {
+      sentences.push({ text: value.slice(start, match.index + match[0].length), start });
+      start = match.index + match[0].length;
+    }
+    sentences.push({ text: value.slice(start), start });
+
+    return sentences;
+  }
+
+  // Return the sentence containing the given character index, trimmed.
+  private sentenceAt(value: string, index: number): string | undefined {
+    const containing = this.splitSentences(value).find(
+      s => index >= s.start && index < s.start + s.text.length
+    );
+    return containing ? containing.text.trim() : undefined;
+  }
+
   private extractText(node: Node): string {
     if ('value' in node) {
       return node.value as string;
