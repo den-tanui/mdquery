@@ -1,7 +1,8 @@
 // tests/executor.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Executor } from '../src/executor';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 
 const FIXTURES_DIR = join(__dirname, 'fixtures', 'executor');
@@ -149,5 +150,55 @@ This is the third test task.
       // Recreate for other tests
       await executor.execute('create id = 3 title = "Third Task" status = "doing" projectId = 2 priority = 1 file = "task-003"');
     });
+  });
+});
+
+describe('Executor error handling + meta', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-err-'));
+    writeFileSync(join(dir, 'good.md'), '---\ntitle: Good\n---\nBody\n');
+    // Malformed frontmatter: gray-matter throws YAMLException
+    writeFileSync(join(dir, 'bad.md'), '---\nname: "broken\ndescription: this yaml is invalid\n---\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('skips malformed files and records them in meta.errors (fast path)', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].title).toBe('Good');
+    expect(result.meta).toBeDefined();
+    expect(result.meta!.errors).toHaveLength(1);
+    expect(result.meta!.errors[0].path).toContain('bad.md');
+    expect(result.meta!.errors[0].phase).toBe('read');
+  });
+
+  it('skips malformed files and records them in meta.errors (legacy path)', async () => {
+    const executor = new Executor(dir, undefined, undefined, {});
+    const result = await executor.execute('select title');
+    expect(result.data).toHaveLength(1);
+    expect(result.meta!.errors).toHaveLength(1);
+    expect(result.meta!.errors[0].phase).toBe('read');
+  });
+
+  it('reports filesSearched and filesMatched in meta', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title');
+    expect(result.meta!.filesSearched).toBe(2);
+    expect(result.meta!.filesMatched).toBe(1);
+  });
+
+  it('records evaluate-phase errors per file and excludes the file from data', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    // Force an evaluate error via a method on a non-array (title.filter) —
+    // throws in the evaluate phase. The shared fixture also has bad.md, whose
+    // read-phase error is recorded too, so assert `some` evaluate error and
+    // that the offending file is excluded from data.
+    const result = await executor.execute('select title.filter(x)');
+    expect(result.meta!.errors.some(e => e.phase === 'evaluate')).toBe(true);
+    expect(result.data).toHaveLength(0);
   });
 });

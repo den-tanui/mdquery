@@ -28,6 +28,24 @@ export interface EvaluationContext {
   variables?: Record<string, any>;
 }
 
+// Execution-scoped error/timing collector. Created fresh per execute() call so
+// concurrent queries on the same Executor instance never share state.
+interface ExecutionState {
+  errors: { path: string; error: string; phase: 'read' | 'prefilter' | 'evaluate' }[];
+  timings: { list: number; read: number; prefilter: number; evaluate: number; total: number };
+  filesSearched: number;
+  filesMatched: number;
+}
+
+function newExecutionState(): ExecutionState {
+  return {
+    errors: [],
+    timings: { list: 0, read: 0, prefilter: 0, evaluate: 0, total: 0 },
+    filesSearched: 0,
+    filesMatched: 0
+  };
+}
+
 const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
 
 export class Executor {
@@ -62,13 +80,17 @@ export class Executor {
       this.hooks.onBeforeExecute(ast);
     }
 
-    return this.executeAST(ast);
+    const state = newExecutionState();
+    state.timings.total = Date.now();
+    const result = await this.executeAST(ast, state);
+    state.timings.total = Date.now() - state.timings.total;
+    return result;
   }
 
-  private async executeAST(ast: ASTNode): Promise<QueryResult> {
+  private async executeAST(ast: ASTNode, state: ExecutionState): Promise<QueryResult> {
     switch (ast.type) {
       case 'select':
-        return this.executeSelect(ast);
+        return this.executeSelect(ast, state);
       case 'update':
         return this.executeUpdate(ast);
       case 'create':
@@ -76,7 +98,7 @@ export class Executor {
       case 'delete':
         return this.executeDelete(ast);
       case 'pipe':
-        return this.executePipe(ast);
+        return this.executePipe(ast, state);
       case 'union':
         return this.executeUnion(ast);
       case 'trigger':
@@ -86,25 +108,49 @@ export class Executor {
     }
   }
 
-  private async readFilesWithHooks(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
+  private async readFilesWithHooks(dir: string, options: ReadOptions = {}, state?: ExecutionState): Promise<FileData[]> {
     let files: FileData[];
+    const onError = (err: { path: string; error: string; phase: 'read' | 'prefilter' | 'evaluate' }) => {
+      state?.errors.push(err);
+      options.onError?.(err);
+    };
 
     if (options.fast) {
+      const t0 = Date.now();
       const paths = await FastFileOps.listFiles(dir, options);
+      if (state) {
+        state.timings.list = Date.now() - t0;
+        state.filesSearched = paths.length;
+      }
+
       const analysis = this.analyzeCurrentQuery();
       const prefilterTree = this.contentPrefilterTree();
       if (prefilterTree) {
+        const t1 = Date.now();
         const filtered = await applyContentPrefilter(
           paths,
           prefilterTree,
           (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
         );
-        files = await FastFileOps.readFiles(dir, filtered, analysis);
+        if (state) state.timings.prefilter = Date.now() - t1;
+        const t2 = Date.now();
+        files = await FastFileOps.readFiles(dir, filtered, analysis, onError);
+        if (state) state.timings.read = Date.now() - t2;
       } else {
-        files = await FastFileOps.readFiles(dir, paths, analysis);
+        const t2 = Date.now();
+        files = await FastFileOps.readFiles(dir, paths, analysis, onError);
+        if (state) state.timings.read = Date.now() - t2;
       }
     } else {
-      files = await FileOps.readFiles(dir, options);
+      const t2 = Date.now();
+      // Inject the executor's onError wrapper so legacy FileOps.read records
+      // per-file read errors into the execution state (and forwards to any
+      // user-supplied ReadOptions.onError).
+      files = await FileOps.readFiles(dir, { ...options, onError });
+      if (state) {
+        state.timings.read = Date.now() - t2;
+        state.filesSearched = files.length + state.errors.length;
+      }
     }
 
     if (this.hooks?.onAfterRead) {
@@ -140,12 +186,20 @@ export class Executor {
 
   // ===== SELECT =====
 
-  private async executeSelect(node: SelectStatement): Promise<QueryResult> {
-    let files = await this.readFilesWithHooks(this.dir, this.readOptions);
+  private async executeSelect(node: SelectStatement, state: ExecutionState): Promise<QueryResult> {
+    let files = await this.readFilesWithHooks(this.dir, this.readOptions, state);
 
-    // WHERE
+    // WHERE — per-file try/catch, skip + record
     if (node.where) {
-      files = files.filter(f => this.evaluateExpression(node.where!, { file: f }));
+      const filtered: FileData[] = [];
+      for (const f of files) {
+        try {
+          if (this.evaluateExpression(node.where!, { file: f })) filtered.push(f);
+        } catch (e: any) {
+          state.errors.push({ path: f.path, error: e?.message ?? String(e), phase: 'evaluate' });
+        }
+      }
+      files = filtered;
     }
 
     // GROUP BY
@@ -153,9 +207,17 @@ export class Executor {
       files = this.groupBy(files, node.groupBy);
     }
 
-    // HAVING
+    // HAVING — per-file try/catch, skip + record
     if (node.having) {
-      files = files.filter(f => this.evaluateExpression(node.having!, { file: f }));
+      const filtered: FileData[] = [];
+      for (const f of files) {
+        try {
+          if (this.evaluateExpression(node.having!, { file: f })) filtered.push(f);
+        } catch (e: any) {
+          state.errors.push({ path: f.path, error: e?.message ?? String(e), phase: 'evaluate' });
+        }
+      }
+      files = filtered;
     }
 
     // ORDER BY
@@ -183,13 +245,29 @@ export class Executor {
       files = this.distinct(files, node.fields);
     }
 
-    // Projection
-    const data = files.map(f => this.project(f, node.fields));
+    // Projection — per-file try/catch, skip + record
+    const data: Record<string, any>[] = [];
+    for (const f of files) {
+      try {
+        data.push(this.project(f, node.fields));
+      } catch (e: any) {
+        state.errors.push({ path: f.path, error: e?.message ?? String(e), phase: 'evaluate' });
+      }
+    }
+
+    state.filesMatched = data.length;
+    state.timings.evaluate = Date.now() - state.timings.total;
 
     return {
       type: 'select',
       data,
-      count: data.length
+      count: data.length,
+      meta: {
+        filesSearched: state.filesSearched,
+        filesMatched: state.filesMatched,
+        timings: state.timings,
+        errors: state.errors
+      }
     };
   }
 
@@ -474,8 +552,8 @@ export class Executor {
 
   // ===== PIPE / UNION / TRIGGER =====
 
-  private async executePipe(node: PipeNode): Promise<QueryResult> {
-    const result = await this.executeAST(node.expr);
+  private async executePipe(node: PipeNode, state: ExecutionState): Promise<QueryResult> {
+    const result = await this.executeAST(node.expr, state);
 
     if (node.fn === 'clipboard' && result.data) {
       const values = result.data.map((f: any) => f.filename || f.title || '').join('\n');

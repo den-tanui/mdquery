@@ -3,6 +3,7 @@ import { readdir, readFile, writeFile } from 'fs/promises';
 import { join, basename, dirname, relative, isAbsolute, resolve } from 'path';
 import matter from 'gray-matter';
 import ignore from 'ignore';
+import type { FileError } from './types';
 
 export interface Section {
   level: number;
@@ -37,6 +38,7 @@ export interface ReadOptions {
   ignore?: boolean; // respect .gitignore (default true)
   files?: string[]; // explicit file list (overrides directory walking)
   fast?: boolean; // use fdir/grepts fast path
+  onError?: (error: FileError) => void; // per-file read error callback
 }
 
 interface IgnoreLayer {
@@ -44,7 +46,7 @@ interface IgnoreLayer {
   ig: ReturnType<typeof ignore>;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError'>> = {
   depth: 0,
   hidden: false,
   ignore: true,
@@ -56,32 +58,32 @@ export class FileOps {
   static readonly IMMUTABLE_FIELDS = ['createdAt', 'updatedAt'];
 
   static async readFiles(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = await this.read(dir, f);
+        const file = await this.read(dir, f, opts);
         if (file) files.push(file);
       }
       return files;
     }
 
-    const opts = { ...DEFAULT_OPTIONS, ...options };
     const files: FileData[] = [];
     await this.walk(dir, dir, opts, [], files);
     return files;
   }
 
   static readFilesSync(dir: string, options: ReadOptions = {}): FileData[] {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = this.readSync(dir, f);
+        const file = this.readSync(dir, f, opts);
         if (file) files.push(file);
       }
       return files;
     }
 
-    const opts = { ...DEFAULT_OPTIONS, ...options };
     const files: FileData[] = [];
     this.walkSync(dir, dir, opts, [], files);
     return files;
@@ -90,7 +92,7 @@ export class FileOps {
   private static async walk(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files'>>,
+    opts: Required<Omit<ReadOptions, 'files' | 'onError'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): Promise<void> {
@@ -132,7 +134,7 @@ export class FileOps {
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = await this.read(root, fullPath);
+        const file = await this.read(root, fullPath, opts);
         if (file) out.push(file);
       }
     }
@@ -158,11 +160,15 @@ export class FileOps {
     return false;
   }
 
-  private static async read(root: string, filepath: string): Promise<FileData | null> {
+  private static async read(root: string, filepath: string, options?: ReadOptions): Promise<FileData | null> {
     try {
       const { readFileSync } = require('fs');
       const content = readFileSync(filepath, 'utf-8');
-      const { data, content: contentBody } = matter(content);
+      // cache:false — gray-matter's default cache stores the unparsed file
+      // before parsing, so malformed frontmatter throws on first read but
+      // returns data:{} on re-reads, silently masking the error. Disable it so
+      // malformed files are always skipped and recorded via onError.
+      const { data, content: contentBody } = matter(content, { cache: false } as any);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
       const sections = parseSections(contentBody);
@@ -178,16 +184,19 @@ export class FileOps {
         body: contentBody,
         sections
       };
-    } catch {
+    } catch (e: any) {
+      options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });
       return null;
     }
   }
 
-  private static readSync(root: string, filepath: string): FileData | null {
+  private static readSync(root: string, filepath: string, options?: ReadOptions): FileData | null {
     try {
       const { readFileSync } = require('fs');
       const content = readFileSync(filepath, 'utf-8');
-      const { data, content: contentBody } = matter(content);
+      // cache:false — see read() above; keeps malformed-frontmatter detection
+      // deterministic across repeated reads.
+      const { data, content: contentBody } = matter(content, { cache: false } as any);
       const filename = basename(filepath, '.md');
       const rel = relative(root, filepath);
       const sections = parseSections(contentBody);
@@ -203,7 +212,8 @@ export class FileOps {
         body: contentBody,
         sections
       };
-    } catch {
+    } catch (e: any) {
+      options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });
       return null;
     }
   }
@@ -211,7 +221,7 @@ export class FileOps {
   private static walkSync(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files'>>,
+    opts: Required<Omit<ReadOptions, 'files' | 'onError'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): void {
@@ -255,7 +265,7 @@ export class FileOps {
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = this.readSync(root, fullPath);
+        const file = this.readSync(root, fullPath, opts);
         if (file) out.push(file);
       }
     }

@@ -225,6 +225,28 @@ export interface QueryResult {
   deleted?: number;
   id?: string;
   format?: 'json' | 'table' | 'csv';
+  meta?: QueryMeta;
+}
+
+export interface FileError {
+  path: string;
+  error: string;
+  phase: 'read' | 'prefilter' | 'evaluate';
+}
+
+export interface QueryTimings {
+  list: number;
+  read: number;
+  prefilter: number;
+  evaluate: number;
+  total: number;
+}
+
+export interface QueryMeta {
+  filesSearched: number;
+  filesMatched: number;
+  timings: QueryTimings;
+  errors: FileError[];
 }
 
 // Document type

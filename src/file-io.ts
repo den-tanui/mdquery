@@ -25,7 +25,7 @@ export function isNegatedContentOp(op: string): boolean {
   return NEGATED_CONTENT_OPS.has(op);
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError'>> = {
   depth: 0,
   hidden: false,
   ignore: true,
@@ -70,31 +70,40 @@ export class FastFileOps {
   static async readFiles(
     dir: string,
     paths: string[],
-    analysis: FileIOAnalysis
+    analysis: FileIOAnalysis,
+    onError?: (error: { path: string; error: string; phase: 'read' }) => void
   ): Promise<FileData[]> {
     const files: FileData[] = [];
     for (const fp of paths) {
-      // readFileSync matches legacy/current FileOps.read and avoids thread-pool
-      // round-trip overhead of async readFile (measured in benchmark: async was
-      // ~3x slower on 100+ files)
-      const { readFileSync } = require('fs');
-      const raw = readFileSync(fp, 'utf-8');
-      const { data, content: body } = matter(raw);
-      const filename = basename(fp, '.md');
-      const rel = relative(dir, fp);
+      try {
+        // readFileSync matches legacy/current FileOps.read and avoids thread-pool
+        // round-trip overhead of async readFile (measured in benchmark: async was
+        // ~3x slower on 100+ files)
+        const { readFileSync } = require('fs');
+        const raw = readFileSync(fp, 'utf-8');
+        // cache:false — gray-matter's default cache stores the unparsed file
+        // before parsing, so a malformed file throws on first read but returns
+        // data:{} on re-reads, silently masking the error. Disable it so
+        // malformed frontmatter is always detected and recorded in meta.errors.
+        const { data, content: body } = matter(raw, { cache: false } as any);
+        const filename = basename(fp, '.md');
+        const rel = relative(dir, fp);
 
-      const file: FileData = {
-        ...parseDates(data),
-        filename,
-        path: rel,
-        abspath: fp,
-        filepath: fp,
-        frontmatter: data,
-        content: raw,
-        body: analysis.requiresContent ? body : undefined,
-        sections: analysis.requiresContent ? parseSections(body) : undefined
-      };
-      files.push(file);
+        const file: FileData = {
+          ...parseDates(data),
+          filename,
+          path: rel,
+          abspath: fp,
+          filepath: fp,
+          frontmatter: data,
+          content: raw,
+          body: analysis.requiresContent ? body : undefined,
+          sections: analysis.requiresContent ? parseSections(body) : undefined
+        };
+        files.push(file);
+      } catch (e: any) {
+        onError?.({ path: fp, error: e?.message ?? String(e), phase: 'read' });
+      }
     }
     return files;
   }
