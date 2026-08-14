@@ -15,7 +15,8 @@ export interface FileIOAnalysis {
 const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
   depth: 0,
   hidden: false,
-  ignore: true
+  ignore: true,
+  fast: false
 };
 
 export class FastFileOps {

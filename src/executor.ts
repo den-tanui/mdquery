@@ -2,6 +2,8 @@
 
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
+import { FastFileOps, FileIOAnalysis } from './file-io';
+import { QueryAnalyzer } from './query-analyzer';
 import { isAbsolute, join } from 'path';
 import {
   ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
@@ -35,6 +37,7 @@ export class Executor {
   private readOptions: ReadOptions;
   private hooks?: ExecutorHooks;
   private contentExtractorCache: Map<string, ContentExtractor> = new Map();
+  private lastAst: ASTNode | null = null;
 
   constructor(
     dir: string,
@@ -53,6 +56,7 @@ export class Executor {
   // Main execution method — parses the query and executes it
   async execute(query: string): Promise<QueryResult> {
     const ast = new Parser(query).parse();
+    this.lastAst = ast;
 
     if (this.hooks?.onBeforeExecute) {
       this.hooks.onBeforeExecute(ast);
@@ -83,13 +87,40 @@ export class Executor {
   }
 
   private async readFilesWithHooks(dir: string, options: ReadOptions = {}): Promise<FileData[]> {
-    const files = await FileOps.readFiles(dir, options);
+    let files: FileData[];
+
+    if (options.fast) {
+      const paths = await FastFileOps.listFiles(dir, options);
+      const analysis = this.analyzeCurrentQuery();
+      if (analysis.bodyPredicates.length > 0) {
+        const pattern = analysis.bodyPredicates[0].value;
+        const filtered = await FastFileOps.preFilterByContent(dir, paths, pattern);
+        files = await FastFileOps.readFiles(dir, filtered, analysis);
+      } else {
+        files = await FastFileOps.readFiles(dir, paths, analysis);
+      }
+    } else {
+      files = await FileOps.readFiles(dir, options);
+    }
 
     if (this.hooks?.onAfterRead) {
       return files.map(f => this.hooks!.onAfterRead!(f));
     }
 
     return files;
+  }
+
+  // Derive the FileIOAnalysis for the most recently parsed query so the fast
+  // path knows whether to pre-filter by content and whether to load bodies.
+  private analyzeCurrentQuery(): FileIOAnalysis {
+    if (!this.lastAst) return { requiresContent: false, bodyPredicates: [] };
+    const plan = new QueryAnalyzer(this.lastAst).analyze();
+    return {
+      requiresContent: plan.lazyLoading.requiresContent,
+      bodyPredicates: plan.pushdownPredicates
+        .filter(p => p.field === 'content' || p.field === 'body')
+        .map(p => ({ field: p.field, op: p.op, value: String(p.value) }))
+    };
   }
 
   // ===== SELECT =====

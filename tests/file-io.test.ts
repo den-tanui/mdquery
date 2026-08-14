@@ -1,6 +1,7 @@
 // tests/file-io.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { FastFileOps } from '../src/file-io';
+import { Executor } from '../src/executor';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -143,5 +144,28 @@ describe('FastFileOps.preFilterByContent', () => {
     const all = await FastFileOps.listFiles(dir);
     const matches = await FastFileOps.preFilterByContent(dir, all, 'zzz-nothing');
     expect(matches).toHaveLength(0);
+  });
+});
+
+describe('Executor fast file I/O', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-ex-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\nstatus: todo\n---\n\nHas BUG-123.\n');
+    writeFileSync(join(dir, 'b.md'), '---\ntitle: B\nstatus: done\n---\n\nClean.\n');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('select with fast:true returns correct results', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title where status = "todo"');
+    expect(result.data!.map((f: any) => f.title)).toEqual(['A']);
+  });
+
+  it('select with fast:true and content predicate pre-filters', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title where content contains "BUG-123"');
+    expect(result.data!.map((f: any) => f.title)).toEqual(['A']);
   });
 });

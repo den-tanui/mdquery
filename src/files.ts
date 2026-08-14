@@ -36,6 +36,7 @@ export interface ReadOptions {
   hidden?: boolean; // include dot-entries (except .git)
   ignore?: boolean; // respect .gitignore (default true)
   files?: string[]; // explicit file list (overrides directory walking)
+  fast?: boolean; // use fdir/grepts fast path
 }
 
 interface IgnoreLayer {
@@ -46,7 +47,8 @@ interface IgnoreLayer {
 const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
   depth: 0,
   hidden: false,
-  ignore: true
+  ignore: true,
+  fast: false
 };
 
 export class FileOps {
