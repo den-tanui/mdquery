@@ -1,7 +1,9 @@
 // tests/file-io.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { FastFileOps } from '../src/file-io';
+import { FastFileOps, applyContentPrefilter, type PrefilterSieve } from '../src/file-io';
 import { Executor } from '../src/executor';
+import { Parser } from '../src/parser';
+import { buildContentPrefilterTree, type ContentPrefilterNode } from '../src/query-analyzer';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -243,5 +245,180 @@ describe('Executor fast path negated content predicates', () => {
     const fast = await filenamesFor('select filename where content != "Beta is clean"', true);
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['a', 'c']);
+  });
+});
+
+describe('buildContentPrefilterTree', () => {
+  function treeFor(query: string): ContentPrefilterNode | null {
+    const ast = new Parser(query).parse();
+    return buildContentPrefilterTree(ast.type === 'select' ? ast.where : undefined);
+  }
+
+  it('preserves OR structure', () => {
+    expect(treeFor('select filename where content contains "a" OR content contains "b"')).toEqual({
+      type: 'or',
+      left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+    });
+  });
+
+  it('preserves AND structure with a negated leaf', () => {
+    expect(treeFor('select filename where content contains "a" AND content NOT CONTAINS "b"')).toEqual({
+      type: 'and',
+      left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
+    });
+  });
+
+  it('pushes NOT down to the leaf (De Morgan)', () => {
+    expect(treeFor('select filename where NOT (content contains "a")')).toEqual({
+      type: 'leaf', op: 'NOT CONTAINS', pattern: 'a'
+    });
+  });
+
+  it('pushes NOT over OR down to AND of negated leaves', () => {
+    expect(treeFor('select filename where NOT (content contains "a" OR content contains "b")')).toEqual({
+      type: 'and',
+      left: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'a' },
+      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
+    });
+  });
+
+  it('treats a non-content AND branch as identity', () => {
+    expect(treeFor('select filename where status = "todo" AND content contains "a"')).toEqual({
+      type: 'leaf', op: 'CONTAINS', pattern: 'a'
+    });
+  });
+
+  it('returns null when a non-content branch participates in OR', () => {
+    expect(treeFor('select filename where status = "todo" OR content contains "a"')).toBeNull();
+  });
+
+  it('returns null when there are no content predicates', () => {
+    expect(treeFor('select filename where status = "todo"')).toBeNull();
+    expect(treeFor('select filename')).toBeNull();
+  });
+
+  it('expands IN to a union of equality leaves', () => {
+    expect(treeFor('select filename where content IN ("a", "b")')).toEqual({
+      type: 'or',
+      left: { type: 'leaf', op: '=', pattern: 'a' },
+      right: { type: 'leaf', op: '=', pattern: 'b' }
+    });
+  });
+
+  it('expands NOT IN to an intersection of inequality leaves', () => {
+    expect(treeFor('select filename where content NOT IN ("a", "b")')).toEqual({
+      type: 'and',
+      left: { type: 'leaf', op: '!=', pattern: 'a' },
+      right: { type: 'leaf', op: '!=', pattern: 'b' }
+    });
+  });
+});
+
+describe('applyContentPrefilter', () => {
+  const paths = ['/x/a.md', '/x/b.md', '/x/c.md'];
+
+  it('runs the sieve once per distinct pattern and combines AND/OR', async () => {
+    const calls: string[] = [];
+    const sieve: PrefilterSieve = async (op, pattern) => {
+      calls.push(`${op}:${pattern}`);
+      return paths.filter(p => p.includes(pattern));
+    };
+    const tree: ContentPrefilterNode = {
+      type: 'or',
+      left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+      right: {
+        type: 'and',
+        left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+        right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
+      }
+    };
+    const result = await applyContentPrefilter(paths, tree, sieve);
+    // 'a' appears twice (positive) → one call; 'b' once (negated) → one call
+    expect(calls).toEqual(['CONTAINS:a', 'NOT CONTAINS:b']);
+    // union(match(a), intersect(match(a), notMatch(b)))
+    expect(result.sort()).toEqual(['/x/a.md']);
+  });
+
+  it('AND intersects and OR unions the sieve results', async () => {
+    const sieve: PrefilterSieve = async (_op, pattern) => {
+      if (pattern === 'a') return ['/x/a.md', '/x/c.md'];
+      if (pattern === 'b') return ['/x/b.md', '/x/c.md'];
+      return [];
+    };
+    const andTree: ContentPrefilterNode = {
+      type: 'and',
+      left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+    };
+    expect((await applyContentPrefilter(paths, andTree, sieve)).sort()).toEqual(['/x/c.md']);
+
+    const orTree: ContentPrefilterNode = {
+      type: 'or',
+      left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+    };
+    expect((await applyContentPrefilter(paths, orTree, sieve)).sort()).toEqual(['/x/a.md', '/x/b.md', '/x/c.md']);
+  });
+});
+
+describe('Executor fast path AND/OR/NOT content prefilter', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-exbool-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\nstatus: todo\n---\n\nAlpha has BUG-123.\n');
+    writeFileSync(join(dir, 'b.md'), '---\ntitle: B\nstatus: done\n---\n\nBeta has OTHER-456.\n');
+    writeFileSync(join(dir, 'c.md'), '---\ntitle: C\nstatus: todo\n---\n\nGamma has BUG-123 and OTHER-456.\n');
+    writeFileSync(join(dir, 'd.md'), '---\ntitle: D\nstatus: done\n---\n\nDelta is clean.\n');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  async function filenamesFor(query: string, fast: boolean): Promise<string[]> {
+    const executor = new Executor(dir, undefined, undefined, { fast });
+    const result = await executor.execute(query);
+    return result.data!.map((f: any) => f.filename).sort();
+  }
+
+  it('OR returns the union in fast mode', async () => {
+    const legacy = await filenamesFor('select filename where content contains "BUG-123" OR content contains "OTHER-456"', false);
+    const fast = await filenamesFor('select filename where content contains "BUG-123" OR content contains "OTHER-456"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['a', 'b', 'c']);
+  });
+
+  it('AND intersects in fast mode', async () => {
+    const legacy = await filenamesFor('select filename where content contains "BUG-123" AND content contains "OTHER-456"', false);
+    const fast = await filenamesFor('select filename where content contains "BUG-123" AND content contains "OTHER-456"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['c']);
+  });
+
+  it('NOT complements in fast mode', async () => {
+    const legacy = await filenamesFor('select filename where NOT (content contains "BUG-123")', false);
+    const fast = await filenamesFor('select filename where NOT (content contains "BUG-123")', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['b', 'd']);
+  });
+
+  it('NOT over OR complements the union in fast mode', async () => {
+    const legacy = await filenamesFor('select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")', false);
+    const fast = await filenamesFor('select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['d']);
+  });
+
+  it('mixed frontmatter AND content predicate matches legacy', async () => {
+    const legacy = await filenamesFor('select filename where status = "todo" AND content contains "BUG-123"', false);
+    const fast = await filenamesFor('select filename where status = "todo" AND content contains "BUG-123"', true);
+    expect(fast).toEqual(legacy);
+    expect(fast).toEqual(['a', 'c']);
+  });
+
+  it('content IN prefilter stays a superset and matches legacy', async () => {
+    const legacy = await filenamesFor('select filename where content IN ("BUG-123", "OTHER-456")', false);
+    const fast = await filenamesFor('select filename where content IN ("BUG-123", "OTHER-456")', true);
+    expect(fast).toEqual(legacy);
   });
 });

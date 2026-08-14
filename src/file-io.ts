@@ -6,6 +6,7 @@ import matter from 'gray-matter';
 import ignore from 'ignore';
 import { FileData, ReadOptions, parseDates, parseSections } from './files';
 import type { SearchOptions } from 'grepts';
+import type { ContentPrefilterNode } from './query-analyzer';
 
 export interface FileIOAnalysis {
   requiresContent: boolean;
@@ -131,4 +132,56 @@ export class FastFileOps {
       return !ig!.ignores(rel);
     });
   }
+}
+
+// A prefilter primitive: given a leaf op and pattern, return the subset of
+// `paths` that passes the grepts sieve. Injected so callers can dedupe and
+// tests can count invocations.
+export type PrefilterSieve = (op: string, pattern: string) => Promise<string[]>;
+
+// Evaluate a content prefilter tree against `paths`, running the sieve once
+// per distinct (pattern, negation) pair. AND→intersect, OR→union; NOT was
+// already pushed to the leaves by buildContentPrefilterTree.
+export async function applyContentPrefilter(
+  paths: string[],
+  tree: ContentPrefilterNode,
+  sieve: PrefilterSieve
+): Promise<string[]> {
+  const cache = new Map<string, Promise<string[]>>();
+
+  const cachedSieve = (op: string, pattern: string): Promise<string[]> => {
+    const key = `${isNegatedContentOp(op) ? 'invert' : 'match'}:${pattern}`;
+    let pending = cache.get(key);
+    if (!pending) {
+      pending = sieve(op, pattern);
+      cache.set(key, pending);
+    }
+    return pending;
+  };
+
+  const evalNode = async (node: ContentPrefilterNode): Promise<string[]> => {
+    switch (node.type) {
+      case 'leaf':
+        return cachedSieve(node.op, node.pattern);
+      case 'and': {
+        const [left, right] = await Promise.all([evalNode(node.left), evalNode(node.right)]);
+        return intersectPaths(left, right);
+      }
+      case 'or': {
+        const [left, right] = await Promise.all([evalNode(node.left), evalNode(node.right)]);
+        return unionPaths(left, right);
+      }
+    }
+  };
+
+  return evalNode(tree);
+}
+
+function intersectPaths(a: string[], b: string[]): string[] {
+  const bSet = new Set(b);
+  return a.filter(p => bSet.has(p));
+}
+
+function unionPaths(a: string[], b: string[]): string[] {
+  return Array.from(new Set([...a, ...b]));
 }

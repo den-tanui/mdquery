@@ -2,8 +2,8 @@
 
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
-import { FastFileOps, FileIOAnalysis, isNegatedContentOp } from './file-io';
-import { QueryAnalyzer } from './query-analyzer';
+import { FastFileOps, FileIOAnalysis, isNegatedContentOp, applyContentPrefilter } from './file-io';
+import { QueryAnalyzer, buildContentPrefilterTree, type ContentPrefilterNode } from './query-analyzer';
 import { isAbsolute, join } from 'path';
 import {
   ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
@@ -92,13 +92,12 @@ export class Executor {
     if (options.fast) {
       const paths = await FastFileOps.listFiles(dir, options);
       const analysis = this.analyzeCurrentQuery();
-      if (analysis.bodyPredicates.length > 0) {
-        const predicate = analysis.bodyPredicates[0];
-        const filtered = await FastFileOps.preFilterByContent(
-          dir,
+      const prefilterTree = this.contentPrefilterTree();
+      if (prefilterTree) {
+        const filtered = await applyContentPrefilter(
           paths,
-          predicate.value,
-          isNegatedContentOp(predicate.op)
+          prefilterTree,
+          (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
         );
         files = await FastFileOps.readFiles(dir, filtered, analysis);
       } else {
@@ -113,6 +112,17 @@ export class Executor {
     }
 
     return files;
+  }
+
+  // Build the content prefilter tree for the most recently parsed query, or
+  // null when there is nothing to prefilter (no WHERE, or no content/body
+  // predicate that grepts can safely approximate). The tree preserves the
+  // WHERE's AND/OR/NOT structure so the fast path can combine grepts results
+  // correctly instead of using a flat bodyPredicates[0] list.
+  private contentPrefilterTree(): ContentPrefilterNode | null {
+    const ast = this.lastAst;
+    if (!ast || !('where' in ast) || !ast.where) return null;
+    return buildContentPrefilterTree(ast.where);
   }
 
   // Derive the FileIOAnalysis for the most recently parsed query so the fast
