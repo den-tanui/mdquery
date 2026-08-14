@@ -39,6 +39,7 @@ CLI → Lexer → Parser → AST → Query Analyzer → Executor → Files → F
 
 - `sections()` → array of full `SectionData` objects: `{title, level, position, hierarchy, content}`.
 - `section("name")` → FIRST exact-match section as a full `SectionData`, or `null` if no match.
+- `section()` with no args → FIRST section as a full `SectionData`, or `null` if the file has no sections (consistent with "first match" semantics).
 - Pattern matching is done by composition: `sections().filter(title starts_with 'Set')` (requires the filter/map/sort bug fix, §6.1).
 - `has section("name")` / `has_section("name")` unchanged.
 - `[n]` indexing is universal (0-based, negative supported); non-array index throws.
@@ -58,7 +59,7 @@ CLI → Lexer → Parser → AST → Query Analyzer → Executor → Files → F
 
 - Functions return their natural types (arrays/maps/scalars) — **never change what functions return**.
 - Queries select **scalar columns** (SQL philosophy): string / number / boolean / null.
-- Arrays of scalars (e.g. `tags`) are OK everywhere; table/CSV flatten to `"a,b"`.
+- Arrays of scalars (e.g. `tags`) are OK everywhere; table/CSV flatten to `"a,b"` (comma-joined); JSON keeps them as arrays (natural types).
 - Arrays of maps (`codeblocks()`) and single maps (`section('TODO')`) are **JSON-only**. Table/CSV **insist on scalar** and throw an error **as early as possible** — static AST analysis before any file reads.
 
 ### Scalar return-type inference (QueryAnalyzer)
