@@ -74,17 +74,20 @@ Per expression node, infer the return type:
 | `array_index` | element type of the indexed array |
 | `map_index` | value type of the map property |
 
-Builtin return types:
+Builtin return types (with shapes for error messages):
 
-| Builtin | Type |
-|---------|------|
-| `content()` | string (scalar) |
-| `fields()` | map (JSON-only) |
-| `links()` / `images()` / `codeblocks()` | array of maps (JSON-only) |
-| `section()` / `sections()` | map / array of maps (JSON-only) |
-| `toc()` | array of maps (JSON-only) |
-| `has_section()` | boolean (scalar) |
-| `now()`, `upper()`, `next_date()`, ... | scalar |
+| Builtin | Type | Shape (for suggestions) |
+|---------|------|-------------------------|
+| `content()` | string (scalar) | — |
+| `fields()` | map (JSON-only) | `{field: value}` |
+| `links()` | array of maps (JSON-only) | `{text, url, position, paragraph?, section?}` |
+| `images()` | array of maps (JSON-only) | `{alt, url, position, paragraph?, section?}` |
+| `codeblocks()` | array of maps (JSON-only) | `{content, lang?, position, paragraph?, section?}` |
+| `section()` | map (JSON-only) | `{title, level, position, hierarchy, content}` |
+| `sections()` | array of maps (JSON-only) | `{title, level, position, hierarchy, content}` |
+| `toc()` | array of maps (JSON-only) | `{level, title}` |
+| `has_section()` | boolean (scalar) | — |
+| `now()`, `upper()`, `next_date()`, ... | scalar | — |
 
 Array methods: `filter`/`where`/`map`/`sort`/`first`/`last`/`slice`/`flatten`/`unique`/`count` + `[n]` — `first`/`last`/`[n]`/`count` produce scalars or maps depending on element type; `map` produces an array of the mapped expression's type.
 
@@ -100,6 +103,33 @@ String methods: `length`/`toLowerCase`/`toUpperCase`/`trim`/`startsWith`/`endsWi
 
 - Table/CSV: after parsing, before file reads, walk the SELECT expressions with the inference table. If any expression's inferred type is `array-of-maps` or `map`, throw a clear error naming the expression and suggesting a flattening tool.
 - JSON: no enforcement (natural types allowed).
+
+### Helpful error messages
+
+Scalar enforcement errors must be actionable — they name the offending expression, state what it returns (type + shape), and suggest concrete rewrites using flattening tools. The shape column above feeds the suggestion.
+
+Message format:
+
+```
+Scalar value error: `sections()` returns an array of maps in the shape
+{title, level, position, hierarchy, content}. Table/CSV output requires scalar
+columns. Consider rewriting the query, e.g. `sections().map('title')`,
+`sections().first().title`, or `sections().count()`.
+```
+
+Per-shape suggestions:
+
+| Expression | Suggested rewrites |
+|------------|--------------------|
+| `sections()` | `sections().map('title')`, `sections().first().title`, `sections().count()` |
+| `section("name")` | `section("name").title`, `section("name").content` |
+| `links()` | `links().map('url')`, `links().map('text')`, `links().count()` |
+| `images()` | `images().map('url')`, `images().map('alt')` |
+| `codeblocks()` | `codeblocks().map('lang')`, `codeblocks().map('content')` |
+| `toc()` | `toc().map('title')`, `toc().map('level')` |
+| `fields()` | `fields().keys()`, `fields().values()`, `fields().map('field')` |
+
+The suggestion must use the **actual shape keys** of the builtin (from the table above), never a generic message. If the expression is nested (e.g. `sections().first()`), the message names the full expression and suggests the shortest scalar-producing rewrite.
 
 ## 3. Error Handling + meta
 
@@ -125,6 +155,16 @@ Created per `execute()` call, threaded through `executeAST` / `executeSelect` / 
 ### Evaluate phase
 
 - Replace `.filter()` / `.map()` with loops in `executeSelect`; per-file try/catch; skip + record (option a: skipped files excluded from data).
+
+### Helpful error context (all phases)
+
+Every recorded error must be actionable, not just a raw exception:
+
+- **Read/prefilter phase**: include the file `path`, the phase, and a human-readable reason (e.g. `malformed frontmatter: unexpected end of the stream within a double quoted scalar`). The underlying exception message is preserved, but prefixed with the file path so the user knows which file to fix.
+- **Evaluate phase**: include the file `path`, the phase, and the failing expression (e.g. `evaluate error in <file>: expression `links().map('url')` failed: <reason>`).
+- **Scalar enforcement** (table/CSV): the shape-aware message from §2 — not a file error, thrown before reads.
+
+The `errors` array in `meta` is the machine-readable record; the CLI also prints a concise summary line per error (e.g. `warning: skipped 2 files (see meta.errors)`).
 
 ### QueryResult.meta
 
@@ -217,7 +257,7 @@ Dependency-ordered steps (each independently testable):
 ## 9. Testing
 
 - TDD regression tests per bug (tests in `tests/content-extractor.test.ts`, `tests/file-io.test.ts`, `tests/parser-rewrite.test.ts`).
-- New tests: scalar enforcement throws for table/CSV with map/array-of-maps; JSON includes meta; CSV RFC 4180 quoting (newlines, quotes, formula escape); malformed frontmatter file skipped + recorded in meta; `section("name")` returns first match or null; `sections()` content non-duplicated; `mtime`/`updatedAt`/`createdAt` present and sortable.
+- New tests: scalar enforcement throws for table/CSV with map/array-of-maps; **scalar enforcement error message names the expression, its shape, and a concrete rewrite suggestion** (e.g. `sections()` → suggests `sections().map('title')`); JSON includes meta; CSV RFC 4180 quoting (newlines, quotes, formula escape); malformed frontmatter file skipped + recorded in meta with path and reason; `section("name")` returns first match or null; `sections()` content non-duplicated; `mtime`/`updatedAt`/`createdAt` present and sortable.
 - Validation: `bun run test` (currently 418/418 across 25 files) + `bun run build:lib` + `bun run build:cli`.
 
 ## 10. Backward Compatibility
