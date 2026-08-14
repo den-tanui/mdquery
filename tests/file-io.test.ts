@@ -121,3 +121,27 @@ describe('FastFileOps.readFiles', () => {
     expect(top.frontmatter.title).toBe('Top');
   });
 });
+
+describe('FastFileOps.preFilterByContent', () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = join(tmpdir(), `mdquery-fio-pf-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n\nThis file mentions BUG-123.\n');
+    writeFileSync(join(dir, 'b.md'), '---\ntitle: B\n---\n\nNo bug here.\n');
+  });
+  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('returns only files whose content matches the pattern', async () => {
+    const all = await FastFileOps.listFiles(dir);
+    const matches = await FastFileOps.preFilterByContent(dir, all, 'BUG-123');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toContain('a.md');
+  });
+
+  it('returns empty when nothing matches', async () => {
+    const all = await FastFileOps.listFiles(dir);
+    const matches = await FastFileOps.preFilterByContent(dir, all, 'zzz-nothing');
+    expect(matches).toHaveLength(0);
+  });
+});

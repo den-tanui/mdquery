@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises';
 import matter from 'gray-matter';
 import ignore from 'ignore';
 import { FileData, ReadOptions, parseDates, parseSections } from './files';
+import type { SearchOptions } from 'grepts';
 
 export interface FileIOAnalysis {
   requiresContent: boolean;
@@ -78,6 +79,23 @@ export class FastFileOps {
       files.push(file);
     }
     return files;
+  }
+
+  static async preFilterByContent(
+    dir: string,
+    files: string[],
+    pattern: string
+  ): Promise<string[]> {
+    const { searchAsync } = await import('grepts');
+    const results = await searchAsync({
+      pattern,
+      paths: [dir],
+      glob: '*.md',
+      hidden: true,
+      respectGitignore: false
+    } as SearchOptions);
+    const matchSet = new Set(results.map(r => r.filePath));
+    return files.filter(f => matchSet.has(f));
   }
 
   private static applyGitignore(root: string, files: string[]): string[] {
