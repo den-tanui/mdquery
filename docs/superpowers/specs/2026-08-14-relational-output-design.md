@@ -188,6 +188,13 @@ interface QueryMeta {
 | **TABLE** | Presentation only | Parses data internally; unchanged role |
 | **CARD** | **REMOVED** | `toCard` (formatter.ts:100-194), `--card` (cli.ts:138), `'card'` in OutputFormat (cli.ts:169) all removed |
 
+### CLI flags (Option C: both)
+
+- `--format=<fmt>` remains the canonical flag: `json`, `table`, `csv` (default `json`).
+- Shortcut flags are aliases: `--json` ≡ `--format=json`, `--csv` ≡ `--format=csv`, `--table` ≡ `--format=table`.
+- If both `--format` and a shortcut flag are given, the **last one on the command line wins** (standard getopt behavior).
+- `--card` is removed (no shortcut for a removed format).
+
 `mdquery "query" --json > saved.json` and `--csv > saved.csv` must produce valid files.
 
 `select *` → flat map (frontmatter + filename/path/abspath/filepath) — mostly scalar, fine in JSON.
@@ -229,16 +236,22 @@ Outdated syntax; parser correctly rejects. README.md lines 31/150/153 document t
 
 ### 6.8 order by mtime silently no-ops (bug #8, evaluateField:826-872)
 
-No `mtime`/`updatedAt`/`createdAt` handling. Feature: add file metadata fields (see §7).
+No `mtime`/`updatedAt`/`createdAt` handling. **Moved to a separate plan** (see §7) — not part of this implementation.
 
-## 7. File Metadata Fields (bug #8 feature)
+## 7. File Metadata — SEPARATE PLAN (not in this implementation)
 
-Add to each row's identity fields:
-- `mtime` — file modification time (Date → ISO in JSON)
-- `updatedAt` — alias for `mtime`
-- `createdAt` — file creation time (best-effort; may be unavailable on some filesystems → null)
+A dedicated future plan (own spec → plan → implementation cycle). Scope:
 
-These are scalar (Date) and usable in `WHERE`/`ORDER BY`/`SELECT`.
+- **`file()` builtin** returns a **single map object** — the metadata of the current file (the row being evaluated), like `fields()` / `section("name")` are per-row: `{abspath, mtime, atime, ctime, owner, group, size, mode, ...}`.
+- Access via property: `file().abspath`, `file().mtime`, `file().ctime`, `file().owner`, etc.
+- **Both property and call syntax work**: `file().mtime` ≡ `file().mtime()` (the executor treats a zero-arg call on a metadata key as property access).
+- **Define the type of each field**: `mtime`/`atime`/`ctime` → Date; `owner`/`group` → string; `size` → number; `mode` → string; `abspath` → string.
+- **Transform when necessary**: Date fields are real Date objects in memory so `ORDER BY file().mtime`, `WHERE file().mtime > ...`, and comparisons work via the TypeSystem; they serialize to ISO strings in JSON output.
+- **`updatedAt`/`createdAt` are NOT aliases** — they are explicit frontmatter fields (immutable via `update`), unrelated to file metadata. No aliasing.
+- Existing flat identity fields (`filename`, `path`, `abspath`) remain row columns; `file()` is the metadata accessor.
+- Fixes bug #8 (`order by mtime` silently no-ops → `order by file().mtime`).
+
+This plan is tracked separately; the current spec does not include it.
 
 ## 8. Implementation Order
 
@@ -251,13 +264,14 @@ Dependency-ordered steps (each independently testable):
 5. **Section content dedup** — §1 content slicing. Independent.
 6. **sections()/section() redesign** — §1 API change (depends on 5 for correct content).
 7. **Scalar enforcement** — §2 inference + early throw (depends on 3 for escape hatch, 1 for executeSelect refactor).
-8. **mtime + file metadata** — §7. Independent.
-9. **README docs fix** — §6.6 (`section.TODO` → `section("name")`). Independent.
+8. **README docs fix** — §6.6 (`section.TODO` → `section("name")`). Independent.
+
+> File metadata (bug #8) is a **separate plan** (§7) — not in this order.
 
 ## 9. Testing
 
 - TDD regression tests per bug (tests in `tests/content-extractor.test.ts`, `tests/file-io.test.ts`, `tests/parser-rewrite.test.ts`).
-- New tests: scalar enforcement throws for table/CSV with map/array-of-maps; **scalar enforcement error message names the expression, its shape, and a concrete rewrite suggestion** (e.g. `sections()` → suggests `sections().map('title')`); JSON includes meta; CSV RFC 4180 quoting (newlines, quotes, formula escape); malformed frontmatter file skipped + recorded in meta with path and reason; `section("name")` returns first match or null; `sections()` content non-duplicated; `mtime`/`updatedAt`/`createdAt` present and sortable.
+- New tests: scalar enforcement throws for table/CSV with map/array-of-maps; **scalar enforcement error message names the expression, its shape, and a concrete rewrite suggestion** (e.g. `sections()` → suggests `sections().map('title')`); JSON includes meta; CSV RFC 4180 quoting (newlines, quotes, formula escape); malformed frontmatter file skipped + recorded in meta with path and reason; `section("name")` returns first match or null; `sections()` content non-duplicated; shortcut flags `--json`/`--csv`/`--table` behave as `--format=` aliases with last-wins conflict rule.
 - Validation: `bun run test` (currently 418/418 across 25 files) + `bun run build:lib` + `bun run build:cli`.
 
 ## 10. Backward Compatibility
