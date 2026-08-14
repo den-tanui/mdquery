@@ -17,7 +17,7 @@ $ mdquery "select count(*) group by status"
 
 - SQL-style grammar (`select`, `update`, `create`, `delete`, `where`, `order by`, `group by`, ...)
 - Read/write YAML frontmatter in markdown files
-- Output as **json**, **table**, **csv**, or **card**
+- Output as **json**, **table**, or **csv**
 - Aggregates, joins, pipes, and triggers
 - Single markdown file or a whole directory
 - Recursive search with depth control, hidden-file and `.gitignore` awareness
@@ -28,8 +28,8 @@ $ mdquery "select count(*) group by status"
 - Set arithmetic: `+` (union), `-` (difference) on lists
 - Negated operators: `not contains`, `not starts_with`, `not ends_with`
 - Triggers: before/after create/update/delete with deny, set, run
-- Markdown body parsing with `section.<name>`, `has_section()`, and `toc()` builtins
-- `fields()` builtin to list frontmatter fields
+- Markdown body parsing with `sections()`, `section("name")`, `has section("name")`, and `toc()` builtins
+- `fields()` builtin returning a frontmatter field map
 - Immutable fields: `createdAt` and `updatedAt` cannot be changed via `update`
 
 ## Install
@@ -93,7 +93,7 @@ Choose an output format:
 
 ```bash
 mdquery --format=csv "select title, status"
-mdquery --card "select *"  # expanded view with full content
+mdquery --format=json "select title, status" > saved.json  # valid JSON, includes meta
 ```
 
 ### Options
@@ -108,23 +108,25 @@ mdquery --card "select *"  # expanded view with full content
 | `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
 | `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
 | `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |
-| `--format=<fmt>` | Output format: `json`, `table`, `csv`, `card` (default `json`) |
-| `--card` | Shortcut for `--format=card` (expanded view with full content) |
+| `--format=<fmt>` | Output format: `json`, `table`, `csv` (default `json`) |
 
 Calling `mdquery` with no arguments prints the manual.
 
 ### Output modes
 
-**Compact mode** (default `--format=table`): All fields in a grid. Content column capped at 20 chars (first line + `…`). `abspath` capped at 24 chars (tail display). Good for piping, scripts, and quick browsing.
+**JSON** (default) and **CSV** are data formats — `mdquery "query" --json > saved.json` and `--csv > saved.csv` produce valid files. JSON emits the full result object `{type, data, count, meta}`; CSV is RFC 4180 (proper quoting, newlines, formula escaping).
 
-**Card mode** (`--card`): Expanded view with metadata on top and content below. Content gets full terminal width with multiline preservation. Good for reading full content.
+**Table** is the presentation format: all fields in a grid. Content column capped at 20 chars (first line + `…`). `abspath` capped at 24 chars (tail display). Good for piping, scripts, and quick browsing.
+
+Table/CSV require **scalar columns** (string/number/boolean/null). Arrays of scalars (e.g. `tags`) flatten to `"a,b"`. Functions returning maps or arrays of maps (e.g. `sections()`, `links()`, `codeblocks()`) are JSON-only — table/CSV throw an early error suggesting a rewrite (e.g. `sections().map('title')`).
 
 ```bash
 # Compact table view
 mdquery --format=table "select *"
 
-# Card view with full content
-mdquery --card "select *"
+# Data formats for piping
+mdquery --format=json "select *" > saved.json
+mdquery --format=csv "select *" > saved.csv
 ```
 
 ### File identity fields
@@ -136,6 +138,9 @@ Every row exposes these fields regardless of frontmatter:
 | `filename` | File name without the `.md` extension (e.g. `task-001`) |
 | `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
 | `abspath` | Absolute path to the file |
+| `mtime` | File modification time (ISO date) |
+| `updatedAt` | Alias for `mtime` |
+| `createdAt` | File creation time (ISO date; may be `null` on some filesystems) |
 | `body` | Markdown body with the frontmatter block stripped |
 | `frontmatter` | Raw parsed frontmatter object as a single field |
 
@@ -147,17 +152,19 @@ Query markdown body sections:
 
 ```bash
 # Find files with TODO section
-mdquery "select id, filename where has section.TODO"
+mdquery "select id, filename where has section(\"TODO\")"
 
-# Return section content
-mdquery "select id, section.TODO where has section.TODO"
+# Return the first TODO section's content
+mdquery "select id, section(\"TODO\").content where has section(\"TODO\")"
+
+# List all section titles
+mdquery "select id, sections().map('title')"
 
 # Return table of contents
 mdquery "select id, toc()"
-
-# Return structured TOC with tree formatting
-mdquery --card "select id, toc()"
 ```
+
+`section("name")` returns the first exact-match section as a map `{title, level, position, hierarchy, content}` (or `null`); `sections()` returns all sections as an array of those maps. `section("name").title` / `.content` select scalar properties for table/CSV output.
 
 ## Query language
 

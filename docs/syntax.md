@@ -1,6 +1,6 @@
 # mdquery syntax reference
 
-`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path). `id` is a plain frontmatter field — it is only present when the file declares it.
+`mdquery` treats markdown files in a directory as rows of a table. Each file's YAML **frontmatter** fields become columns. Every row also exposes the identity fields `filename` (file name without `.md`), `path` (relative to the search directory), and `abspath` (absolute path), plus the file metadata fields `mtime` (modification time), `updatedAt` (alias for `mtime`), and `createdAt` (creation time; may be `null` on some filesystems). `id` is a plain frontmatter field — it is only present when the file declares it.
 
 Two extra fields are available on every row:
 
@@ -23,7 +23,7 @@ mdquery is feature-complete for CLI use with arbitrary markdown files:
 - Pipes: `clipboard()`
 - Builtins: now, today, len, upper, lower, trim, etc.
 - Aggregates: count, sum, avg, min, max
-- Table view: compact + card modes
+- Table view: compact mode
 
 ## Not yet implemented (projext layer)
 
@@ -171,8 +171,11 @@ Callable in `set` clauses and as values:
 | `date(s)` | parse date to ISO |
 | `next_date('daily'\|'weekly'\|'monthly'\|'yearly'\|<n>)` | next recurrence / in n days |
 | `nextEnum(val, [a, b, c])` / `prevEnum(val, [..])` | cycle through enum values |
-| `fields()` / `fields(true)` | list frontmatter field names / return field map |
-| `toc()` / `toc(true)` | return indented TOC / structured TOC with tree formatting |
+| `fields()` | return frontmatter field map `{field: value}` (use `fields().keys()` / `.values()` for lists) |
+| `toc()` | return array of `{level, title}` entries |
+| `sections()` | return array of section maps `{title, level, position, hierarchy, content}` |
+| `section("name")` | return first exact-match section map, or `null` |
+| `trimAll(x)` | replace presentation-breaking chars (`\n \r \t \v \f \u2028 \u2029 \u0085 | \0 \x00-\x1f`) with spaces |
 
 ## Aggregate functions
 
@@ -196,6 +199,24 @@ Merges a second directory of markdown files (a second "table"). Joined fields ar
 ```sql
 select title join ../sprints on sprint = id
 ```
+
+## Output formats
+
+| Format | Role | Notes |
+| --- | --- | --- |
+| `json` (default) | Data format | Full result object `{type, data, count, meta}`; valid JSON; ISO date strings |
+| `csv` | Data format | RFC 4180 via csv-stringify; proper quoting, newlines, formula escaping |
+| `table` | Presentation only | Grid view; content capped at 20 chars, `abspath` at 24 |
+
+Table/CSV require **scalar columns** (string/number/boolean/null). Arrays of scalars (e.g. `tags`) flatten to `"a,b"`. Expressions returning maps or arrays of maps (e.g. `sections()`, `links()`, `codeblocks()`, `fields()`) are JSON-only — table/CSV throw an early error naming the expression and suggesting a rewrite (e.g. `sections().map('title')`, `section("name").content`, `fields().keys()`).
+
+## Error handling
+
+Problematic files are skipped and logged rather than crashing the whole query:
+
+- **Read phase**: a file with malformed frontmatter is skipped; the error is recorded with its path and reason.
+- **Evaluate phase**: a file whose row fails to evaluate is skipped; the error is recorded with its path and the failing expression.
+- **meta**: every result includes `meta: {filesSearched, filesMatched, timings, errors}` where `errors` is `[{path, error, phase}]` (`phase`: `read` | `prefilter` | `evaluate`). The CLI prints a concise summary line (e.g. `warning: skipped 2 files (see meta.errors)`).
 
 ## Data files
 
