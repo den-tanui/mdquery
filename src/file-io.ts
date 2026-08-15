@@ -1,7 +1,7 @@
 // src/file-io.ts
 import { fdir } from 'fdir';
 import { join, relative, isAbsolute, basename } from 'path';
-import { readFile } from 'fs/promises';
+import { readFileSync } from 'fs';
 import matter from 'gray-matter';
 import ignore from 'ignore';
 import { FileData, ReadOptions, parseDates, parseSections } from './files';
@@ -79,7 +79,6 @@ export class FastFileOps {
         // readFileSync matches legacy/current FileOps.read and avoids thread-pool
         // round-trip overhead of async readFile (measured in benchmark: async was
         // ~3x slower on 100+ files)
-        const { readFileSync } = require('fs');
         const raw = readFileSync(fp, 'utf-8');
         // cache:false — gray-matter's default cache stores the unparsed file
         // before parsing, so a malformed file throws on first read but returns
@@ -130,7 +129,7 @@ export class FastFileOps {
   private static applyGitignore(root: string, files: string[]): string[] {
     let ig: ReturnType<typeof ignore> | null = null;
     try {
-      const gi = require('fs').readFileSync(join(root, '.gitignore'), 'utf-8');
+      const gi = readFileSync(join(root, '.gitignore'), 'utf-8');
       ig = ignore().add(gi);
     } catch {
       return files; // no .gitignore

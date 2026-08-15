@@ -1,5 +1,5 @@
 // src/formatter.ts
-import { QueryResult } from './executor';
+import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
 
 export type OutputFormat = 'json' | 'table' | 'csv' | 'card';

@@ -127,11 +127,20 @@ export class Executor {
       const prefilterTree = this.contentPrefilterTree();
       if (prefilterTree) {
         const t1 = Date.now();
-        const filtered = await applyContentPrefilter(
-          paths,
-          prefilterTree,
-          (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
-        );
+        let filtered: string[];
+        try {
+          filtered = await applyContentPrefilter(
+            paths,
+            prefilterTree,
+            (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
+          );
+        } catch (e: any) {
+          // A prefilter failure must not crash the query — record it and fall
+          // back to reading ALL paths (the WHERE re-evaluates content
+          // predicates afterward, so correctness is preserved).
+          onError({ path: dir, error: e?.message ?? String(e), phase: 'prefilter' });
+          filtered = paths;
+        }
         if (state) state.timings.prefilter = Date.now() - t1;
         const t2 = Date.now();
         files = await FastFileOps.readFiles(dir, filtered, analysis, onError);
@@ -188,6 +197,10 @@ export class Executor {
 
   private async executeSelect(node: SelectStatement, state: ExecutionState): Promise<QueryResult> {
     let files = await this.readFilesWithHooks(this.dir, this.readOptions, state);
+
+    // Evaluate phase starts after file discovery/reading — measure from here so
+    // `evaluate` reflects WHERE/HAVING/projection work only, not list+read.
+    const tEval = Date.now();
 
     // WHERE — per-file try/catch, skip + record
     if (node.where) {
@@ -256,7 +269,7 @@ export class Executor {
     }
 
     state.filesMatched = data.length;
-    state.timings.evaluate = Date.now() - state.timings.total;
+    state.timings.evaluate = Date.now() - tEval;
 
     return {
       type: 'select',

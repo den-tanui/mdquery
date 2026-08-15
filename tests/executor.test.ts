@@ -1,5 +1,5 @@
 // tests/executor.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { Executor } from '../src/executor';
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -200,5 +200,27 @@ describe('Executor error handling + meta', () => {
     const result = await executor.execute('select title.filter(x)');
     expect(result.meta!.errors.some(e => e.phase === 'evaluate')).toBe(true);
     expect(result.data).toHaveLength(0);
+  });
+
+  it('forwards read errors to a user-supplied ReadOptions.onError callback', async () => {
+    const onError = vi.fn();
+    const executor = new Executor(dir, undefined, undefined, { fast: true, onError });
+    await executor.execute('select title');
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].path).toContain('bad.md');
+    expect(onError.mock.calls[0][0].phase).toBe('read');
+  });
+
+  it('reports timings with the expected shape and a bounded evaluate time', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select title');
+    const timings = result.meta!.timings;
+    for (const key of ['list', 'read', 'prefilter', 'evaluate', 'total'] as const) {
+      expect(typeof timings[key]).toBe('number');
+    }
+    // Loose bounds: evaluate covers WHERE/HAVING/projection only, so it must
+    // be a small non-negative slice of the total execution time.
+    expect(timings.evaluate).toBeGreaterThanOrEqual(0);
+    expect(timings.evaluate).toBeLessThan(timings.total);
   });
 });

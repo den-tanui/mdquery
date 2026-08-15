@@ -46,11 +46,12 @@ interface IgnoreLayer {
   ig: ReturnType<typeof ignore>;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
   depth: 0,
   hidden: false,
   ignore: true,
-  fast: false
+  fast: false,
+  onError: () => {}
 };
 
 export class FileOps {
@@ -92,7 +93,7 @@ export class FileOps {
   private static async walk(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files' | 'onError'>>,
+    opts: Required<Omit<ReadOptions, 'files'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): Promise<void> {
@@ -221,7 +222,7 @@ export class FileOps {
   private static walkSync(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files' | 'onError'>>,
+    opts: Required<Omit<ReadOptions, 'files'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): void {
