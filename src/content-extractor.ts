@@ -12,6 +12,7 @@ interface LinkData {
   url: string;
   position?: any;
   paragraph?: string;
+  sentence?: string;
   section?: string[];
 }
 
@@ -20,6 +21,7 @@ interface ImageData {
   url: string;
   position?: any;
   paragraph?: string;
+  sentence?: string;
   section?: string[];
 }
 
@@ -74,15 +76,17 @@ export class ContentExtractor {
   extractLinks(): LinkData[] {
     const links: LinkData[] = [];
     
-    visit(this.ast, 'link', (node: Link) => {
-      const paragraph = this.findParent(node, 'paragraph');
-      const section = this.extractSectionHierarchy(node);
+    this.walkWithSections((node, ancestors, section) => {
+      if (node.type !== 'link') return;
+      const link = node as Link;
+      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
       
       links.push({
-        text: this.extractText(node),
-        url: node.url,
-        position: node.position,
+        text: this.extractText(link),
+        url: link.url,
+        position: link.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
+        sentence: paragraph ? this.sentenceInParagraph(paragraph, link) : undefined,
         section: section
       });
     });
@@ -94,15 +98,17 @@ export class ContentExtractor {
   extractImages(): ImageData[] {
     const images: ImageData[] = [];
     
-    visit(this.ast, 'image', (node: Image) => {
-      const paragraph = this.findParent(node, 'paragraph');
-      const section = this.extractSectionHierarchy(node);
+    this.walkWithSections((node, ancestors, section) => {
+      if (node.type !== 'image') return;
+      const image = node as Image;
+      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
       
       images.push({
-        alt: node.alt || '',
-        url: node.url,
-        position: node.position,
+        alt: image.alt || '',
+        url: image.url,
+        position: image.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
+        sentence: paragraph ? this.sentenceInParagraph(paragraph, image) : undefined,
         section: section
       });
     });
@@ -114,14 +120,15 @@ export class ContentExtractor {
   extractCodeblocks(): CodeBlockData[] {
     const codeblocks: CodeBlockData[] = [];
     
-    visit(this.ast, 'code', (node: Code) => {
-      const paragraph = this.findParent(node, 'paragraph');
-      const section = this.extractSectionHierarchy(node);
+    this.walkWithSections((node, ancestors, section) => {
+      if (node.type !== 'code') return;
+      const code = node as Code;
+      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
       
       codeblocks.push({
-        lang: node.lang || undefined,
-        content: node.value,
-        position: node.position,
+        lang: code.lang || undefined,
+        content: code.value,
+        position: code.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
         section: section
       });
@@ -134,16 +141,16 @@ export class ContentExtractor {
   extractSections(): SectionData[] {
     const sections: SectionData[] = [];
     
-    visit(this.ast, 'heading', (node: Heading) => {
-      const hierarchy = this.extractSectionHierarchy(node);
-      const content = this.extractSectionContent(node);
+    this.walkWithSections((node, _ancestors, section) => {
+      if (node.type !== 'heading') return;
+      const heading = node as Heading;
       
       sections.push({
-        title: this.extractText(node),
-        level: node.depth,
-        position: node.position,
-        hierarchy: hierarchy,
-        content: content
+        title: this.extractText(heading),
+        level: heading.depth,
+        position: heading.position,
+        hierarchy: section,
+        content: this.extractSectionContent(heading)
       });
     });
     
@@ -170,28 +177,7 @@ export class ContentExtractor {
     const matches: GrepMatch[] = [];
     const regex = this.ensureGlobal(pattern);
 
-    // mdast headings are siblings of their content, not ancestors, so section
-    // context cannot come from parent-walking. Maintain a positional heading
-    // stack during the pre-order traversal instead: push headings, pop when a
-    // heading of equal-or-lesser depth appears, and the stack at a text node is
-    // that text's section hierarchy.
-    const headingStack: Heading[] = [];
-
-    // Walk text nodes (not lines) so matches keep document structure: sentence,
-    // paragraph, section hierarchy, and the full ancestor chain come from mdast.
-    visitParents(this.ast, (node, ancestors) => {
-      if (node.type === 'heading') {
-        const heading = node as Heading;
-        while (
-          headingStack.length > 0 &&
-          headingStack[headingStack.length - 1].depth >= heading.depth
-        ) {
-          headingStack.pop();
-        }
-        headingStack.push(heading);
-        return;
-      }
-
+    this.walkWithSections((node, ancestors, section) => {
       if (node.type !== 'text') return;
 
       const textNode = node as Text;
@@ -208,7 +194,7 @@ export class ContentExtractor {
           column,
           text: match[0],
           captures: Array.from(match).slice(1),
-          section: headingStack.map(h => this.extractText(h)),
+          section: section,
           sentence: this.sentenceAt(value, matchIndex),
           paragraph: paragraphNode ? this.extractText(paragraphNode) : undefined,
           ancestors: ancestors.map(a => {
@@ -282,37 +268,43 @@ export class ContentExtractor {
     return '';
   }
 
-  private findParent(node: Node, type: string): Node | undefined {
-    let parent: Node | undefined;
-    
-    visitParents(this.ast, (n, ancestors) => {
-      if (n === node && ancestors.length > 0) {
-        parent = ancestors[ancestors.length - 1];
-        return SKIP;
+  // Pre-order traversal maintaining a positional heading stack. mdast headings
+  // are siblings of their content (not ancestors), so section context cannot
+  // come from parent-walking. The stack tracks the enclosing headings: pop when
+  // a heading of equal-or-lesser depth appears, push after visiting (so a
+  // heading's own hierarchy excludes its own title, matching extractSections).
+  private walkWithSections(
+    visitor: (node: Node, ancestors: Node[], section: string[]) => void
+  ): void {
+    const headingStack: Heading[] = [];
+
+    visitParents(this.ast, (node, ancestors) => {
+      if (node.type === 'heading') {
+        const heading = node as Heading;
+        visitor(heading, ancestors, headingStack.map(h => this.extractText(h)));
+        while (
+          headingStack.length > 0 &&
+          headingStack[headingStack.length - 1].depth >= heading.depth
+        ) {
+          headingStack.pop();
+        }
+        headingStack.push(heading);
+        return;
       }
+      visitor(node, ancestors, headingStack.map(h => this.extractText(h)));
     });
-    
-    if (parent && 'type' in parent && parent.type === type) {
-      return parent;
-    }
-    return undefined;
   }
 
-  private extractSectionHierarchy(node: Node): string[] {
-    const hierarchy: string[] = [];
-    let current = node;
-    
-    while (current) {
-      const parent = this.findParent(current, 'heading');
-      if (parent) {
-        hierarchy.unshift(this.extractText(parent));
-        current = parent;
-      } else {
-        break;
-      }
-    }
-    
-    return hierarchy;
+  // Best-effort sentence context for inline nodes (links/images): map the
+  // target's document offset into the paragraph's extracted text and split on
+  // sentence boundaries. Markdown syntax chars may drift offsets slightly.
+  private sentenceInParagraph(paragraph: Parent, target: Node): string | undefined {
+    const text = this.extractText(paragraph);
+    const paraStart = paragraph.position?.start?.offset ?? 0;
+    const targetStart = target.position?.start?.offset;
+    if (targetStart === undefined) return undefined;
+    const index = Math.max(0, Math.min(targetStart - paraStart, text.length - 1));
+    return this.sentenceAt(text, index);
   }
 
   private extractSectionContent(heading: Heading): string | undefined {

@@ -140,3 +140,63 @@ describe('ContentExtractor.extractSections content', () => {
     expect(sections[0].content).toBeUndefined();
   });
 });
+
+describe('ContentExtractor mdast section context (headings are siblings, not ancestors)', () => {
+  it('assigns the enclosing heading stack to links under headings', () => {
+    const extractor = new ContentExtractor('# Docs\n\nSee [guide](https://example.com) for details.\n');
+    const links = extractor.extractLinks();
+    expect(links).toHaveLength(1);
+    expect(links[0].section).toEqual(['Docs']);
+    expect(links[0].text).toBe('guide');
+    expect(links[0].url).toBe('https://example.com');
+  });
+
+  it('assigns nested heading stacks to links in subsections', () => {
+    const extractor = new ContentExtractor('# Docs\n\n## API\n\nSee [guide](https://example.com).\n');
+    const links = extractor.extractLinks();
+    expect(links[0].section).toEqual(['Docs', 'API']);
+  });
+
+  it('returns an empty section for links outside any heading', () => {
+    const extractor = new ContentExtractor('A [link](https://example.com) before headings.\n');
+    const links = extractor.extractLinks();
+    expect(links[0].section).toEqual([]);
+  });
+
+  it('assigns the enclosing heading stack to images under headings', () => {
+    const extractor = new ContentExtractor('# Logo\n\n![logo](logo.png)\n');
+    const images = extractor.extractImages();
+    expect(images).toHaveLength(1);
+    expect(images[0].section).toEqual(['Logo']);
+  });
+
+  it('assigns the enclosing heading stack to codeblocks (CHANGES.md 2e)', () => {
+    const extractor = new ContentExtractor('# Setup\n\n```python\nprint(1)\n```\n');
+    const codeblocks = extractor.extractCodeblocks();
+    expect(codeblocks).toHaveLength(1);
+    expect(codeblocks[0].section).toEqual(['Setup']);
+    expect(codeblocks[0].lang).toBe('python');
+    expect(codeblocks[0].content).toBe('print(1)');
+  });
+
+  it('sections() hierarchy excludes the heading itself and covers nested headings', () => {
+    const extractor = new ContentExtractor('# Top\n\n## Mid\n\n### Deep\n\nbody\n');
+    const sections = extractor.extractSections();
+    expect(sections).toHaveLength(3);
+    expect(sections[0].hierarchy).toEqual([]);
+    expect(sections[1].hierarchy).toEqual(['Top']);
+    expect(sections[2].hierarchy).toEqual(['Top', 'Mid']);
+  });
+
+  it('provides best-effort sentence context for links', () => {
+    const extractor = new ContentExtractor('First sentence. See [guide](https://example.com) in the second sentence.\n');
+    const links = extractor.extractLinks();
+    expect(links[0].sentence).toBe('See guide in the second sentence.');
+  });
+
+  it('derives paragraph text through the paragraph ancestor for links', () => {
+    const extractor = new ContentExtractor('A paragraph with [a link](https://example.com) inside.\n');
+    const links = extractor.extractLinks();
+    expect(links[0].paragraph).toBe('A paragraph with a link inside.');
+  });
+});
