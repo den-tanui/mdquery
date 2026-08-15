@@ -185,12 +185,21 @@ describe('resolveDir', () => {
     }
   });
 
-  it('throws on undefined env var without fallback', () => {
+  it('throws on undefined env var without suffix', () => {
     expect(() => resolveDir('$UNDEFINED_VAR_XYZ')).toThrow('not set');
   });
 
-  it('resolves $UNDEFINED_VAR/fallback to fallback', () => {
+  it('resolves $UNDEFINED_VAR/suffix to suffix as fallback', () => {
     expect(resolveDir('$UNDEFINED_VAR_XYZ/foo')).toBe(resolve('foo'));
+  });
+
+  it('resolves $SET_VAR/suffix by appending suffix (shell-like)', () => {
+    process.env.TEST_DIR_RESOLVE = '/tmp/test-resolve';
+    try {
+      expect(resolveDir('$TEST_DIR_RESOLVE/sub')).toBe('/tmp/test-resolve/sub');
+    } finally {
+      delete process.env.TEST_DIR_RESOLVE;
+    }
   });
 
   it('throws on ~other', () => {

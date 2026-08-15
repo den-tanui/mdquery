@@ -82,26 +82,28 @@ function splitFiles(value: string): string[] {
 /**
  * Expand a directory argument into an absolute path.
  * Supports: `.` (cwd), `..`, `~` / `~/...` (current user's home),
- * `$VAR` / `$VAR/fallback` (environment variable with optional fallback).
+ * `$VAR` / `$VAR/suffix` (environment variable with optional suffix;
+ * shell-like: when the var is set the suffix is appended, when unset the
+ * suffix is used as a fallback).
  */
 export function resolveDir(input: string): string {
   if (input === '.') return process.cwd();
   if (input === '..') return resolve('..');
   if (input.startsWith('~')) {
     if (input === '~') return homedir();
-    if (input.startsWith('~/')) return input.replace('~', homedir());
+    if (input.startsWith('~/')) return homedir() + input.slice(1);
     throw new Error(`Only ~ (current user) is supported, got: ${input}`);
   }
   if (input.startsWith('$')) {
     const slashIdx = input.indexOf('/');
     const varName = slashIdx > 0 ? input.slice(1, slashIdx) : input.slice(1);
-    const fallback = slashIdx > 0 ? input.slice(slashIdx + 1) : undefined;
+    const suffix = slashIdx > 0 ? input.slice(slashIdx + 1) : undefined;
     const val = process.env[varName];
     if (val === undefined) {
-      if (fallback !== undefined) return resolve(fallback);
+      if (suffix !== undefined) return resolve(suffix);
       throw new Error(`Environment variable $${varName} is not set`);
     }
-    return resolve(val);
+    return suffix !== undefined ? resolve(val, suffix) : resolve(val);
   }
   return resolve(input);
 }
