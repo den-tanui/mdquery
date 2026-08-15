@@ -1,6 +1,8 @@
 // src/files.ts
 import { readdir, readFile, writeFile } from 'fs/promises';
+import { statSync } from 'fs';
 import { join, basename, dirname, relative, isAbsolute, resolve } from 'path';
+import { userInfo } from 'os';
 import matter from 'gray-matter';
 import ignore from 'ignore';
 import type { FileError } from './types';
@@ -29,6 +31,66 @@ export interface FileData {
   body?: string;
   sections?: Map<string, Section>;
   [key: string]: any;
+}
+
+export interface FileMetadata {
+  abspath: string;
+  mtime: Date;
+  atime: Date;
+  ctime: Date;
+  owner: string;
+  group: string;
+  size: number;
+  mode: string;
+}
+
+// Best-effort uid → username: the current user's files get a real name via
+// os.userInfo(); anything else falls back to the numeric uid string.
+function uidToName(uid: number): string {
+  try {
+    if (uid === process.getuid?.()) {
+      return userInfo().username;
+    }
+  } catch { /* fall through */ }
+  return String(uid);
+}
+
+// os.userInfo() exposes no group name; the numeric gid string is the portable
+// fallback. (Full /etc/group lookup is a possible follow-up.)
+function gidToName(gid: number): string {
+  return String(gid);
+}
+
+// stat.mode is a number (e.g. 0o100644) — render the permission bits as rwx.
+function modeToString(mode: number): string {
+  const m = mode & 0o777;
+  const chars = 'rwxrwxrwx';
+  let s = '';
+  for (let i = 0; i < 9; i++) {
+    s += (m & (0o400 >> i)) ? chars[i] : '-';
+  }
+  return s;
+}
+
+// Read file metadata once per file. Returns undefined when stat fails (e.g.
+// the file vanished between listing and reading) — a stat failure must not
+// kill the whole file read.
+export function buildFileMetadata(abspath: string): FileMetadata | undefined {
+  try {
+    const stat = statSync(abspath);
+    return {
+      abspath,
+      mtime: stat.mtime,
+      atime: stat.atime,
+      ctime: stat.ctime,
+      owner: uidToName(stat.uid),
+      group: gidToName(stat.gid),
+      size: stat.size,
+      mode: modeToString(stat.mode)
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export interface ReadOptions {
