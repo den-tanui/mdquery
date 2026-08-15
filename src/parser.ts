@@ -2,7 +2,7 @@
 import { Token, TokenType, ASTNode, Expression, SelectStatement, UpdateStatement, 
   CreateStatement, DeleteStatement, TriggerStatement, PipeNode, UnionNode,
   BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode, ArrayIndexNode,
-  MapIndexNode, FieldNode, ValueNode, ParenNode, WildcardNode, SubqueryNode,
+  MapIndexNode, ValueNode, ParenNode, WildcardNode, SubqueryNode,
   JoinNode, FromClause, OrderByNode } from './types';
 import { Lexer } from './lexer';
 
@@ -632,7 +632,10 @@ export class Parser {
       return { type: 'function_call', name: left.name, args: [...left.args, ...args] };
     }
     
-    return { type: 'function_call', name: (left as FieldNode).name, args };
+    // Calling a non-function (e.g. file().mtime()) is invalid — a map is not
+    // callable. Previously this produced a garbage function_call with an
+    // undefined name; reject it with a clear parse error instead.
+    throw new Error(`Cannot call ${left.type} — only functions are callable`);
   }
 
   private isChainedMethod(method: string): boolean {

@@ -236,3 +236,19 @@ describe('file() scalar enforcement', () => {
     await expect(executor.execute('select file()')).rejects.toThrow(/file\(\)/);
   });
 });
+
+describe('file().mtime() rejection', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-meta-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('rejects calling a property accessor — maps are not callable', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    await expect(executor.execute('select file().mtime()')).rejects.toThrow(/only functions are callable/);
+  });
+});
