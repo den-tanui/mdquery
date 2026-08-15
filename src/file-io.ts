@@ -25,7 +25,7 @@ export function isNegatedContentOp(op: string): boolean {
   return NEGATED_CONTENT_OPS.has(op);
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError' | 'format'>> = {
   depth: 0,
   hidden: false,
   ignore: true,

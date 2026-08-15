@@ -1,7 +1,7 @@
 // tests/formatters.test.ts
 import { describe, it, expect } from 'vitest';
-import { Formatter } from '../src/formatter';
-import { QueryResult } from '../src/executor';
+import { Formatter, OutputFormat } from '../src/formatter';
+import { QueryResult } from '../src/types';
 
 describe('Formatter', () => {
   const mockResult: QueryResult = {
@@ -17,8 +17,24 @@ describe('Formatter', () => {
     it('formats as JSON', () => {
       const output = Formatter.format(mockResult, 'json');
       const parsed = JSON.parse(output);
-      expect(parsed).toHaveLength(2);
-      expect(parsed[0].title).toBe('Test Task');
+      expect(parsed.type).toBe('select');
+      expect(parsed.data).toHaveLength(2);
+      expect(parsed.data[0].title).toBe('Test Task');
+    });
+
+    it('emits the full QueryResult object including meta', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ title: 'A' }],
+        count: 1,
+        meta: { filesSearched: 2, filesMatched: 1, timings: { list: 1, read: 2, prefilter: 0, evaluate: 1, total: 4 }, errors: [] }
+      };
+      const output = Formatter.format(result, 'json');
+      const parsed = JSON.parse(output);
+      expect(parsed.type).toBe('select');
+      expect(parsed.data).toHaveLength(1);
+      expect(parsed.count).toBe(1);
+      expect(parsed.meta.filesSearched).toBe(2);
     });
   });
 
@@ -133,67 +149,38 @@ describe('Formatter', () => {
       expect(lines[1]).toContain('1');
       expect(lines[1]).toContain('Test Task');
     });
+
+    it('quotes fields containing commas, quotes, and newlines (RFC 4180)', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [
+          { title: 'a,b', note: 'line1\nline2' },
+          { title: 'plain', note: 'has "quotes"' }
+        ],
+        count: 2
+      };
+      const output = Formatter.format(result, 'csv');
+      expect(output).toContain('"a,b"');
+      expect(output).toContain('"line1\nline2"');
+      expect(output).toContain('"has ""quotes"""');
+    });
+
+    it('escapes formula injection', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ title: '=SUM(A1:A2)' }],
+        count: 1
+      };
+      const output = Formatter.format(result, 'csv');
+      expect(output).toContain("'=SUM(A1:A2)");
+    });
   });
 
-  describe('Card', () => {
-    it('formats as card with metadata (no header when filename is empty)', () => {
-      const output = Formatter.toCard(mockResult, 120);
-      expect(output).not.toContain('---');
-      expect(output).toContain('id: 1');
-      expect(output).toContain('title: Test Task');
-      expect(output).toContain('status: todo');
-    });
-
-    it('shows content block when content is present', () => {
-      const contentResult: QueryResult = {
-        type: 'select',
-        data: [
-          { id: '1', title: 'Task', content: 'This is the content body', filename: 'task-001', path: '', abspath: '', filepath: '' }
-        ],
-        count: 1
-      };
-      const output = Formatter.toCard(contentResult, 120);
-      expect(output).toContain('This is the content body');
-    });
-
-    it('skips empty content when not explicitly selected', () => {
-      const emptyContentResult: QueryResult = {
-        type: 'select',
-        data: [
-          { id: '1', title: 'Task', content: '', filename: 'task-001', path: '', abspath: '', filepath: '' }
-        ],
-        count: 1
-      };
-      const output = Formatter.toCard(emptyContentResult, 120);
-      // Should not have empty line after metadata
-      expect(output).not.toContain('\n\n\n');
-    });
-
-    it('shows empty line when content is explicitly selected and empty', () => {
-      const explicitContentResult: QueryResult = {
-        type: 'select',
-        data: [
-          { id: '1', title: 'Task', content: '', filename: 'task-001', path: '', abspath: '', filepath: '' }
-        ],
-        count: 1
-      };
-      const output = Formatter.toCard(explicitContentResult, 120);
-      // Should have empty line for content
-      expect(output).toContain('\n\n');
-    });
-
-    it('handles multiline content', () => {
-      const multilineResult: QueryResult = {
-        type: 'select',
-        data: [
-          { id: '1', title: 'Task', content: 'Line 1\nLine 2\nLine 3', filename: 'task-001', path: '', abspath: '', filepath: '' }
-        ],
-        count: 1
-      };
-      const output = Formatter.toCard(multilineResult, 120);
-      expect(output).toContain('Line 1');
-      expect(output).toContain('Line 2');
-      expect(output).toContain('Line 3');
+  describe('Card removed', () => {
+    it('rejects card as an OutputFormat at type level (compile-time) and throws at runtime', () => {
+      // @ts-expect-error card is no longer a valid OutputFormat
+      const bad: OutputFormat = 'card';
+      expect(() => Formatter.format(mockResult, bad)).toThrow(/Unknown format/);
     });
   });
 

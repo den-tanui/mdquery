@@ -39,6 +39,7 @@ export interface ReadOptions {
   files?: string[]; // explicit file list (overrides directory walking)
   fast?: boolean; // use fdir/grepts fast path
   onError?: (error: FileError) => void; // per-file read error callback
+  format?: 'json' | 'table' | 'csv'; // output format (for scalar enforcement in table/csv)
 }
 
 interface IgnoreLayer {
@@ -46,7 +47,7 @@ interface IgnoreLayer {
   ig: ReturnType<typeof ignore>;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
+const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'format'>> = {
   depth: 0,
   hidden: false,
   ignore: true,
@@ -93,7 +94,7 @@ export class FileOps {
   private static async walk(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files'>>,
+    opts: Required<Omit<ReadOptions, 'files' | 'format'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): Promise<void> {
@@ -222,7 +223,7 @@ export class FileOps {
   private static walkSync(
     root: string,
     currentDir: string,
-    opts: Required<Omit<ReadOptions, 'files'>>,
+    opts: Required<Omit<ReadOptions, 'files' | 'format'>>,
     parentIgnores: IgnoreLayer[],
     out: FileData[]
   ): void {

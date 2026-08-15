@@ -1,8 +1,9 @@
 // src/formatter.ts
 import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
+import { stringify } from 'csv-stringify/sync';
 
-export type OutputFormat = 'json' | 'table' | 'csv' | 'card';
+export type OutputFormat = 'json' | 'table' | 'csv';
 
 const MIN_COLUMN_WIDTH = 3;
 const DEFAULT_TERMINAL_WIDTH = 80;
@@ -20,12 +21,10 @@ export class Formatter {
         return this.toJSON(result);
       case 'table':
         return this.toTable(result);
-      case 'card':
-        return this.toCard(result);
       case 'csv':
         return this.toCSV(result);
       default:
-        return this.toJSON(result);
+        throw new Error(`Unknown format: ${format}`);
     }
   }
 
@@ -97,103 +96,6 @@ export class Formatter {
     return [headerLine, separatorLine, ...dataLines].join('\n');
   }
 
-  static toCard(result: QueryResult, terminalWidth: number = 0): string {
-    if (!result.data || result.data.length === 0) {
-      return 'No results';
-    }
-
-    const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
-    const halfWidth = Math.floor(width / 2);
-
-    const headers = Object.keys(result.data[0]);
-    const hasFilename = headers.includes('filename');
-    const cards: string[] = [];
-
-    for (const row of result.data) {
-      const filename = String((row as any).filename ?? '');
-      const content = String((row as any).content ?? '');
-      const toc = (row as any).toc || (row as any)['toc()'] || (row as any)['toc(2)'] || (row as any)['toc(3)'];
-      const hasExplicitContent = headers.includes('content');
-      const hasExplicitToc = headers.includes('toc') || headers.includes('toc()') || headers.some(h => h.startsWith('toc('));
-
-      // Header line (only if filename is in the selected fields)
-      const cardLines: string[] = [];
-      if (hasFilename && filename) {
-        cardLines.push(`--- ${filename} ---`);
-      }
-
-      // Metadata fields (excluding content, toc, and section)
-      const metaFields = headers.filter(h => h !== 'content' && h !== 'toc' && h !== 'toc()' && !h.startsWith('toc(') && h !== 'section' && h !== 'section()' && !h.startsWith('section(') && !h.startsWith('section.'));
-      const metaLines: string[] = [];
-      let currentLine = '';
-
-      for (const field of metaFields) {
-        const value = String((row as any)[field] ?? '');
-        const display = formatFieldValue(field, value);
-        const entry = `${field}: ${display}`;
-
-        if (currentLine === '') {
-          currentLine = entry;
-        } else if ((currentLine + ' | ' + entry).length <= width) {
-          currentLine += ' | ' + entry;
-        } else {
-          metaLines.push(currentLine);
-          currentLine = entry;
-        }
-      }
-
-      if (currentLine !== '') {
-        metaLines.push(currentLine);
-      }
-
-      // Check for field overflow: any field exceeding half width gets its own line
-      const expandedLines: string[] = [];
-      for (const line of metaLines) {
-        if (line.length > halfWidth) {
-          // Split into individual fields
-          const fields = line.split(' | ');
-          for (const field of fields) {
-            if (field.length > halfWidth) {
-              // This field gets its own line
-              expandedLines.push(field);
-            } else {
-              // Try to pack with next field
-              expandedLines.push(field);
-            }
-          }
-        } else {
-          expandedLines.push(line);
-        }
-      }
-
-      cardLines.push(...expandedLines);
-
-      // TOC block
-      if (hasExplicitToc && toc) {
-        cardLines.push('');  // Empty line before TOC
-        cardLines.push('toc:');
-        cardLines.push(formatTocForCard(toc));
-      }
-
-      // Content block
-      if (hasExplicitContent) {
-        cardLines.push('');  // Empty line before content
-        if (content.trim() === '') {
-          cardLines.push('');  // Empty line for empty content when explicitly selected
-        } else {
-          cardLines.push(content);
-        }
-      } else if (content.trim() !== '') {
-        cardLines.push('');  // Empty line before content
-        cardLines.push(content);
-      }
-
-      cards.push(cardLines.join('\n'));
-    }
-
-    return cards.join('\n\n');
-  }
-
   private static allocateWidths(rawWidths: number[], budget: number): number[] {
     const n = rawWidths.length;
     if (n === 0) return [];
@@ -225,33 +127,14 @@ export class Formatter {
   }
 
   private static toJSON(result: QueryResult): string {
-    if (result.data) {
-      return JSON.stringify(result.data, null, 2);
-    }
-
-    const summary: any = {};
-    if (result.updated !== undefined) summary.updated = result.updated;
-    if (result.created !== undefined) summary.created = result.created;
-    if (result.deleted !== undefined) summary.deleted = result.deleted;
-    if (result.count !== undefined) summary.count = result.count;
-
-    return JSON.stringify(summary, null, 2);
+    return JSON.stringify(result, null, 2);
   }
 
   private static toCSV(result: QueryResult): string {
     if (!result.data || result.data.length === 0) {
       return '';
     }
-
-    const headers = Object.keys(result.data[0]);
-    const rows = result.data.map(row =>
-      headers.map(h => {
-        const val = String((row as any)[h] ?? '');
-        return val.includes(',') ? `"${val}"` : val;
-      }).join(',')
-    );
-
-    return [headers.join(','), ...rows].join('\n');
+    return stringify(result.data, { header: true, escape_formulas: true });
   }
 }
 
@@ -270,23 +153,6 @@ function tailDisplay(value: string, width: number): string {
   return '…' + value.slice(-(width - 1));
 }
 
-function formatFieldValue(field: string, value: string): string {
-  // Handle arrays
-  if (value.startsWith('[') && value.endsWith(']')) {
-    return value;
-  }
-  // Handle objects
-  if (value.startsWith('{') && value.endsWith('}')) {
-    return value;
-  }
-  // Handle multiline content
-  if (value.includes('\n')) {
-    const firstLine = value.split('\n')[0];
-    return firstLine.length > 60 ? ellipsize(firstLine, 60) : firstLine;
-  }
-  return value;
-}
-
 function formatTocForTable(value: any): string {
   if (value === null || value === undefined) return '';
   
@@ -295,33 +161,6 @@ function formatTocForTable(value: any): string {
     return Object.entries(value)
       .map(([key, val]) => `${key}: ${String(val).split('\n')[0]}`)
       .join('\n');
-  }
-  
-  if (!Array.isArray(value)) return String(value);
-  
-  // Parse "level:title" format and build tree
-  const items = value.map((v: any) => {
-    if (typeof v === 'string' && v.includes(':')) {
-      const [level, ...titleParts] = v.split(':');
-      return { level: parseInt(level), title: titleParts.join(':') };
-    }
-    return { level: 1, title: String(v) };
-  });
-  
-  return formatTocAsTree(items);
-}
-
-function formatTocForCard(value: any): string {
-  if (value === null || value === undefined) return '';
-  
-  // Handle section() map output
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return Object.entries(value)
-      .map(([key, val]) => {
-        const content = String(val).trim();
-        return content ? `${key}:\n${content}` : `${key}: (empty)`;
-      })
-      .join('\n\n');
   }
   
   if (!Array.isArray(value)) return String(value);

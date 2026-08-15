@@ -208,6 +208,8 @@ select title join ../sprints on sprint = id
 | `csv` | Data format | RFC 4180 via csv-stringify; proper quoting, newlines, formula escaping |
 | `table` | Presentation only | Grid view; content capped at 20 chars, `abspath` at 24 |
 
+`--json`, `--csv`, and `--table` are shortcuts for `--format=json|csv|table`. If both `--format` and a shortcut are given, the last flag on the command line wins.
+
 Table/CSV require **scalar columns** (string/number/boolean/null). Arrays of scalars (e.g. `tags`) flatten to `"a,b"`. Expressions returning maps or arrays of maps (e.g. `sections()`, `links()`, `codeblocks()`, `fields()`) are JSON-only — table/CSV throw an early error naming the expression and suggesting a rewrite (e.g. `sections().map('title')`, `section("name").content`, `fields().keys()`).
 
 ## Error handling

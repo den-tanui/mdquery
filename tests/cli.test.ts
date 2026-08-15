@@ -140,4 +140,24 @@ describe('mdquery CLI', () => {
     const output = execSync(`echo "${f1}" | ${cliPath} -f - "select filename"`, { encoding: 'utf-8' });
     expect(output).toContain('task-001');
   });
+
+  it('--csv is an alias for --format=csv', () => {
+    const { stdout, status } = runCli(['--csv', `--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('title'); // header row
+    expect(stdout).toContain('Test Task');
+  });
+
+  it('last flag wins when --format and shortcut conflict', () => {
+    const { stdout, status } = runCli(['--format=json', '--csv', `--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('title'); // CSV header, not JSON
+    expect(stdout).not.toContain('"type"');
+  });
+
+  it('--card is rejected', () => {
+    const { stderr, status } = runCli(['--card', `--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(1);
+    expect(stderr).toContain('Unknown option: --card');
+  });
 });

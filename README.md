@@ -109,6 +109,9 @@ mdquery --format=json "select title, status" > saved.json  # valid JSON, include
 | `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
 | `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |
 | `--format=<fmt>` | Output format: `json`, `table`, `csv` (default `json`) |
+| `--json` | Shortcut for `--format=json` |
+| `--csv` | Shortcut for `--format=csv` |
+| `--table` | Shortcut for `--format=table` |
 
 Calling `mdquery` with no arguments prints the manual.
 
