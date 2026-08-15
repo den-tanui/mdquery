@@ -60,7 +60,7 @@ describe('Parser', () => {
       expect(ast).toEqual({
         type: 'select',
         fields: [{ type: 'wildcard' }],
-        orderBy: [{ field: 'priority', direction: 'desc' }]
+        orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }]
       });
     });
 
@@ -69,7 +69,7 @@ describe('Parser', () => {
       expect(ast).toEqual({
         type: 'select',
         fields: [{ type: 'wildcard' }],
-        orderBy: [{ field: 'priority', direction: 'asc' }],
+        orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'asc' }],
         limit: 10
       });
     });

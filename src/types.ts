@@ -189,7 +189,7 @@ export interface FromClause {
 }
 
 export interface OrderByNode {
-  field: string;
+  field: Expression;
   direction: 'asc' | 'desc';
 }
 

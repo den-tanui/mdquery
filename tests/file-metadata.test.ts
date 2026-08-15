@@ -1,6 +1,6 @@
 // tests/file-metadata.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'fs';
 import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
 import { buildFileMetadata, FileOps } from '../src/files';
@@ -182,5 +182,34 @@ describe('file() evaluation', () => {
     const result = await executor.execute('select file(mtime)');
     expect(result.data).toEqual([]);
     expect(result.meta!.errors.some(e => /takes no arguments/.test(e.error))).toBe(true);
+  });
+});
+
+describe('order by file().mtime', () => {
+  it('sorts by mtime asc and desc', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mdquery-meta-'));
+    const a = join(dir, 'a.md');
+    const b = join(dir, 'b.md');
+    writeFileSync(a, '---\ntitle: A\n---\n');
+    writeFileSync(b, '---\ntitle: B\n---\n');
+    const now = Date.now();
+    utimesSync(a, new Date(now - 10000), new Date(now - 10000));
+    utimesSync(b, new Date(now - 5000), new Date(now - 5000));
+
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const asc = await executor.execute('select filename order by file().mtime');
+    expect(asc.data!.map(r => r.filename)).toEqual(['a', 'b']);
+    const desc = await executor.execute('select filename order by file().mtime desc');
+    expect(desc.data!.map(r => r.filename)).toEqual(['b', 'a']);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('still parses plain-field ORDER BY', () => {
+    const ast = new Parser('select order by priority desc').parse();
+    expect(ast).toEqual({
+      type: 'select',
+      fields: [{ type: 'wildcard' }],
+      orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }]
+    });
   });
 });

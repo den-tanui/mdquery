@@ -838,7 +838,10 @@ export class Parser {
     const items: OrderByNode[] = [];
 
     while (true) {
-      const field = this.expect('IDENTIFIER').value;
+      // ORDER BY accepts full expressions (e.g. file().mtime), not just bare
+      // identifiers. parseExpression stops at ASC/DESC/COMMA naturally: those
+      // tokens have no binding power.
+      const field = this.parseExpression(0);
       let direction: 'asc' | 'desc' = 'asc';
 
       if (this.current().type === 'IDENTIFIER') {

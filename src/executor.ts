@@ -423,8 +423,8 @@ export class Executor {
   private orderBy(files: FileData[], orderBy: OrderByNode[]): FileData[] {
     return files.sort((a, b) => {
       for (const { field, direction } of orderBy) {
-        const aVal = (a as any)[field];
-        const bVal = (b as any)[field];
+        const aVal = this.evaluateExpression(field, { file: a });
+        const bVal = this.evaluateExpression(field, { file: b });
 
         if (aVal === bVal) continue;
 
