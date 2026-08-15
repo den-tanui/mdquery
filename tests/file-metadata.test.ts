@@ -176,4 +176,11 @@ describe('file() evaluation', () => {
     await executor.execute('select file().mtime');
     expect(seen[0].metadata).toBeDefined();
   });
+
+  it('rejects file() with arguments — property access only', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select file(mtime)');
+    expect(result.data).toEqual([]);
+    expect(result.meta!.errors.some(e => /takes no arguments/.test(e.error))).toBe(true);
+  });
 });

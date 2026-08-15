@@ -1189,6 +1189,9 @@ export class Executor {
   // file() returns the current file's metadata map (lazily loaded during the
   // read phase when the query uses file()). Property access only: file().mtime.
   private evaluateFile(args: any[], context: EvaluationContext): any {
+    if (args.length > 0) {
+      throw new Error(`file() takes no arguments — use property access: file().mtime`);
+    }
     const file = context.file as FileData | undefined;
     return file?.metadata ?? {};
   }
