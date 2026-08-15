@@ -6,7 +6,7 @@ import { VERSION } from './version';
 import { program } from 'commander';
 import chalk from 'chalk';
 import { writeFile, mkdir, readFile } from 'fs/promises';
-import { dirname, resolve } from 'path';
+import { dirname, extname, resolve } from 'path';
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 
@@ -42,7 +42,10 @@ export function resolveDir(input: string): string {
 async function main() {
   // Track the output format with last-wins semantics across --format and the
   // --json/--csv/--table shortcut flags (Commander processes options in order).
+  // formatExplicit distinguishes "user passed a format flag" from the default,
+  // so --out extension inference only applies when no format was given.
   let format: OutputFormat = 'json';
+  let formatExplicit = false;
 
   // Accumulate repeated options into an array (--dir=a --dir=b => ['a', 'b']).
   const collect = (value: string, previous: string[]): string[] =>
@@ -61,11 +64,12 @@ async function main() {
     .option('-y, --yes', 'Skip confirmation prompts')
     .option('--format <format>', 'Output format: json | table | csv', (val: string) => {
       format = val as OutputFormat;
+      formatExplicit = true;
       return val;
     }, 'json')
-    .option('--json', 'Shortcut for --format=json', () => { format = 'json'; return true; })
-    .option('--csv', 'Shortcut for --format=csv', () => { format = 'csv'; return true; })
-    .option('--table', 'Shortcut for --format=table', () => { format = 'table'; return true; })
+    .option('--json', 'Shortcut for --format=json', () => { format = 'json'; formatExplicit = true; return true; })
+    .option('--csv', 'Shortcut for --format=csv', () => { format = 'csv'; formatExplicit = true; return true; })
+    .option('--table', 'Shortcut for --format=table', () => { format = 'table'; formatExplicit = true; return true; })
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
@@ -157,6 +161,20 @@ Query language: docs/syntax.md`);
     process.exit(1);
   }
 
+  // Resolve format: --format flag wins > extension inference > default json
+  let resolvedFormat: OutputFormat = format;
+  let outPath = opts.out;
+  if (outPath && outPath !== '-') {
+    const ext = extname(outPath).toLowerCase();
+    if (!formatExplicit && (ext === '.json' || ext === '.csv')) {
+      resolvedFormat = ext === '.json' ? 'json' : 'csv';
+    }
+    // If the filename has no extension, append the resolved format's extension
+    if (!ext) {
+      outPath = `${outPath}.${resolvedFormat}`;
+    }
+  }
+
   // Commander passes the value of the short `-d=...` form with a leading '='
   const depth = Number(String(opts.depth).replace(/^=/, ''));
   if (!Number.isFinite(depth)) {
@@ -192,7 +210,7 @@ Query language: docs/syntax.md`);
     hidden: opts.hidden,
     ignore: opts.ignore,
     files: files.length > 0 ? files : undefined,
-    format
+    format: resolvedFormat
   });
 
   try {
@@ -211,14 +229,14 @@ Query language: docs/syntax.md`);
       console.error(chalk.yellow(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`));
     }
 
-    const output = Formatter.format(result, format);
+    const output = Formatter.format(result, resolvedFormat);
 
     // --out: write to file or stdout
-    if (opts.out && opts.out !== '-') {
-      await mkdir(dirname(opts.out), { recursive: true });
+    if (outPath && outPath !== '-') {
+      await mkdir(dirname(outPath), { recursive: true });
       // Strip ANSI codes for file output
       const stripped = output.replace(/\x1B\[[0-9;]*[mK]/g, '');
-      await writeFile(opts.out, stripped, 'utf-8');
+      await writeFile(outPath, stripped, 'utf-8');
     } else {
       console.log(output);
     }

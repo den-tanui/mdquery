@@ -1,7 +1,7 @@
 // tests/cli.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, execSync } from 'child_process';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, statSync, existsSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, statSync, existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir, homedir } from 'os';
 import { randomUUID } from 'crypto';
@@ -211,6 +211,111 @@ describe('CLI --dir', () => {
       expect(json.data[0].source_dir).toBe(dirA);
     } finally {
       rmSync(dirA, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('CLI --out', () => {
+  it('writes JSON to file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-'));
+    const outFile = join(dir, 'results.json');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outFile, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const content = readFileSync(outFile, 'utf-8');
+      const json = JSON.parse(content);
+      expect(json.data).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('infers CSV from extension', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-csv-'));
+    const outFile = join(dir, 'results.csv');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outFile, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const content = readFileSync(outFile, 'utf-8');
+      expect(content).toContain('filename');
+      expect(content).toContain('f');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--out=- writes to stdout', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-stdout-'));
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', '-', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const json = JSON.parse(out);
+      expect(json.data).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--format overrides extension inference', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-override-'));
+    const outFile = join(dir, 'results.json');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outFile, '--format', 'csv', 'select filename, title'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const content = readFileSync(outFile, 'utf-8');
+      // CSV format: header + data rows (two columns => commas present)
+      expect(content).toContain('filename');
+      expect(content).toContain(',');
+      expect(content).toContain('Test');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('appends extension when --out has none', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-noext-'));
+    const outBase = join(dir, 'results');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outBase, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const content = readFileSync(outBase + '.json', 'utf-8');
+      const json = JSON.parse(content);
+      expect(json.data).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps user extension when --format differs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-keep-'));
+    const outFile = join(dir, 'results.csv');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outFile, '--format', 'json', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      // File still written to results.csv (user extension kept)
+      const content = readFileSync(outFile, 'utf-8');
+      const json = JSON.parse(content); // JSON content despite .csv extension
+      expect(json.data).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
