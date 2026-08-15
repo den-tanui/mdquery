@@ -371,6 +371,7 @@ export class Executor {
       case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
       case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
       case 'string': return `"${expr.value}"`;
+      case 'regex': return expr.value;
       case 'number': return String(expr.value);
       case 'boolean': return String(expr.value);
       default: return 'expr';
@@ -1054,7 +1055,13 @@ export class Executor {
       case 'boolean': return expr.value;
       case 'null': return null;
       case 'empty': return undefined;
-      case 'regex': return new RegExp(expr.value);
+      case 'regex': {
+        // expr.value is /pattern/flags (slash-wrapped by the lexer) — strip the
+        // delimiters and split flags so the regex matches the pattern, not "/pattern/".
+        const raw = expr.value;
+        const lastSlash = raw.lastIndexOf('/');
+        return new RegExp(raw.slice(1, lastSlash), raw.slice(lastSlash + 1));
+      }
       case 'array': return expr.items.map(item => this.evaluateValue(item));
       case 'field': return this.evaluateField(expr, {});
       case 'subquery': return this.evaluateSubquery(expr, {});
@@ -1115,11 +1122,20 @@ export class Executor {
   }
 
   private evaluateGrep(args: any[], context: EvaluationContext): any {
-    if (!this.getFileBody(context.file)) {
+    // Canonical form: grep(/x/) — pattern only, content is the current file body.
+    // Legacy 2-arg form grep(content, /x/) is accepted: args[0] is content, args[1] is pattern.
+    const pattern = args.length > 1 ? args[1] : args[0];
+    if (!(pattern instanceof RegExp)) {
+      throw new Error(`grep() requires a regex pattern, got ${typeof pattern}`);
+    }
+    const content = args.length > 1 ? String(args[0]) : this.getFileBody(context.file);
+    if (!content) {
       return [];
     }
-    const extractor = this.getContentExtractor(context.file as FileData);
-    return extractor.extractGrep(args[0]);
+    const extractor = args.length > 1
+      ? new ContentExtractor(content)
+      : this.getContentExtractor(context.file as FileData);
+    return extractor.extractGrep(pattern);
   }
 
   private evaluateToc(args: any[], context: EvaluationContext): any {

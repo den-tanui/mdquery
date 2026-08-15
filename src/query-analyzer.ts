@@ -45,6 +45,7 @@ const BUILTIN_SHAPES: Record<string, ScalarInference> = {
   section: { kind: 'map', shape: '{title, level, position, hierarchy, content}', suggestions: ['section("name").title', 'section("name").content'] },
   sections: { kind: 'array-of-maps', shape: '{title, level, position, hierarchy, content}', suggestions: ["sections().map('title')", "sections().first().title", "sections().count()"] },
   toc: { kind: 'array-of-maps', shape: '{level, title}', suggestions: ["toc().map('title')", "toc().map('level')"] },
+  grep: { kind: 'array-of-maps', shape: '{line, column, text, captures, section, sentence?, paragraph?, ancestors?}', suggestions: ["grep(/x/).count()", "grep(/x/).map('text')", "grep(/x/).first().line"] },
   has_section: { kind: 'scalar' }
 };
 

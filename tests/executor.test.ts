@@ -383,3 +383,40 @@ describe('Scalar enforcement (table/csv)', () => {
     expect(result.data![0]['sections()']).toHaveLength(1);
   });
 });
+
+describe('grep() regex fixes', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-grep-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\nTODO: fix this.\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('grep(/TODO/) matches the pattern, not the literal "/TODO/"', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select grep(/TODO/).count()');
+    expect(result.data![0]['grep(/TODO/).count()']).toBe(1);
+  });
+
+  it('grep(content, /x/) 2-arg form does not crash', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select grep(content, /TODO/).count()');
+    expect(result.data![0]['grep(content, /TODO/).count()']).toBe(1);
+  });
+
+  it('grep() returns full GrepMatch objects', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select grep(/TODO/)');
+    const matches = result.data![0]['grep(/TODO/)'];
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ line: 3, column: 0, text: 'TODO', section: ['Setup'] });
+  });
+
+  it('throws a shape-aware error for grep() in table format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    await expect(executor.execute('select grep(/TODO/)')).rejects.toThrow(/grep\(/);
+    await expect(executor.execute('select grep(/TODO/)')).rejects.toThrow(/array of maps/);
+  });
+});
