@@ -5,6 +5,9 @@ import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
 import { buildFileMetadata, FileOps } from '../src/files';
 import { FastFileOps } from '../src/file-io';
+import { QueryAnalyzer } from '../src/query-analyzer';
+import { Parser } from '../src/parser';
+import type { SelectStatement } from '../src/types';
 
 describe('buildFileMetadata', () => {
   it('builds a metadata map from a file path', () => {
@@ -54,5 +57,49 @@ describe('read paths load metadata lazily', () => {
     });
     expect(withoutMeta[0].metadata).toBeUndefined();
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('QueryAnalyzer requiresMetadata detection', () => {
+  it('flags requiresMetadata for file() in select fields (not requiresContent)', () => {
+    const ast = new Parser('select file().mtime').parse();
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(true);
+    expect(plan.lazyLoading.requiresContent).toBe(false);
+  });
+
+  it('flags requiresMetadata for file() in WHERE', () => {
+    const ast = new Parser('select filename where file().size > 1000').parse();
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(true);
+  });
+
+  it('flags requiresMetadata for file() in HAVING', () => {
+    const ast = new Parser('select filename having file().size > 1000').parse();
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(true);
+  });
+
+  it('flags requiresMetadata for file() in ORDER BY (hand-built AST)', () => {
+    const ast: SelectStatement = {
+      type: 'select',
+      fields: [{ type: 'field', name: 'filename' }],
+      orderBy: [{
+        field: {
+          type: 'map_index',
+          object: { type: 'function_call', name: 'file', args: [] },
+          key: { type: 'string', value: 'mtime' }
+        },
+        direction: 'asc'
+      }]
+    };
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(true);
+  });
+
+  it('does not flag requiresMetadata for queries without file()', () => {
+    const ast = new Parser('select filename').parse();
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(false);
   });
 });

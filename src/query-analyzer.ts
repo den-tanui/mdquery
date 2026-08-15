@@ -15,6 +15,7 @@ interface PushdownPredicate {
 
 interface LazyLoadingAnalysis {
   requiresContent: boolean;
+  requiresMetadata: boolean;
   builtins: string[];
   contentFields: string[];
 }
@@ -224,6 +225,7 @@ export class QueryAnalyzer {
   private analyzeLazyLoading(): LazyLoadingAnalysis {
     const analysis: LazyLoadingAnalysis = {
       requiresContent: false,
+      requiresMetadata: false,
       builtins: [],
       contentFields: []
     };
@@ -242,6 +244,18 @@ export class QueryAnalyzer {
       this.checkExpressionForContent(this.ast.where, analysis);
     }
 
+    // Check HAVING clause for metadata/content builtins
+    if (this.ast.having) {
+      this.checkExpressionForContent(this.ast.having, analysis);
+    }
+
+    // Check ORDER BY expressions for metadata/content builtins
+    if (this.ast.orderBy) {
+      for (const ob of this.ast.orderBy) {
+        this.checkExpressionForContent(ob.field, analysis);
+      }
+    }
+
     // Check JOIN conditions for content-extraction builtins
     if (this.ast.join && this.ast.join.on) {
       this.checkExpressionForContent(this.ast.join.on, analysis);
@@ -257,6 +271,11 @@ export class QueryAnalyzer {
   ): void {
     switch (expr.type) {
       case 'function_call':
+        if (expr.name === 'file') {
+          // file() needs metadata (stat), not content — separate flag
+          analysis.requiresMetadata = true;
+          break;
+        }
         this.checkFunctionCallForContent(expr, analysis);
         break;
       case 'method_call':
