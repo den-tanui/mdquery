@@ -115,6 +115,10 @@ export class Executor {
       options.onError?.(err);
     };
 
+    // Static analysis is cheap (pure AST walk) and both read paths need it:
+    // the fast path for content/body + metadata, the legacy path for metadata.
+    const analysis = this.analyzeCurrentQuery();
+
     if (options.fast) {
       const t0 = Date.now();
       const paths = await FastFileOps.listFiles(dir, options);
@@ -123,7 +127,6 @@ export class Executor {
         state.filesSearched = paths.length;
       }
 
-      const analysis = this.analyzeCurrentQuery();
       const prefilterTree = this.contentPrefilterTree();
       if (prefilterTree) {
         const t1 = Date.now();
@@ -154,8 +157,8 @@ export class Executor {
       const t2 = Date.now();
       // Inject the executor's onError wrapper so legacy FileOps.read records
       // per-file read errors into the execution state (and forwards to any
-      // user-supplied ReadOptions.onError).
-      files = await FileOps.readFiles(dir, { ...options, onError });
+      // user-supplied ReadOptions.onError). metadata comes from the analysis.
+      files = await FileOps.readFiles(dir, { ...options, onError, metadata: analysis.requiresMetadata });
       if (state) {
         state.timings.read = Date.now() - t2;
         state.filesSearched = files.length + state.errors.length;
@@ -183,10 +186,11 @@ export class Executor {
   // Derive the FileIOAnalysis for the most recently parsed query so the fast
   // path knows whether to pre-filter by content and whether to load bodies.
   private analyzeCurrentQuery(): FileIOAnalysis {
-    if (!this.lastAst) return { requiresContent: false, bodyPredicates: [] };
+    if (!this.lastAst) return { requiresContent: false, requiresMetadata: false, bodyPredicates: [] };
     const plan = new QueryAnalyzer(this.lastAst).analyze();
     return {
       requiresContent: plan.lazyLoading.requiresContent,
+      requiresMetadata: plan.lazyLoading.requiresMetadata,
       bodyPredicates: plan.pushdownPredicates
         .filter(p => p.field === 'content' || p.field === 'body')
         .map(p => ({ field: p.field, op: p.op, value: String(p.value) }))
@@ -793,6 +797,7 @@ export class Executor {
       case 'toc': return this.evaluateToc(args, context);
       case 'content': return this.evaluateContent(args, context);
       case 'fields': return this.evaluateFields(args, context);
+      case 'file': return this.evaluateFile(args, context);
       case 'has': return args[0] !== undefined && args[0] !== null;
       case 'has_section': return this.evaluateHasSection(args, context);
     }
@@ -1179,6 +1184,13 @@ export class Executor {
       return Object.values(frontmatter);
     }
     return { ...frontmatter };
+  }
+
+  // file() returns the current file's metadata map (lazily loaded during the
+  // read phase when the query uses file()). Property access only: file().mtime.
+  private evaluateFile(args: any[], context: EvaluationContext): any {
+    const file = context.file as FileData | undefined;
+    return file?.metadata ?? {};
   }
 
   // Evaluate has section("name")

@@ -1,5 +1,5 @@
 // tests/file-metadata.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
@@ -7,6 +7,7 @@ import { buildFileMetadata, FileOps } from '../src/files';
 import { FastFileOps } from '../src/file-io';
 import { QueryAnalyzer } from '../src/query-analyzer';
 import { Parser } from '../src/parser';
+import { Executor } from '../src/executor';
 import type { SelectStatement } from '../src/types';
 
 describe('buildFileMetadata', () => {
@@ -107,5 +108,72 @@ describe('QueryAnalyzer requiresMetadata detection', () => {
     const ast = new Parser('select filename').parse();
     const plan = new QueryAnalyzer(ast).analyze();
     expect(plan.lazyLoading.requiresMetadata).toBe(false);
+  });
+});
+
+describe('file() evaluation', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-meta-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('file().mtime returns a real Date', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select file().mtime');
+    expect(result.data![0]['file().mtime']).toBeInstanceOf(Date);
+  });
+
+  it('file() returns the full metadata map in JSON', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select file()');
+    const meta = result.data![0]['file()'];
+    expect(meta).toMatchObject({
+      abspath: join(dir, 'a.md'),
+      size: expect.any(Number),
+      mode: expect.stringMatching(/^[rwx-]{9}$/)
+    });
+    expect(meta.mtime).toBeInstanceOf(Date);
+  });
+
+  it('file().mtime serializes to ISO in JSON output', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select file().mtime');
+    const json = JSON.parse(JSON.stringify(result));
+    expect(json.data[0]['file().mtime']).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('file().abspath works as a scalar in table format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    const result = await executor.execute('select file().abspath');
+    expect(result.data![0]['file().abspath']).toBe(join(dir, 'a.md'));
+  });
+
+  it('lazy-loads metadata only when the query uses file()', async () => {
+    const seen: any[] = [];
+    const executor = new Executor(dir, undefined, undefined, { fast: true }, {
+      onAfterRead: (f: any) => { seen.push(f); return f; }
+    });
+    await executor.execute('select filename');
+    expect(seen[0].metadata).toBeUndefined();
+    seen.length = 0;
+    await executor.execute('select file().mtime');
+    expect(seen[0].metadata).toBeDefined();
+    expect(seen[0].metadata.mtime).toBeInstanceOf(Date);
+  });
+
+  it('legacy (non-fast) path also lazy-loads metadata', async () => {
+    const seen: any[] = [];
+    const executor = new Executor(dir, undefined, undefined, {}, {
+      onAfterRead: (f: any) => { seen.push(f); return f; }
+    });
+    await executor.execute('select filename');
+    expect(seen[0].metadata).toBeUndefined();
+    seen.length = 0;
+    await executor.execute('select file().mtime');
+    expect(seen[0].metadata).toBeDefined();
   });
 });
