@@ -25,6 +25,79 @@ interface ExecutionPlan {
   executionOrder: string[];
 }
 
+// ===== Scalar inference =====
+// Static return-type inference for select expressions. Table/CSV output
+// requires scalar columns, so expressions that resolve to a map or an array
+// of maps are rejected before any file I/O with a shape-aware error message.
+
+export type ScalarInference =
+  | { kind: 'scalar' }
+  | { kind: 'array-of-scalars' }
+  | { kind: 'map'; shape: string; suggestions: string[] }
+  | { kind: 'array-of-maps'; shape: string; suggestions: string[] };
+
+const BUILTIN_SHAPES: Record<string, ScalarInference> = {
+  content: { kind: 'scalar' },
+  fields: { kind: 'map', shape: '{field: value}', suggestions: ["fields().keys()", "fields().values()", "fields().map('field')"] },
+  links: { kind: 'array-of-maps', shape: '{text, url, position, paragraph?, section?}', suggestions: ["links().map('url')", "links().map('text')", "links().count()"] },
+  images: { kind: 'array-of-maps', shape: '{alt, url, position, paragraph?, section?}', suggestions: ["images().map('url')", "images().map('alt')"] },
+  codeblocks: { kind: 'array-of-maps', shape: '{content, lang?, position, paragraph?, section?}', suggestions: ["codeblocks().map('lang')", "codeblocks().map('content')"] },
+  section: { kind: 'map', shape: '{title, level, position, hierarchy, content}', suggestions: ['section("name").title', 'section("name").content'] },
+  sections: { kind: 'array-of-maps', shape: '{title, level, position, hierarchy, content}', suggestions: ["sections().map('title')", "sections().first().title", "sections().count()"] },
+  toc: { kind: 'array-of-maps', shape: '{level, title}', suggestions: ["toc().map('title')", "toc().map('level')"] },
+  has_section: { kind: 'scalar' }
+};
+
+export function inferScalarType(expr: Expression): ScalarInference {
+  switch (expr.type) {
+    case 'field': return { kind: 'scalar' };
+    case 'function_call': return BUILTIN_SHAPES[expr.name] ?? { kind: 'scalar' };
+    case 'method_call': return inferMethodType(expr);
+    case 'array_index': return inferScalarType(expr.object);
+    case 'map_index': return { kind: 'scalar' };
+    case 'binary_op':
+    case 'unary_op':
+    case 'wildcard':
+    case 'subquery':
+    case 'exists':
+      return { kind: 'scalar' };
+    case 'paren': return inferScalarType(expr.expression);
+    default: return { kind: 'scalar' };
+  }
+}
+
+function inferMethodType(expr: MethodCallNode): ScalarInference {
+  const objectType = inferScalarType(expr.object);
+  switch (expr.method) {
+    case 'count':
+    case 'length':
+    case 'join':
+      return { kind: 'scalar' };
+    case 'keys':
+    case 'values':
+      return { kind: 'array-of-scalars' };
+    case 'map':
+      return { kind: 'array-of-scalars' };
+    case 'first':
+    case 'last':
+      // Element of the array: array-of-maps → map; array-of-scalars → scalar
+      return objectType.kind === 'array-of-maps'
+        ? { kind: 'map', shape: objectType.shape, suggestions: objectType.suggestions }
+        : { kind: 'scalar' };
+    case 'filter':
+    case 'where':
+    case 'sort':
+    case 'slice':
+    case 'flatten':
+    case 'unique':
+      return objectType;
+    case 'entries':
+      return { kind: 'array-of-maps', shape: '[key, value]', suggestions: ["entries().map('[0]')"] };
+    default:
+      return { kind: 'scalar' };
+  }
+}
+
 export class QueryAnalyzer {
   constructor(private ast: ASTNode) {}
 

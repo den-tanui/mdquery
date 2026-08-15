@@ -332,3 +332,48 @@ describe('sections()/section() redesign', () => {
     expect(result.data![0]['section("Setup").content']).toBe('Do it now.');
   });
 });
+
+describe('Scalar enforcement (table/csv)', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-scalar-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('throws for sections() in table format with a shape-aware message', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    await expect(executor.execute('select sections()')).rejects.toThrow(/sections\(\)/);
+    await expect(executor.execute('select sections()')).rejects.toThrow(/array of maps/);
+    await expect(executor.execute('select sections()')).rejects.toThrow(/sections\(\)\.map\('title'\)/);
+  });
+
+  it('throws for section("name") in csv format with a shape-aware message', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'csv' });
+    await expect(executor.execute('select section("Setup")')).rejects.toThrow(/section\("Setup"\)/);
+    // The suggestion templates are static (`section("name").title`), so the
+    // shape-aware message names the offending expression AND suggests the
+    // scalar property-access alternative.
+    await expect(executor.execute('select section("Setup")')).rejects.toThrow(/section\("name"\)\.title/);
+  });
+
+  it('allows scalar property access in table format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    const result = await executor.execute('select section("Setup").title');
+    expect(result.data![0]['section("Setup").title']).toBe('Setup');
+  });
+
+  it('allows arrays of scalars in table format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    const result = await executor.execute('select sections().map(\'title\')');
+    expect(result.data![0]["sections().map(\"title\")"]).toEqual(['Setup']);
+  });
+
+  it('does not enforce in json format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'json' });
+    const result = await executor.execute('select sections()');
+    expect(result.data![0]['sections()']).toHaveLength(1);
+  });
+});

@@ -3,7 +3,7 @@
 import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
 import { FastFileOps, FileIOAnalysis, isNegatedContentOp, applyContentPrefilter } from './file-io';
-import { QueryAnalyzer, buildContentPrefilterTree, type ContentPrefilterNode } from './query-analyzer';
+import { QueryAnalyzer, buildContentPrefilterTree, inferScalarType, type ContentPrefilterNode } from './query-analyzer';
 import { isAbsolute, join } from 'path';
 import {
   ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
@@ -196,6 +196,13 @@ export class Executor {
   // ===== SELECT =====
 
   private async executeSelect(node: SelectStatement, state: ExecutionState): Promise<QueryResult> {
+    // Scalar enforcement: table/csv output requires scalar columns, so reject
+    // map / array-of-maps select expressions statically BEFORE any file I/O.
+    const fmt = this.readOptions.format;
+    if (fmt === 'table' || fmt === 'csv') {
+      this.enforceScalarColumns(node.fields);
+    }
+
     let files = await this.readFilesWithHooks(this.dir, this.readOptions, state);
 
     // Evaluate phase starts after file discovery/reading — measure from here so
@@ -282,6 +289,25 @@ export class Executor {
         errors: state.errors
       }
     };
+  }
+
+  // Reject select expressions whose inferred shape is a map or an array of
+  // maps when the output format requires scalar columns (table/csv). Runs
+  // before file reads — pure static AST analysis, no file I/O.
+  private enforceScalarColumns(fields: Expression[]): void {
+    for (const field of fields) {
+      const inference = inferScalarType(field);
+      if (inference.kind === 'map' || inference.kind === 'array-of-maps') {
+        const exprName = this.generateFieldName(field);
+        const kind = inference.kind === 'map' ? 'a map' : 'an array of maps';
+        const suggestions = inference.suggestions.map(s => `\`${s}\``).join(', ');
+        throw new Error(
+          `Scalar value error: \`${exprName}\` returns ${kind} in the shape ` +
+          `${inference.shape}. Table/CSV output requires scalar columns. ` +
+          `Consider rewriting the query, e.g. ${suggestions}.`
+        );
+      }
+    }
   }
 
   // Project a file into the selected fields
