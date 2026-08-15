@@ -128,6 +128,19 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'format'>> = {
   onError: () => {}
 };
 
+// Fields that are row-level identity/metadata, never part of the file's
+// frontmatter. Excluded from serialization on update/create.
+// - filename/path/abspath/filepath/file: row identity derived from the file
+//   system location, not stored in YAML
+// - content/body: the markdown body, written separately from frontmatter
+// - source_dir: which search dir the row came from (multi-dir queries)
+// - metadata: stat-derived FileMetadata (mtime, size, ...), never persisted
+// - sections/frontmatter: parsed views of the file, not source fields
+const NON_FRONTMATTER_FIELDS = [
+  'filename', 'path', 'abspath', 'filepath', 'file', 'content',
+  'source_dir', 'metadata', 'body', 'sections', 'frontmatter'
+];
+
 export class FileOps {
   // Identity fields that cannot be updated
   static readonly IMMUTABLE_FIELDS = ['createdAt', 'updatedAt'];
@@ -377,7 +390,7 @@ export class FileOps {
 
     // Handle empty literal: empty string clears the field from frontmatter
     const frontmatter = Object.entries(data)
-      .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content', 'source_dir'].includes(key))
+      .filter(([key]) => !NON_FRONTMATTER_FIELDS.includes(key))
       .filter(([key, value]) => {
         // Skip empty string values (empty literal clears the field)
         if (value === '' || value === null || value === undefined) {

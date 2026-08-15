@@ -460,10 +460,11 @@ describe('Executor multi-dir', () => {
   it('path is relative to source_dir', async () => {
     const executor = new Executor([dirA, dirB]);
     const result = await executor.execute('select filename, path, source_dir');
-    for (const row of result.data!) {
-      const { relative } = require('path');
-      expect(row.path).toBe(relative(row.source_dir, require('path').join(row.source_dir, row.path)));
-    }
+    const byName = Object.fromEntries(result.data!.map(r => [r.filename, r]));
+    expect(byName['a'].path).toBe('a.md');
+    expect(byName['a'].source_dir).toBe(dirA);
+    expect(byName['b'].path).toBe('b.md');
+    expect(byName['b'].source_dir).toBe(dirB);
   });
 
   it('backward compat: single string wraps in array', async () => {

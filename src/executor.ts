@@ -65,7 +65,8 @@ export class Executor {
     readOptions: ReadOptions = {},
     hooks?: ExecutorHooks
   ) {
-    this.dirs = Array.isArray(dir) ? dir : [dir];
+    // Copy the array so caller mutations don't affect the executor
+    this.dirs = Array.isArray(dir) ? [...dir] : [dir];
     this.context = context;
     this.triggerContext = triggerContext;
     this.readOptions = readOptions;
@@ -387,6 +388,7 @@ export class Executor {
     result['path'] = file.path;
     result['abspath'] = file.abspath;
     result['filepath'] = file.filepath;
+    result['source_dir'] = file.source_dir;
 
     return result;
   }
