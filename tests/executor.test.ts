@@ -288,6 +288,47 @@ describe('Array method eager-arg fixes', () => {
   it('filter with an expression predicate works', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
     const result = await executor.execute("select toc().filter(_.level = 2).count()");
-    expect(result.data![0]['toc().filter(_."level"_=_2).count()']).toBe(2);
+    expect(result.data![0]['toc().filter(_.level_=_2).count()']).toBe(2);
+  });
+});
+
+describe('sections()/section() redesign', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-sec-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('sections() returns full SectionData objects', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select sections()');
+    const sections = result.data![0]['sections()'];
+    expect(sections).toHaveLength(2);
+    expect(sections[0]).toMatchObject({ title: 'Setup', level: 2, content: 'Do it now.' });
+    expect(sections[0].hierarchy).toBeDefined();
+    expect(sections[0].position).toBeDefined();
+  });
+
+  it('section("name") returns the first exact match or null', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select section("Setup")');
+    expect(result.data![0]['section("Setup")']).toMatchObject({ title: 'Setup', content: 'Do it now.' });
+    const missing = await executor.execute('select section("Nope")');
+    expect(missing.data![0]['section("Nope")']).toBeNull();
+  });
+
+  it('section() with no args returns the first section or null', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select section()');
+    expect(result.data![0]['section()']).toMatchObject({ title: 'Setup' });
+  });
+
+  it('section("name").content selects a scalar property', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select section("Setup").content');
+    expect(result.data![0]['section("Setup").content']).toBe('Do it now.');
   });
 });

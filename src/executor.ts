@@ -329,13 +329,19 @@ export class Executor {
   private generateFieldName(expr: Expression): string {
     switch (expr.type) {
       case 'field': return expr.name;
-      case 'function_call': return `${expr.name}()`;
+      case 'function_call': {
+        const argsStr = expr.args.map(a => this.generateFieldName(a)).join(', ');
+        return `${expr.name}(${argsStr})`;
+      }
       case 'method_call': {
         const argsStr = expr.args.map(a => this.generateFieldName(a)).join(', ');
         return `${this.generateFieldName(expr.object)}.${expr.method}(${argsStr})`;
       }
       case 'array_index': return `${this.generateFieldName(expr.object)}[${this.generateFieldName(expr.index)}]`;
-      case 'map_index': return `${this.generateFieldName(expr.object)}.${this.generateFieldName(expr.key)}`;
+      case 'map_index': {
+        const key = expr.key.type === 'string' ? expr.key.value : this.generateFieldName(expr.key);
+        return `${this.generateFieldName(expr.object)}.${key}`;
+      }
       case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
       case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
       case 'string': return `"${expr.value}"`;
@@ -755,6 +761,7 @@ export class Executor {
       case 'images': return this.evaluateImages(args, context);
       case 'codeblocks': return this.evaluateCodeblocks(args, context);
       case 'section': return this.evaluateSection(args, context);
+      case 'sections': return this.evaluateSections(args, context);
       case 'grep': return this.evaluateGrep(args, context);
       case 'toc': return this.evaluateToc(args, context);
       case 'content': return this.evaluateContent(args, context);
@@ -1065,6 +1072,19 @@ export class Executor {
   }
 
   private evaluateSection(args: any[], context: EvaluationContext): any {
+    if (!this.getFileBody(context.file)) {
+      return null;
+    }
+    const extractor = this.getContentExtractor(context.file as FileData);
+    const sections = extractor.extractSections();
+    if (args.length === 0) {
+      return sections[0] ?? null;
+    }
+    const name = String(args[0]);
+    return sections.find(s => s.title === name) ?? null;
+  }
+
+  private evaluateSections(args: any[], context: EvaluationContext): any {
     if (!this.getFileBody(context.file)) {
       return [];
     }

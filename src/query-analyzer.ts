@@ -210,7 +210,7 @@ export class QueryAnalyzer {
     expr: FunctionCallNode,
     analysis: LazyLoadingAnalysis
   ): void {
-    const contentBuiltins = ['links', 'images', 'codeblocks', 'section', 'grep', 'toc', 'content'];
+    const contentBuiltins = ['links', 'images', 'codeblocks', 'section', 'sections', 'grep', 'toc', 'content'];
     
     if (contentBuiltins.includes(expr.name)) {
       if (!analysis.builtins.includes(expr.name)) {
