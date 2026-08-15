@@ -97,6 +97,12 @@ describe('QueryAnalyzer requiresMetadata detection', () => {
     expect(plan.lazyLoading.requiresMetadata).toBe(true);
   });
 
+  it('flags requiresMetadata for file() in parenthesized WHERE', () => {
+    const ast = new Parser('select filename where (file().size > 1000)').parse();
+    const plan = new QueryAnalyzer(ast).analyze();
+    expect(plan.lazyLoading.requiresMetadata).toBe(true);
+  });
+
   it('does not flag requiresMetadata for queries without file()', () => {
     const ast = new Parser('select filename').parse();
     const plan = new QueryAnalyzer(ast).analyze();

@@ -299,6 +299,9 @@ export class QueryAnalyzer {
         this.checkExpressionForContent(expr.object, analysis);
         this.checkExpressionForContent(expr.key, analysis);
         break;
+      case 'paren':
+        this.checkExpressionForContent(expr.expression, analysis);
+        break;
       case 'subquery':
         // Subqueries are handled separately
         break;
