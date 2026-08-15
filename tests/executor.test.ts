@@ -253,3 +253,41 @@ describe('Flattening tools + builtins', () => {
     expect(result.data![0]['fields().keys()']).toEqual(['tags', 'title']);
   });
 });
+
+describe('Array method eager-arg fixes', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-arr-'));
+    // toc() returns [{level, title}] per section; the frontmatter `title: A`
+    // guards the _-fallback: bare `title` in a filter predicate must resolve
+    // to the item's title, not the file's frontmatter title.
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('filter with a bare-field predicate resolves the field to the item', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute("select toc().filter(title starts_with 'Set').count()");
+    expect(result.data![0]['toc().filter(title_STARTS_WITH_"Set").count()']).toBe(1);
+  });
+
+  it('map with a string arg extracts the property from each item', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute("select toc().map('title')");
+    expect(result.data![0]['toc().map("title")']).toEqual(['Setup', 'Teardown']);
+  });
+
+  it('sort with a string arg sorts by that property', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute("select toc().sort('title').map('title')");
+    expect(result.data![0]['toc().sort("title").map("title")']).toEqual(['Setup', 'Teardown']);
+  });
+
+  it('filter with an expression predicate works', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute("select toc().filter(_.level = 2).count()");
+    expect(result.data![0]['toc().filter(_."level"_=_2).count()']).toBe(2);
+  });
+});

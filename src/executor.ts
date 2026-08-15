@@ -776,6 +776,13 @@ export class Executor {
   // Evaluate method calls
   private evaluateMethodCall(expr: MethodCallNode, context: EvaluationContext): any {
     const object = this.evaluateExpression(expr.object, context);
+
+    // filter/where/map/sort take raw expressions (predicates/mappers). Eager
+    // evaluation turns them into false/undefined before the array method runs.
+    if (Array.isArray(object) && ['filter', 'where', 'map', 'sort'].includes(expr.method)) {
+      return this.evaluateArrayMethodRaw(object, expr.method, expr.args, context);
+    }
+
     const args = expr.args.map(arg => this.evaluateExpression(arg, context));
 
     // Array methods
@@ -794,6 +801,18 @@ export class Executor {
     }
 
     throw new Error(`Unsupported method call: ${expr.method} on ${typeof object}`);
+  }
+
+  // Array methods whose arguments are raw expressions (predicates/mappers)
+  // rather than evaluated values: filter/where/map/sort.
+  private evaluateArrayMethodRaw(array: any[], method: string, rawArgs: Expression[], context: EvaluationContext): any {
+    switch (method) {
+      case 'filter':
+      case 'where': return this.evaluateArrayFilter(array, rawArgs[0], context);
+      case 'map': return this.evaluateArrayMap(array, rawArgs[0], context);
+      case 'sort': return this.evaluateArraySort(array, rawArgs[0], context);
+      default: throw new Error(`Unsupported raw array method: ${method}`);
+    }
   }
 
   // Evaluate array methods
@@ -825,6 +844,10 @@ export class Executor {
   // Evaluate array map
   private evaluateArrayMap(array: any[], mapper: any, context: EvaluationContext): any[] {
     return array.map(item => {
+      // map('field') → extract property from each item
+      if (mapper && mapper.type === 'string') {
+        return item?.[mapper.value];
+      }
       const itemContext = { ...context, variables: { ...context.variables, _: item } };
       return this.evaluateExpression(mapper, itemContext);
     });
@@ -833,6 +856,12 @@ export class Executor {
   // Evaluate array sort
   private evaluateArraySort(array: any[], comparator: any, context: EvaluationContext): any[] {
     return [...array].sort((a, b) => {
+      // sort('field') → compare by property
+      if (comparator && comparator.type === 'string') {
+        const aValue = a?.[comparator.value];
+        const bValue = b?.[comparator.value];
+        return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
+      }
       const aContext = { ...context, variables: { ...context.variables, _: a } };
       const bContext = { ...context, variables: { ...context.variables, _: b } };
       const aValue = this.evaluateExpression(comparator, aContext);
@@ -934,6 +963,14 @@ export class Executor {
     // Check variables first
     if (context.variables && expr.name in context.variables) {
       return context.variables[expr.name];
+    }
+
+    // Array-method item fallback: bare fields resolve to the current item (_)
+    if (context.variables && '_' in context.variables) {
+      const item = context.variables['_'];
+      if (item !== null && typeof item === 'object' && expr.name in item) {
+        return item[expr.name];
+      }
     }
 
     const file = context.file as FileData | undefined;
