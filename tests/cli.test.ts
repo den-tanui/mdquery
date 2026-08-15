@@ -2,9 +2,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, execSync } from 'child_process';
 import { mkdirSync, writeFileSync, rmSync, statSync, existsSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { join, resolve } from 'path';
+import { tmpdir, homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { resolveDir } from '../src/cli';
 
 const cliPath = join(__dirname, '..', 'bin', 'mdquery');
 const srcCliPath = join(__dirname, '..', 'src', 'cli.ts');
@@ -159,5 +160,44 @@ describe('mdquery CLI', () => {
     const { stderr, status } = runCli(['--card', `--dir=${fixtureDir}`, 'select title']);
     expect(status).toBe(1);
     expect(stderr).toContain('Unknown option: --card');
+  });
+});
+
+describe('resolveDir', () => {
+  it('resolves . to cwd', () => {
+    expect(resolveDir('.')).toBe(process.cwd());
+  });
+
+  it('resolves ~ to homedir', () => {
+    expect(resolveDir('~')).toBe(homedir());
+  });
+
+  it('resolves ~/foo to homedir + /foo', () => {
+    expect(resolveDir('~/foo')).toBe(homedir() + '/foo');
+  });
+
+  it('resolves $HOME to env var value', () => {
+    process.env.TEST_DIR_RESOLVE = '/tmp/test-resolve';
+    try {
+      expect(resolveDir('$TEST_DIR_RESOLVE')).toBe('/tmp/test-resolve');
+    } finally {
+      delete process.env.TEST_DIR_RESOLVE;
+    }
+  });
+
+  it('throws on undefined env var without fallback', () => {
+    expect(() => resolveDir('$UNDEFINED_VAR_XYZ')).toThrow('not set');
+  });
+
+  it('resolves $UNDEFINED_VAR/fallback to fallback', () => {
+    expect(resolveDir('$UNDEFINED_VAR_XYZ/foo')).toBe(resolve('foo'));
+  });
+
+  it('throws on ~other', () => {
+    expect(() => resolveDir('~other')).toThrow('Only ~');
+  });
+
+  it('resolves relative paths via path.resolve', () => {
+    expect(resolveDir('../foo')).toBe(resolve('..', 'foo'));
   });
 });

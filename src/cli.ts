@@ -5,6 +5,8 @@ import { Formatter, OutputFormat } from './formatter';
 import { VERSION } from './version';
 import { readFile } from 'fs/promises';
 import { createInterface } from 'readline';
+import { homedir } from 'os';
+import { resolve } from 'path';
 
 const MANUAL = `mdquery ${VERSION}
 
@@ -75,6 +77,33 @@ function parseDepth(value: string): number {
 
 function splitFiles(value: string): string[] {
   return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/**
+ * Expand a directory argument into an absolute path.
+ * Supports: `.` (cwd), `..`, `~` / `~/...` (current user's home),
+ * `$VAR` / `$VAR/fallback` (environment variable with optional fallback).
+ */
+export function resolveDir(input: string): string {
+  if (input === '.') return process.cwd();
+  if (input === '..') return resolve('..');
+  if (input.startsWith('~')) {
+    if (input === '~') return homedir();
+    if (input.startsWith('~/')) return input.replace('~', homedir());
+    throw new Error(`Only ~ (current user) is supported, got: ${input}`);
+  }
+  if (input.startsWith('$')) {
+    const slashIdx = input.indexOf('/');
+    const varName = slashIdx > 0 ? input.slice(1, slashIdx) : input.slice(1);
+    const fallback = slashIdx > 0 ? input.slice(slashIdx + 1) : undefined;
+    const val = process.env[varName];
+    if (val === undefined) {
+      if (fallback !== undefined) return resolve(fallback);
+      throw new Error(`Environment variable $${varName} is not set`);
+    }
+    return resolve(val);
+  }
+  return resolve(input);
 }
 
 async function confirm(message: string): Promise<boolean> {
@@ -241,4 +270,6 @@ async function main() {
   }
 }
 
-main();
+if (import.meta.main) {
+  main();
+}
