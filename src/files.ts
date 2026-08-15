@@ -30,6 +30,8 @@ export interface FileData {
   /** Markdown body without frontmatter (for content extraction) */
   body?: string;
   sections?: Map<string, Section>;
+  /** File metadata (stat) — loaded lazily only when the query uses file() */
+  metadata?: FileMetadata;
   [key: string]: any;
 }
 
@@ -44,12 +46,20 @@ export interface FileMetadata {
   mode: string;
 }
 
+// os.userInfo() does a passwd lookup and is not cached by Node — memoize the
+// current user's username once per process (buildFileMetadata runs per file,
+// so without this, thousands of files mean thousands of userInfo() calls).
+let cachedUsername: string | undefined;
+
 // Best-effort uid → username: the current user's files get a real name via
 // os.userInfo(); anything else falls back to the numeric uid string.
 function uidToName(uid: number): string {
   try {
     if (uid === process.getuid?.()) {
-      return userInfo().username;
+      if (cachedUsername === undefined) {
+        cachedUsername = userInfo().username;
+      }
+      return cachedUsername;
     }
   } catch { /* fall through */ }
   return String(uid);
@@ -101,6 +111,7 @@ export interface ReadOptions {
   fast?: boolean; // use fdir/grepts fast path
   onError?: (error: FileError) => void; // per-file read error callback
   format?: 'json' | 'table' | 'csv'; // output format (for scalar enforcement in table/csv)
+  metadata?: boolean; // load file metadata (stat) for file() — set by the executor from query analysis
 }
 
 interface IgnoreLayer {
@@ -113,6 +124,7 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'format'>> = {
   hidden: false,
   ignore: true,
   fast: false,
+  metadata: false,
   onError: () => {}
 };
 
@@ -245,7 +257,8 @@ export class FileOps {
         frontmatter: data,
         content,
         body: contentBody,
-        sections
+        sections,
+        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined
       };
     } catch (e: any) {
       options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });
@@ -273,7 +286,8 @@ export class FileOps {
         frontmatter: data,
         content,
         body: contentBody,
-        sections
+        sections,
+        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined
       };
     } catch (e: any) {
       options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });

@@ -4,12 +4,13 @@ import { join, relative, isAbsolute, basename } from 'path';
 import { readFileSync } from 'fs';
 import matter from 'gray-matter';
 import ignore from 'ignore';
-import { FileData, ReadOptions, parseDates, parseSections } from './files';
+import { FileData, ReadOptions, parseDates, parseSections, buildFileMetadata } from './files';
 import type { SearchOptions } from 'grepts';
 import type { ContentPrefilterNode } from './query-analyzer';
 
 export interface FileIOAnalysis {
   requiresContent: boolean;
+  requiresMetadata: boolean;
   bodyPredicates: { field: string; op: string; value: string }[];
 }
 
@@ -29,7 +30,8 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError' | 'format'
   depth: 0,
   hidden: false,
   ignore: true,
-  fast: false
+  fast: false,
+  metadata: false
 };
 
 export class FastFileOps {
@@ -97,7 +99,8 @@ export class FastFileOps {
           frontmatter: data,
           content: raw,
           body: analysis.requiresContent ? body : undefined,
-          sections: analysis.requiresContent ? parseSections(body) : undefined
+          sections: analysis.requiresContent ? parseSections(body) : undefined,
+          metadata: analysis.requiresMetadata ? buildFileMetadata(fp) : undefined
         };
         files.push(file);
       } catch (e: any) {
