@@ -115,3 +115,28 @@ describe('ContentExtractor.extractGrep', () => {
     });
   });
 });
+
+describe('ContentExtractor.extractSections content', () => {
+  it('does not duplicate section content', () => {
+    const extractor = new ContentExtractor('# TODO\n\nLine one.\nLine two.\n\n## Other\n\nOther stuff.\n');
+    const sections = extractor.extractSections();
+    expect(sections).toHaveLength(2);
+    expect(sections[0].title).toBe('TODO');
+    expect(sections[0].content).toBe('Line one.\nLine two.');
+    expect(sections[1].title).toBe('Other');
+    expect(sections[1].content).toBe('Other stuff.');
+  });
+
+  it('slices content between heading positions (no duplication)', () => {
+    const extractor = new ContentExtractor('## Setup\n\nDo it now.\n\n## Teardown\n\nEnd.\n');
+    const sections = extractor.extractSections();
+    expect(sections[0].content).toBe('Do it now.');
+    expect(sections[1].content).toBe('End.');
+  });
+
+  it('returns undefined content for a heading with no body', () => {
+    const extractor = new ContentExtractor('# Only\n');
+    const sections = extractor.extractSections();
+    expect(sections[0].content).toBeUndefined();
+  });
+});

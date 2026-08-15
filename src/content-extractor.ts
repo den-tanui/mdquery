@@ -316,28 +316,27 @@ export class ContentExtractor {
   }
 
   private extractSectionContent(heading: Heading): string | undefined {
-    let content = '';
+    const start = heading.position?.end?.offset;
+    if (start === undefined) return undefined;
+
+    // Find the next heading in document order; its start is the end of this
+    // section's content. Slicing the raw body between positions avoids the
+    // visitor double-count (parent extractText + child text nodes) and keeps
+    // ContentExtractor consistent with the regex-based parseSections fast path.
+    let end: number | undefined;
     let foundHeading = false;
-    
     visit(this.ast, (node) => {
       if (node === heading) {
         foundHeading = true;
         return SKIP;
       }
-      
-      if (foundHeading && node.type === 'heading' && (node as Heading).depth <= heading.depth) {
-        return false; // Stop at next heading of same or higher level
-      }
-      
-      if (foundHeading && node.type !== 'heading') {
-        if ('value' in node) {
-          content += node.value + '\n';
-        } else if ('children' in node) {
-          content += this.extractText(node) + '\n';
-        }
+      if (foundHeading && node.type === 'heading') {
+        end = (node as Heading).position?.start?.offset;
+        return false; // stop traversal
       }
     });
-    
-    return content.trim() || undefined;
+
+    const slice = this.content.slice(start, end);
+    return slice.trim() || undefined;
   }
 }
