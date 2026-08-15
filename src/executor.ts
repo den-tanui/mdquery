@@ -4,6 +4,7 @@ import { Parser } from './parser';
 import { FileOps, FileData, ReadOptions } from './files';
 import { FastFileOps, FileIOAnalysis, isNegatedContentOp, applyContentPrefilter } from './file-io';
 import { QueryAnalyzer, buildContentPrefilterTree, inferScalarType, type ContentPrefilterNode } from './query-analyzer';
+import { existsSync } from 'fs';
 import { isAbsolute, join } from 'path';
 import {
   ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
@@ -49,7 +50,7 @@ function newExecutionState(): ExecutionState {
 const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
 
 export class Executor {
-  private dir: string;
+  private dirs: string[];
   private context?: Record<string, any>;
   private triggerContext?: TriggerContext;
   private readOptions: ReadOptions;
@@ -58,13 +59,13 @@ export class Executor {
   private lastAst: ASTNode | null = null;
 
   constructor(
-    dir: string,
+    dir: string | string[],
     context?: Record<string, any>,
     triggerContext?: TriggerContext,
     readOptions: ReadOptions = {},
     hooks?: ExecutorHooks
   ) {
-    this.dir = dir;
+    this.dirs = Array.isArray(dir) ? dir : [dir];
     this.context = context;
     this.triggerContext = triggerContext;
     this.readOptions = readOptions;
@@ -108,8 +109,12 @@ export class Executor {
     }
   }
 
-  private async readFilesWithHooks(dir: string, options: ReadOptions = {}, state?: ExecutionState): Promise<FileData[]> {
-    let files: FileData[];
+  // Read files across one or more directories, returning a flat union. Per-dir
+  // failures (missing/unreadable dir) are recorded in meta.errors and do not
+  // abort the remaining dirs. Each file gets a `source_dir` field stamped with
+  // the directory it was read from.
+  private async readFilesWithHooks(dirs: string[], options: ReadOptions = {}, state?: ExecutionState): Promise<FileData[]> {
+    const allFiles: FileData[] = [];
     const onError = (err: { path: string; error: string; phase: 'read' | 'prefilter' | 'evaluate' }) => {
       state?.errors.push(err);
       options.onError?.(err);
@@ -119,57 +124,88 @@ export class Executor {
     // the fast path for content/body + metadata, the legacy path for metadata.
     const analysis = this.analyzeCurrentQuery();
 
-    if (options.fast) {
-      const t0 = Date.now();
-      const paths = await FastFileOps.listFiles(dir, options);
-      if (state) {
-        state.timings.list = Date.now() - t0;
-        state.filesSearched = paths.length;
+    for (const dir of dirs) {
+      let files: FileData[];
+
+      // Missing/unreadable dir: record in meta.errors and continue with the
+      // remaining dirs. The legacy FileOps.walk swallows readdir failures, so
+      // an explicit existence check is required — the try/catch below is a
+      // safety net for the fast path (fdir throws on missing dirs).
+      if (!existsSync(dir)) {
+        onError({ path: dir, error: `directory not found: ${dir}`, phase: 'read' });
+        continue;
       }
 
-      const prefilterTree = this.contentPrefilterTree();
-      if (prefilterTree) {
-        const t1 = Date.now();
-        let filtered: string[];
-        try {
-          filtered = await applyContentPrefilter(
-            paths,
-            prefilterTree,
-            (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
-          );
-        } catch (e: any) {
-          // A prefilter failure must not crash the query — record it and fall
-          // back to reading ALL paths (the WHERE re-evaluates content
-          // predicates afterward, so correctness is preserved).
-          onError({ path: dir, error: e?.message ?? String(e), phase: 'prefilter' });
-          filtered = paths;
+      try {
+        if (options.fast) {
+          const t0 = Date.now();
+          const paths = await FastFileOps.listFiles(dir, options);
+          if (state) {
+            state.timings.list += Date.now() - t0;
+            state.filesSearched += paths.length;
+          }
+
+          const prefilterTree = this.contentPrefilterTree();
+          if (prefilterTree) {
+            const t1 = Date.now();
+            let filtered: string[];
+            try {
+              filtered = await applyContentPrefilter(
+                paths,
+                prefilterTree,
+                (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
+              );
+            } catch (e: any) {
+              // A prefilter failure must not crash the query — record it and fall
+              // back to reading ALL paths (the WHERE re-evaluates content
+              // predicates afterward, so correctness is preserved).
+              onError({ path: dir, error: e?.message ?? String(e), phase: 'prefilter' });
+              filtered = paths;
+            }
+            if (state) state.timings.prefilter += Date.now() - t1;
+            const t2 = Date.now();
+            files = await FastFileOps.readFiles(dir, filtered, analysis, onError);
+            if (state) state.timings.read += Date.now() - t2;
+          } else {
+            const t2 = Date.now();
+            files = await FastFileOps.readFiles(dir, paths, analysis, onError);
+            if (state) state.timings.read += Date.now() - t2;
+          }
+        } else {
+          const t2 = Date.now();
+          const errorsBefore = state?.errors.length ?? 0;
+          // Inject the executor's onError wrapper so legacy FileOps.read records
+          // per-file read errors into the execution state (and forwards to any
+          // user-supplied ReadOptions.onError). metadata comes from the analysis.
+          files = await FileOps.readFiles(dir, { ...options, onError, metadata: analysis.requiresMetadata });
+          if (state) {
+            state.timings.read += Date.now() - t2;
+            // filesSearched = files read + files that errored in THIS dir only
+            // (errorsBefore avoids double-counting errors from earlier dirs).
+            state.filesSearched += files.length + (state.errors.length - errorsBefore);
+          }
         }
-        if (state) state.timings.prefilter = Date.now() - t1;
-        const t2 = Date.now();
-        files = await FastFileOps.readFiles(dir, filtered, analysis, onError);
-        if (state) state.timings.read = Date.now() - t2;
-      } else {
-        const t2 = Date.now();
-        files = await FastFileOps.readFiles(dir, paths, analysis, onError);
-        if (state) state.timings.read = Date.now() - t2;
+      } catch (e: any) {
+        // Missing/unreadable dir: record in meta.errors, continue with remaining dirs
+        onError({ path: dir, error: e?.message ?? String(e), phase: 'read' });
+        continue;
       }
-    } else {
-      const t2 = Date.now();
-      // Inject the executor's onError wrapper so legacy FileOps.read records
-      // per-file read errors into the execution state (and forwards to any
-      // user-supplied ReadOptions.onError). metadata comes from the analysis.
-      files = await FileOps.readFiles(dir, { ...options, onError, metadata: analysis.requiresMetadata });
-      if (state) {
-        state.timings.read = Date.now() - t2;
-        state.filesSearched = files.length + state.errors.length;
+
+      // Stamp source_dir on each file. A direct field (not frontmatter) so it
+      // resolves via evaluateField's "Direct fields" branch and is never
+      // serialized back into the file's YAML on update.
+      for (const f of files) {
+        f['source_dir'] = dir;
       }
+
+      allFiles.push(...files);
     }
 
     if (this.hooks?.onAfterRead) {
-      return files.map(f => this.hooks!.onAfterRead!(f));
+      return allFiles.map(f => this.hooks!.onAfterRead!(f));
     }
 
-    return files;
+    return allFiles;
   }
 
   // Build the content prefilter tree for the most recently parsed query, or
@@ -207,7 +243,7 @@ export class Executor {
       this.enforceScalarColumns(node.fields);
     }
 
-    let files = await this.readFilesWithHooks(this.dir, this.readOptions, state);
+    let files = await this.readFilesWithHooks(this.dirs, this.readOptions, state);
 
     // Evaluate phase starts after file discovery/reading — measure from here so
     // `evaluate` reflects WHERE/HAVING/projection work only, not list+read.
@@ -472,7 +508,7 @@ export class Executor {
 
   // Execute JOIN
   private async executeJoin(files: FileData[], join: JoinNode): Promise<FileData[]> {
-    const joinedFiles = await this.readFilesWithHooks(join.right.table);
+    const joinedFiles = await this.readFilesWithHooks([join.right.table]);
     const result: FileData[] = [];
 
     for (const file of files) {
@@ -497,7 +533,7 @@ export class Executor {
   // ===== UPDATE =====
 
   private async executeUpdate(node: UpdateStatement): Promise<QueryResult> {
-    const files = await this.readFilesWithHooks(this.dir, this.readOptions);
+    const files = await this.readFilesWithHooks(this.dirs, this.readOptions);
     const matches = node.where
       ? files.filter(f => this.evaluateExpression(node.where!, { file: f }))
       : files;
@@ -563,7 +599,7 @@ export class Executor {
     } else if (newFile.path) {
       target = this.resolveTargetPath(newFile.path);
     } else if (newFile.file || newFile.filename) {
-      target = this.dir;
+      target = this.dirs[0];
     } else {
       throw new Error('create requires path to file');
     }
@@ -589,7 +625,7 @@ export class Executor {
       throw new Error('delete requires a where clause');
     }
 
-    const files = await this.readFilesWithHooks(this.dir, this.readOptions);
+    const files = await this.readFilesWithHooks(this.dirs, this.readOptions);
     const matches = node.where ? files.filter(f => this.evaluateExpression(node.where!, { file: f })) : files;
 
     if (matches.length === 0) {
@@ -637,7 +673,7 @@ export class Executor {
 
   private resolveTargetPath(p: string): string {
     if (isAbsolute(p)) return p;
-    return join(this.dir, p);
+    return join(this.dirs[0], p);
   }
 
   // ===== Expression evaluation =====
@@ -1231,7 +1267,9 @@ export class Executor {
       throw new Error('File content not loaded');
     }
 
-    const cacheKey = file.path || file.filename;
+    // Key by abspath: with multi-dir support the same relative path can exist
+    // under different source dirs, so path/filename alone would collide.
+    const cacheKey = file.abspath || file.path || file.filename;
     if (this.contentExtractorCache.has(cacheKey)) {
       return this.contentExtractorCache.get(cacheKey)!;
     }

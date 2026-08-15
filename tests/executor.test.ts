@@ -420,3 +420,69 @@ describe('grep() regex fixes', () => {
     await expect(executor.execute('select grep(/TODO/)')).rejects.toThrow(/array of maps/);
   });
 });
+
+describe('Executor multi-dir', () => {
+  let dirA: string;
+  let dirB: string;
+
+  beforeAll(() => {
+    dirA = mkdtempSync(join(tmpdir(), 'mdq-a-'));
+    dirB = mkdtempSync(join(tmpdir(), 'mdq-b-'));
+    writeFileSync(join(dirA, 'a.md'), '---\ntitle: Alpha\n---\n');
+    writeFileSync(join(dirB, 'b.md'), '---\ntitle: Beta\n---\n');
+  });
+
+  afterAll(() => {
+    rmSync(dirA, { recursive: true, force: true });
+    rmSync(dirB, { recursive: true, force: true });
+  });
+
+  it('queries multiple dirs and returns flat union with source_dir', async () => {
+    const executor = new Executor([dirA, dirB]);
+    const result = await executor.execute('select filename, source_dir');
+    expect(result.data).toHaveLength(2);
+    const filenames = result.data!.map(r => r.filename).sort();
+    expect(filenames).toEqual(['a', 'b']);
+    // source_dir is set on each row
+    for (const row of result.data!) {
+      expect(row.source_dir).toBeDefined();
+      expect(typeof row.source_dir).toBe('string');
+    }
+  });
+
+  it('single dir also includes source_dir', async () => {
+    const executor = new Executor([dirA]);
+    const result = await executor.execute('select filename, source_dir');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].source_dir).toBe(dirA);
+  });
+
+  it('path is relative to source_dir', async () => {
+    const executor = new Executor([dirA, dirB]);
+    const result = await executor.execute('select filename, path, source_dir');
+    for (const row of result.data!) {
+      const { relative } = require('path');
+      expect(row.path).toBe(relative(row.source_dir, require('path').join(row.source_dir, row.path)));
+    }
+  });
+
+  it('backward compat: single string wraps in array', async () => {
+    const executor = new Executor(dirA as any); // pass string, not array
+    const result = await executor.execute('select filename');
+    expect(result.data).toHaveLength(1);
+  });
+
+  it('missing dir records error in meta.errors and continues', async () => {
+    const missingDir = join(tmpdir(), 'mdq-missing-' + Date.now());
+    const executor = new Executor([dirA, missingDir]);
+    const result = await executor.execute('select filename, source_dir');
+    // dirA still queried
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].source_dir).toBe(dirA);
+    // missing dir recorded in meta.errors with phase read
+    expect(result.meta?.errors?.length).toBeGreaterThan(0);
+    const err = result.meta!.errors.find(e => e.path === missingDir);
+    expect(err).toBeDefined();
+    expect(err!.phase).toBe('read');
+  });
+});

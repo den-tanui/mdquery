@@ -208,7 +208,7 @@ export interface RunAction {
 
 // Execution types
 export interface QueryOptions {
-  dir?: string;
+  dirs?: string[];
   files?: string[];
   query: string;
   context?: Record<string, any>;
