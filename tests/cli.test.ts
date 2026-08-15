@@ -1,7 +1,7 @@
 // tests/cli.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync, execSync } from 'child_process';
-import { mkdirSync, writeFileSync, rmSync, statSync, existsSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, statSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir, homedir } from 'os';
 import { randomUUID } from 'crypto';
@@ -160,6 +160,58 @@ describe('mdquery CLI', () => {
     const { stderr, status } = runCli(['--card', `--dir=${fixtureDir}`, 'select title']);
     expect(status).toBe(1);
     expect(stderr).toContain('Unknown option: --card');
+  });
+});
+
+describe('CLI --dir', () => {
+  it('accepts comma-separated dirs', () => {
+    const dirA = mkdtempSync(join(tmpdir(), 'cli-a-'));
+    const dirB = mkdtempSync(join(tmpdir(), 'cli-b-'));
+    writeFileSync(join(dirA, 'a.md'), '---\ntitle: Alpha\n---\n');
+    writeFileSync(join(dirB, 'b.md'), '---\ntitle: Beta\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', `${dirA},${dirB}`,
+        'select filename, source_dir'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const json = JSON.parse(out);
+      expect(json.data).toHaveLength(2);
+    } finally {
+      rmSync(dirA, { recursive: true, force: true });
+      rmSync(dirB, { recursive: true, force: true });
+    }
+  });
+
+  it('single missing dir fails fast with exit 1', () => {
+    const missingDir = join(tmpdir(), 'cli-missing-' + Date.now());
+    let threw = false;
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', missingDir, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    } catch (e: any) {
+      threw = true;
+      expect(e.status).toBe(1);
+      expect(e.stderr.toString()).toContain('does not exist');
+    }
+    expect(threw).toBe(true);
+  });
+
+  it('missing dir in multi-dir list warns and continues', () => {
+    const dirA = mkdtempSync(join(tmpdir(), 'cli-warn-a-'));
+    const missingDir = join(tmpdir(), 'cli-warn-missing-' + Date.now());
+    writeFileSync(join(dirA, 'a.md'), '---\ntitle: Alpha\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', `${dirA},${missingDir}`,
+        'select filename, source_dir'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const json = JSON.parse(out);
+      expect(json.data).toHaveLength(1);
+      expect(json.data[0].source_dir).toBe(dirA);
+    } finally {
+      rmSync(dirA, { recursive: true, force: true });
+    }
   });
 });
 
