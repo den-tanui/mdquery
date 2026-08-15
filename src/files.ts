@@ -28,7 +28,6 @@ export interface FileData {
   /** Markdown body without frontmatter (for content extraction) */
   body?: string;
   sections?: Map<string, Section>;
-  'section.TODO'?: string;
   [key: string]: any;
 }
 

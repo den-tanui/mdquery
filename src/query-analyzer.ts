@@ -38,7 +38,7 @@ export type ScalarInference =
 
 const BUILTIN_SHAPES: Record<string, ScalarInference> = {
   content: { kind: 'scalar' },
-  fields: { kind: 'map', shape: '{field: value}', suggestions: ["fields().keys()", "fields().values()", "fields().map('field')"] },
+  fields: { kind: 'map', shape: '{field: value}', suggestions: ["fields().keys()", "fields().values()"] },
   links: { kind: 'array-of-maps', shape: '{text, url, position, paragraph?, section?}', suggestions: ["links().map('url')", "links().map('text')", "links().count()"] },
   images: { kind: 'array-of-maps', shape: '{alt, url, position, paragraph?, section?}', suggestions: ["images().map('url')", "images().map('alt')"] },
   codeblocks: { kind: 'array-of-maps', shape: '{content, lang?, position, paragraph?, section?}', suggestions: ["codeblocks().map('lang')", "codeblocks().map('content')"] },
@@ -51,7 +51,14 @@ const BUILTIN_SHAPES: Record<string, ScalarInference> = {
 export function inferScalarType(expr: Expression): ScalarInference {
   switch (expr.type) {
     case 'field': return { kind: 'scalar' };
-    case 'function_call': return BUILTIN_SHAPES[expr.name] ?? { kind: 'scalar' };
+    case 'function_call': {
+      // fields('values') returns an array of scalars (legacy arg form)
+      if (expr.name === 'fields' && expr.args.length > 0 &&
+          expr.args[0].type === 'string' && expr.args[0].value === 'values') {
+        return { kind: 'array-of-scalars' };
+      }
+      return BUILTIN_SHAPES[expr.name] ?? { kind: 'scalar' };
+    }
     case 'method_call': return inferMethodType(expr);
     case 'array_index': return inferScalarType(expr.object);
     case 'map_index': return { kind: 'scalar' };
@@ -92,7 +99,7 @@ function inferMethodType(expr: MethodCallNode): ScalarInference {
     case 'unique':
       return objectType;
     case 'entries':
-      return { kind: 'array-of-maps', shape: '[key, value]', suggestions: ["entries().map('[0]')"] };
+      return { kind: 'array-of-maps', shape: '[key, value]', suggestions: ["entries().map(_.first())"] };
     default:
       return { kind: 'scalar' };
   }

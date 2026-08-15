@@ -252,6 +252,12 @@ describe('Flattening tools + builtins', () => {
     const result = await executor.execute('select fields().keys()');
     expect(result.data![0]['fields().keys()']).toEqual(['tags', 'title']);
   });
+
+  it('fields("values") returns an array of scalars (allowed in table format)', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    const result = await executor.execute('select fields("values")');
+    expect(result.data![0]['fields("values")']).toEqual([['x', 'y'], 'A']);
+  });
 });
 
 describe('Array method eager-arg fixes', () => {

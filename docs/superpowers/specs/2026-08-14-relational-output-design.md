@@ -127,7 +127,7 @@ Per-shape suggestions:
 | `images()` | `images().map('url')`, `images().map('alt')` |
 | `codeblocks()` | `codeblocks().map('lang')`, `codeblocks().map('content')` |
 | `toc()` | `toc().map('title')`, `toc().map('level')` |
-| `fields()` | `fields().keys()`, `fields().values()`, `fields().map('field')` |
+| `fields()` | `fields().keys()`, `fields().values()` |
 
 The suggestion must use the **actual shape keys** of the builtin (from the table above), never a generic message. If the expression is nested (e.g. `sections().first()`), the message names the full expression and suggests the shortest scalar-producing rewrite.
 
@@ -201,7 +201,7 @@ interface QueryMeta {
 
 ## 5. Builtin Changes
 
-- `fields()` → **single map object** `{field: value}` (was array of strings). Enables `fields().keys()` / `.values()` / `.map('field')`.
+- `fields()` → **single map object** `{field: value}` (was array of strings). Enables `fields().keys()` / `.values()`. `.map()` is an array method and does not apply to the map object.
 - `trim()` confirmed: JS `String.trim()` — leading/trailing whitespace only; internal newlines/pipes kept.
 - `trimAll()` **NEW builtin**: replaces presentation-breaking chars with SPACES: `\n \r \t \v \f \u2028 \u2029 \u0085 | \0 \x00-\x1f`.
 

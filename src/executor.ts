@@ -851,12 +851,8 @@ export class Executor {
   // Evaluate array methods
   private evaluateArrayMethod(array: any[], method: string, args: any[], context: EvaluationContext): any {
     switch (method) {
-      case 'filter': return this.evaluateArrayFilter(array, args[0], context);
-      case 'map': return this.evaluateArrayMap(array, args[0], context);
-      case 'where': return this.evaluateArrayFilter(array, args[0], context);
       case 'first': return array.length > 0 ? array[0] : undefined;
       case 'last': return array.length > 0 ? array[array.length - 1] : undefined;
-      case 'sort': return this.evaluateArraySort(array, args[0], context);
       case 'slice': return this.evaluateArraySlice(array, args);
       case 'flatten': return this.evaluateArrayFlatten(array);
       case 'unique': return this.evaluateArrayUnique(array);
