@@ -377,7 +377,7 @@ export class FileOps {
 
     // Handle empty literal: empty string clears the field from frontmatter
     const frontmatter = Object.entries(data)
-      .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content'].includes(key))
+      .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content', 'source_dir'].includes(key))
       .filter(([key, value]) => {
         // Skip empty string values (empty literal clears the field)
         if (value === '' || value === null || value === undefined) {
