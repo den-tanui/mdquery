@@ -213,3 +213,26 @@ describe('order by file().mtime', () => {
     });
   });
 });
+
+describe('file() scalar enforcement', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-meta-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('throws for file() in table format with a shape-aware message', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
+    await expect(executor.execute('select file()')).rejects.toThrow(/file\(\)/);
+    await expect(executor.execute('select file()')).rejects.toThrow(/a map/);
+    await expect(executor.execute('select file()')).rejects.toThrow(/file\(\)\.mtime/);
+  });
+
+  it('throws for file() in csv format', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'csv' });
+    await expect(executor.execute('select file()')).rejects.toThrow(/file\(\)/);
+  });
+});

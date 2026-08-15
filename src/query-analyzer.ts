@@ -40,6 +40,7 @@ export type ScalarInference =
 const BUILTIN_SHAPES: Record<string, ScalarInference> = {
   content: { kind: 'scalar' },
   fields: { kind: 'map', shape: '{field: value}', suggestions: ["fields().keys()", "fields().values()"] },
+  file: { kind: 'map', shape: '{abspath, mtime, atime, ctime, owner, group, size, mode}', suggestions: ["file().mtime", "file().abspath", "file().size"] },
   links: { kind: 'array-of-maps', shape: '{text, url, position, paragraph?, section?}', suggestions: ["links().map('url')", "links().map('text')", "links().count()"] },
   images: { kind: 'array-of-maps', shape: '{alt, url, position, paragraph?, section?}', suggestions: ["images().map('url')", "images().map('alt')"] },
   codeblocks: { kind: 'array-of-maps', shape: '{content, lang?, position, paragraph?, section?}', suggestions: ["codeblocks().map('lang')", "codeblocks().map('content')"] },
