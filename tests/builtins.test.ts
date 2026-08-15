@@ -88,4 +88,11 @@ describe('Builtins', () => {
       expect(result).toBe('a,b,c');
     });
   });
+
+  describe('trimAll()', () => {
+    it('replaces presentation-breaking chars with spaces', () => {
+      expect(Builtins.trimAll('a\nb\tc|d')).toBe('a b c d');
+      expect(Builtins.trimAll('line1\u2028line2')).toBe('line1 line2');
+    });
+  });
 });

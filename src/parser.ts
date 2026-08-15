@@ -572,8 +572,8 @@ export class Parser {
     }
     
     // Method call (postfix) - only for chained methods like .filter(), .map()
-    if (token.type === 'DOT' && this.peek().type === 'IDENTIFIER' && 
-        this.isChainedMethod(this.peek().value)) {
+    // (method names may lex as keywords: .join() → JOIN, .where() → WHERE)
+    if (token.type === 'DOT' && this.isChainedMethod(this.peek().value)) {
       return this.parseMethodCall(left);
     }
     
@@ -636,13 +636,17 @@ export class Parser {
   }
 
   private isChainedMethod(method: string): boolean {
-    const chainedMethods = ['filter', 'map', 'where', 'first', 'last', 'sort', 'slice', 'flatten', 'unique', 'count'];
+    const chainedMethods = ['filter', 'map', 'where', 'first', 'last', 'sort', 'slice', 'flatten', 'unique', 'count', 'join', 'keys', 'values'];
     return chainedMethods.includes(method);
   }
 
   private parseMethodCall(object: Expression): MethodCallNode {
     this.expect('DOT');
-    const method = this.expect('IDENTIFIER').value;
+    // Method names may lex as keywords (.join() → JOIN, .where() → WHERE),
+    // so take the name from the token value regardless of token type. We only
+    // reach here when isChainedMethod matched the peeked value.
+    const method = this.current().value;
+    this.advance();
     this.expect('LPAREN');
     const args: Expression[] = [];
     

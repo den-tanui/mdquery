@@ -328,12 +328,19 @@ export class Executor {
   // Generate field name for complex expressions
   private generateFieldName(expr: Expression): string {
     switch (expr.type) {
+      case 'field': return expr.name;
       case 'function_call': return `${expr.name}()`;
-      case 'method_call': return `${this.generateFieldName(expr.object)}.${expr.method}()`;
+      case 'method_call': {
+        const argsStr = expr.args.map(a => this.generateFieldName(a)).join(', ');
+        return `${this.generateFieldName(expr.object)}.${expr.method}(${argsStr})`;
+      }
       case 'array_index': return `${this.generateFieldName(expr.object)}[${this.generateFieldName(expr.index)}]`;
       case 'map_index': return `${this.generateFieldName(expr.object)}.${this.generateFieldName(expr.key)}`;
       case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
       case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
+      case 'string': return `"${expr.value}"`;
+      case 'number': return String(expr.value);
+      case 'boolean': return String(expr.value);
       default: return 'expr';
     }
   }
@@ -802,6 +809,7 @@ export class Executor {
       case 'flatten': return this.evaluateArrayFlatten(array);
       case 'unique': return this.evaluateArrayUnique(array);
       case 'count': return array.length;
+      case 'join': return array.map(String).join(args[0] ?? ',');
       default: throw new Error(`Unsupported array method: ${method}`);
     }
   }
@@ -1069,19 +1077,13 @@ export class Executor {
 
   private evaluateFields(args: any[], context: EvaluationContext): any {
     if (!context.file) {
-      return [];
+      return {};
     }
-
-    if (args.length === 0) {
-      return Object.keys(context.file.frontmatter || {});
-    }
-
-    // Handle fields('values')
+    const frontmatter = context.file.frontmatter || {};
     if (args[0] === 'values') {
-      return Object.values(context.file.frontmatter || {});
+      return Object.values(frontmatter);
     }
-
-    return Object.keys(context.file.frontmatter || {});
+    return { ...frontmatter };
   }
 
   // Evaluate has section("name")

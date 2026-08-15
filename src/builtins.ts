@@ -45,6 +45,11 @@ export class Builtins {
     return value.trim();
   }
 
+  static trimAll(value: string): string {
+    requireString(value, 'trimAll');
+    return value.replace(/[\u0000-\u001f\u2028\u2029\u0085|]/g, ' ');
+  }
+
   static contains(value: string, substring: string): boolean {
     requireString(value, 'contains');
     return value.includes(substring);

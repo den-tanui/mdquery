@@ -394,6 +394,15 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(field.object.method).toBe('map');
       expect(field.object.object.method).toBe('filter');
     });
+
+    it('parses methods whose names lex as keywords (.join, .where)', () => {
+      const ast = new Parser("select tags.join('-')").parse();
+      expect(ast.fields[0].method).toBe('join');
+      expect(ast.fields[0].args[0].value).toBe('-');
+
+      const whereAst = new Parser("select sections().where(title = 'Setup')").parse();
+      expect(whereAst.fields[0].method).toBe('where');
+    });
   });
 
   describe('Regex Pattern Syntax', () => {

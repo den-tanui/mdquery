@@ -224,3 +224,32 @@ describe('Executor error handling + meta', () => {
     expect(timings.evaluate).toBeLessThan(timings.total);
   });
 });
+
+describe('Flattening tools + builtins', () => {
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mdquery-flat-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntags: [x, y]\ntitle: A\n---\nBody\n');
+  });
+
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('joins an array of scalars with a delimiter', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select tags.join("-")');
+    expect(result.data![0]['tags.join("-")']).toBe('x-y');
+  });
+
+  it('fields() returns a single map object', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select fields()');
+    expect(result.data![0]['fields()']).toEqual({ tags: ['x', 'y'], title: 'A' });
+  });
+
+  it('fields().keys() lists frontmatter field names', async () => {
+    const executor = new Executor(dir, undefined, undefined, { fast: true });
+    const result = await executor.execute('select fields().keys()');
+    expect(result.data![0]['fields().keys()']).toEqual(['tags', 'title']);
+  });
+});

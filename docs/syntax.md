@@ -167,6 +167,7 @@ Callable in `set` clauses and as values:
 | `contains(a, b)` | string contains |
 | `starts_with(a, b)` / `ends_with(a, b)` | string prefix/suffix |
 | `split(s, delim)` / `join(arr, delim)` | string <-> array |
+| `arr.join(delim)` | join an array of scalars into a string (default `,`) |
 | `id()` / `user()` | current row id / current user |
 | `date(s)` | parse date to ISO |
 | `next_date('daily'\|'weekly'\|'monthly'\|'yearly'\|<n>)` | next recurrence / in n days |
