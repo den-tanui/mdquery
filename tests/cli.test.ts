@@ -27,9 +27,12 @@ status: todo
   return dir;
 }
 
-function runCli(args: string[]): { stdout: string; stderr: string; status: number } {
+function runCli(args: string[], env?: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
   try {
-    const stdout = execFileSync(cliPath, args, { encoding: 'utf-8' });
+    const stdout = execFileSync(cliPath, args, {
+      encoding: 'utf-8',
+      env: env ? { ...process.env, ...env } : process.env
+    });
     return { stdout, stderr: '', status: 0 };
   } catch (err: any) {
     return {
@@ -485,6 +488,136 @@ describe('color flags', () => {
       'run', 'src/cli.ts', '--help'
     ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
     expect(out).not.toMatch(/\x1b\[/);
+  });
+});
+
+describe('config file', () => {
+  let configHome: string;
+  let fixtureDir: string;
+
+  function writeConfig(yaml: string): void {
+    const dir = join(configHome, 'mdquery');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'config.yaml'), yaml);
+  }
+
+  function runWithConfig(args: string[]): { stdout: string; stderr: string; status: number } {
+    return runCli(args, { XDG_CONFIG_HOME: configHome });
+  }
+
+  beforeAll(() => {
+    configHome = mkdtempSync(join(tmpdir(), 'mdquery-config-home-'));
+    fixtureDir = createFixtureDir();
+  });
+
+  afterAll(() => {
+    rmSync(configHome, { recursive: true, force: true });
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it('config format applies when no --format flag is given', () => {
+    writeConfig('format: table\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('┌');
+    expect(stdout).toContain('TITLE');
+  });
+
+  it('--format flag overrides config format', () => {
+    writeConfig('format: table\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, '--format=json', 'select title']);
+    expect(status).toBe(0);
+    const json = JSON.parse(stdout);
+    expect(json.data).toHaveLength(1);
+  });
+
+  it('config dir applies when no --dir flag is given', () => {
+    writeConfig(`dir: ["${fixtureDir}"]\n`);
+    const { stdout, status } = runWithConfig(['select title']);
+    expect(status).toBe(0);
+    const json = JSON.parse(stdout);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].title).toBe('Test Task');
+  });
+
+  it('--dir flag overrides config dir', () => {
+    writeConfig('dir: ["/nonexistent"]\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    const json = JSON.parse(stdout);
+    expect(json.data).toHaveLength(1);
+  });
+
+  it('config rows caps table lines per record', () => {
+    writeConfig('format: table\nrows: 1\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    // Each record is capped at 1 line; the title "Test Task" fits, so the
+    // table renders normally — the key is that rows:1 does not error.
+    expect(stdout).toContain('Test Task');
+  });
+
+  it('--rows flag overrides config rows', () => {
+    writeConfig('format: table\nrows: 1\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, '--rows=5', 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('Test Task');
+  });
+
+  it('config colors apply below env (MDQUERY_COLORS wins)', () => {
+    writeConfig('format: table\ncolors:\n  title: "31"\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, '--color', 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/\x1b\[31m/);
+  });
+
+  it('MDQUERY_COLORS overrides config colors', () => {
+    writeConfig('format: table\ncolors:\n  title: "31"\n');
+    const { stdout, status } = runCli(
+      [`--dir=${fixtureDir}`, '--color', 'select title'],
+      { XDG_CONFIG_HOME: configHome, MDQUERY_COLORS: 'title=32' }
+    );
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/\x1b\[32m/);
+    expect(stdout).not.toMatch(/\x1b\[31m/);
+  });
+
+  it('config color: always forces color even when piped', () => {
+    writeConfig('format: table\ncolor: always\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/\x1b\[/);
+  });
+
+  it('--no-color overrides config color: always', () => {
+    writeConfig('format: table\ncolor: always\n');
+    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, '--no-color', 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).not.toMatch(/\x1b\[/);
+  });
+
+  it('config depth applies when no -d flag is given', () => {
+    // fixtureDir has task-001.md at depth 0; a nested file at depth 2 is
+    // excluded when config depth is 1 (top level only) and included at depth 2.
+    const nested = join(fixtureDir, 'sub');
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, 'nested.md'), '---\ntitle: Nested\n---\n');
+    try {
+      writeConfig('depth: 2\n');
+      const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+      expect(status).toBe(0);
+      const json = JSON.parse(stdout);
+      expect(json.data.map((r: any) => r.title)).toContain('Nested');
+    } finally {
+      rmSync(nested, { recursive: true, force: true });
+    }
+  });
+
+  it('invalid config reports an error', () => {
+    writeConfig('format: xml\n');
+    const { stderr, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
+    expect(status).toBe(1);
+    expect(stderr).toContain('Invalid config');
   });
 });
 

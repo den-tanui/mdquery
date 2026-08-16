@@ -6,6 +6,7 @@ import { VERSION } from './version';
 import { program } from 'commander';
 import chalk from 'chalk';
 import { parseColorEnv, resolveColor, sgr } from './colors';
+import { loadConfig, Config } from './config';
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { dirname, extname, resolve } from 'path';
 import { existsSync } from 'fs';
@@ -41,6 +42,16 @@ export function resolveDir(input: string): string {
 }
 
 async function main() {
+  // Load user config (~/.config/mdquery/config.yaml). Flags override config;
+  // config is the lowest layer above built-in defaults (config → env → flags).
+  let config: Config | null = null;
+  try {
+    config = await loadConfig();
+  } catch (e: any) {
+    console.error(`Error: ${e.message}`);
+    process.exit(1);
+  }
+
   // Pre-scan argv for color flags so help styling and Commander error output
   // can respect them: help is rendered during parse (before opts are
   // available) and Commander processes options left-to-right, so
@@ -53,15 +64,30 @@ async function main() {
     if (a === '--color') colorFlag = true;
     if (a === '--no-color') colorFlag = false;
   }
+  // Config color applies only when no flag was given (flags override config)
+  if (colorFlag === undefined && config?.color) {
+    if (config.color === 'always') colorFlag = true;
+    if (config.color === 'never') colorFlag = false;
+  }
   if (colorFlag === true) chalk.level = 3;   // force color even when piped
   if (colorFlag === false) chalk.level = 0;  // disable color entirely
 
-  // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys) > defaults
+  // --no-ignore is a negated flag: Commander defaults opts.ignore to true, so
+  // pre-scan argv to distinguish "not passed" (config applies) from "--no-ignore".
+  let ignoreFlag: boolean | undefined;
+  for (const a of argv) {
+    if (a === '--no-ignore') ignoreFlag = false;
+    if (a === '--ignore') ignoreFlag = true;
+  }
+
+  // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys)
+  // > config colors > defaults
   const mdColors = parseColorEnv(process.env.MDQUERY_COLORS || '');
   const lsColors = parseColorEnv(process.env.LS_COLORS || '');
+  const configColors = new Map(Object.entries(config?.colors ?? {}));
   const colors = new Map<string, string>();
   for (const key of ['title', 'border', 'error', 'warning']) {
-    colors.set(key, resolveColor(key, mdColors, lsColors));
+    colors.set(key, resolveColor(key, mdColors, lsColors, configColors));
   }
   // --no-color disables all coloring; otherwise error/warning messages are colored
   const colorEnabled = colorFlag !== false;
@@ -75,7 +101,7 @@ async function main() {
   // --json/--csv/--table shortcut flags (Commander processes options in order).
   // formatExplicit distinguishes "user passed a format flag" from the default,
   // so --out extension inference only applies when no format was given.
-  let format: OutputFormat = 'json';
+  let format: OutputFormat = config?.format ?? 'json';
   let formatExplicit = false;
 
   // Accumulate repeated options into an array (--dir=a --dir=b => ['a', 'b']).
@@ -89,7 +115,7 @@ async function main() {
     .argument('[query]', 'SQL-like query string (or pipe from stdin); keywords are case-insensitive')
     .option('--dir <dir>', 'Directories to query (default: .); repeatable or comma-separated', collect)
     .option('-f, --file <file>', 'Specific file(s) to query; repeatable or comma-separated. Use -f - to read file paths from stdin', collect)
-    .option('-d, --depth <n>', 'Directory depth (0 = recursive)', '0')
+    .option('-d, --depth <n>', 'Directory depth (0 = recursive)')
     .option('-H, --hidden', 'Include hidden files/dirs')
     .option('--no-ignore', 'Do not respect .gitignore')
     .option('-y, --yes', 'Skip confirmation prompts')
@@ -149,6 +175,12 @@ ${chalk.bold.cyan('Examples:')}
   ${commandStyle('mdquery')} --format=table --no-color "SELECT *"
   fd SKILL.md | ${commandStyle('mdquery')} -f - "SELECT name, description"
 
+${chalk.bold.cyan('Configuration:')}
+  Defaults can be set in ~/.config/mdquery/config.yaml (or
+  $XDG_CONFIG_HOME/mdquery/config.yaml). Keys mirror the CLI flags:
+  dir, depth, hidden, ignore, format, color, compact, rows, columns, colors.
+  Flags always override config values.
+
 ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
   // No arguments at all: print help and exit 0 (legacy behavior)
@@ -162,8 +194,9 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   const opts = program.opts();
   let query = program.args[0] || '';
 
-  // Resolve dirs: split comma-separated values, expand each
-  const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : ['.'];
+  // Resolve dirs: split comma-separated values, expand each. Config dir is the
+  // default when no --dir flag is given (flags override config).
+  const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : (config?.dir ?? ['.']);
   const dirs: string[] = rawDirs
     .flatMap((d: string) => d.split(','))
     .map((d: string) => d.trim())
@@ -244,23 +277,27 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   );
 
   // Commander passes the value of the short `-d=...` form with a leading '='
-  const depth = Number(String(opts.depth).replace(/^=/, ''));
+  const depth = opts.depth !== undefined
+    ? Number(String(opts.depth).replace(/^=/, ''))
+    : (config?.depth ?? 0);
   if (!Number.isFinite(depth)) {
     console.error(err(`Error: Invalid depth: ${opts.depth}`));
     process.exit(1);
   }
 
-  // Validate table view options
-  if (opts.rows !== undefined && (!Number.isInteger(opts.rows) || opts.rows < 1)) {
-    console.error(err(`Error: Invalid rows: ${opts.rows} (expected a positive integer)`));
+  // Validate table view options (config values fall through to flags)
+  const rowsValue = opts.rows ?? config?.rows;
+  if (rowsValue !== undefined && (!Number.isInteger(rowsValue) || rowsValue < 1)) {
+    console.error(err(`Error: Invalid rows: ${rowsValue} (expected a positive integer)`));
     process.exit(1);
   }
+  const columnsSpec = opts.columns ?? config?.columns;
   let columnWidths: ColumnWidthSpec[] | undefined;
-  if (opts.columns !== undefined) {
+  if (columnsSpec !== undefined) {
     try {
-      columnWidths = parseColumnWidths(opts.columns);
+      columnWidths = parseColumnWidths(columnsSpec);
     } catch (e: any) {
-      console.error(err(`Error: Invalid columns: ${opts.columns} (${e.message})`));
+      console.error(err(`Error: Invalid columns: ${columnsSpec} (${e.message})`));
       process.exit(1);
     }
   }
@@ -291,8 +328,8 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
   const executor = new Executor(validDirs, undefined, undefined, {
     depth,
-    hidden: opts.hidden,
-    ignore: opts.ignore,
+    hidden: opts.hidden ?? config?.hidden ?? false,
+    ignore: ignoreFlag ?? config?.ignore ?? true,
     files: files.length > 0 ? files : undefined,
     format: resolvedFormat
   });
@@ -316,8 +353,8 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     const output = Formatter.format(result, resolvedFormat, {
       colorize,
       colors,
-      compact: opts.compact === true,
-      maxLinesPerRecord: opts.rows,
+      compact: opts.compact ?? config?.compact ?? false,
+      maxLinesPerRecord: opts.rows ?? config?.rows,
       columnWidths,
     });
 

@@ -23,11 +23,12 @@ export function parseColorEnv(env: string): Map<string, string> {
 }
 
 // Resolve the SGR code for an element:
-// MDQUERY_COLORS > LS_COLORS (file-like keys) > defaults
+// MDQUERY_COLORS > LS_COLORS (file-like keys) > config colors > defaults
 export function resolveColor(
   element: string,
   mdColors: Map<string, string>,
-  lsColors: Map<string, string>
+  lsColors: Map<string, string>,
+  configColors?: Map<string, string>
 ): string {
   const fromMd = mdColors.get(element);
   if (fromMd) return fromMd;
@@ -36,6 +37,10 @@ export function resolveColor(
   if (lsKey) {
     const fromLs = lsColors.get(lsKey);
     if (fromLs) return fromLs;
+  }
+  if (configColors) {
+    const fromConfig = configColors.get(element);
+    if (fromConfig) return fromConfig;
   }
   return DEFAULT_COLORS[element] ?? '';
 }

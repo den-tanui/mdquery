@@ -157,6 +157,28 @@ MDQUERY_COLORS="title=31:border=36" mdquery --format=table "select *"
 
 Unspecified keys fall through to `LS_COLORS` file-like entries (`fi` for title, `di` for border), then to the defaults above. Help text is styled with chalk when on a terminal.
 
+### Configuration file
+
+Defaults can be set in a user-level YAML config file at `$XDG_CONFIG_HOME/mdquery/config.yaml` (or `~/.config/mdquery/config.yaml` when `XDG_CONFIG_HOME` is unset). Keys mirror the CLI flag vocabulary; command-line flags always override config values. Precedence: **flags > environment > config > defaults**.
+
+```yaml
+# ~/.config/mdquery/config.yaml
+dir: ["~/tasks", "~/notes"]   # default search dirs (--dir)
+depth: 2                      # default depth (--depth, 0 = recursive)
+hidden: false                 # include hidden files (--hidden)
+ignore: true                  # respect .gitignore (--no-ignore to disable)
+format: table                 # default output format (--format)
+color: auto                   # auto | always | never (--color / --no-color)
+compact: false                # compact table view (--compact)
+rows: 10                      # max table lines per record (--rows)
+columns: "20,*,40"            # table column widths (--columns)
+colors:                       # SGR codes, same keys as MDQUERY_COLORS
+  title: "01;34"
+  border: "90"
+```
+
+Unknown keys are ignored (forward compatible); values of the wrong type produce an error. The `colors` map sits below `MDQUERY_COLORS` and `LS_COLORS` in precedence, above the built-in defaults.
+
 ### File identity fields
 
 Every row exposes these fields regardless of frontmatter:
