@@ -103,7 +103,7 @@ describe('Formatter', () => {
       expect(longestLine).toBeLessThanOrEqual(45);
     });
 
-    it('applies semantic cap to content column', () => {
+    it('wraps long content instead of truncating', () => {
       const longContentResult: QueryResult = {
         type: 'select',
         data: [
@@ -112,11 +112,12 @@ describe('Formatter', () => {
         count: 1
       };
       const output = Formatter.toTable(longContentResult, 200);
-      // Content should be capped at 20 chars
-      expect(output).toContain('This is a very long…');
+      // Full content shown (fits at this width), no ellipsis truncation
+      expect(output).toContain('This is a very long content that should be truncated to 20 chars');
+      expect(output).not.toContain('…');
     });
 
-    it('applies semantic cap to abspath column', () => {
+    it('wraps long abspath instead of truncating', () => {
       const longAbspathResult: QueryResult = {
         type: 'select',
         data: [
@@ -125,8 +126,45 @@ describe('Formatter', () => {
         count: 1
       };
       const output = Formatter.toTable(longAbspathResult, 200);
-      // Abspath should be capped at 24 chars with tail display
-      expect(output).toContain('…es/advanced/task-001.md');
+      // Full path shown (fits at this width), no ellipsis truncation
+      expect(output).toContain('/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md');
+      expect(output).not.toContain('…');
+    });
+
+    it('wraps long text within the column instead of truncating', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', description: 'a very long description that keeps going and going and going and going' }
+        ],
+        count: 1
+      };
+      const width = 40;
+      const output = Formatter.toTable(result, width);
+      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      expect(longestLine).toBeLessThanOrEqual(width);
+      // Full text present across wrapped lines (borders/padding stripped), no ellipsis
+      expect(output).not.toContain('…');
+      const stripped = output.replace(/[^a-z]/gi, '');
+      expect(stripped).toContain('averylongdescriptionthatkeepsgoingandgoingandgoingandgoing');
+    });
+
+    it('hard-breaks long unbroken words (paths) within the column', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md' }
+        ],
+        count: 1
+      };
+      const width = 40;
+      const output = Formatter.toTable(result, width);
+      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      expect(longestLine).toBeLessThanOrEqual(width);
+      // Full path present across wrapped lines, no ellipsis
+      expect(output).not.toContain('…');
+      const stripped = output.replace(/[^a-z0-9/._-]/gi, '');
+      expect(stripped).toContain('/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md');
     });
 
     it('prevents column squashing with fallback cap', () => {
@@ -145,22 +183,77 @@ describe('Formatter', () => {
     });
 
     it('colorize false produces clean output', () => {
-      const output = Formatter.toTable(mockResult, 120, false);
+      const output = Formatter.toTable(mockResult, 120, { colorize: false });
       expect(output).not.toMatch(/\x1b\[/);
     });
 
     it('colorize true wraps titles and border in SGR codes', () => {
-      const output = Formatter.toTable(mockResult, 120, true);
+      const output = Formatter.toTable(mockResult, 120, { colorize: true });
       expect(output).toMatch(/\x1b\[01;34m/);  // title color
       expect(output).toMatch(/\x1b\[90m/);     // border color
     });
 
     it('uses custom colors from the colors map', () => {
       const colors = new Map<string, string>([['title', '31'], ['border', '32']]);
-      const output = Formatter.toTable(mockResult, 120, true, colors);
+      const output = Formatter.toTable(mockResult, 120, { colorize: true, colors });
       expect(output).toMatch(/\x1b\[31m/);  // title red
       expect(output).toMatch(/\x1b\[32m/);  // border green
       expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
+    });
+
+    it('compact mode drops row separators and tightens padding', () => {
+      const output = Formatter.toTable(mockResult, 120, { compact: true });
+      // No row separators between data rows
+      expect(output).not.toContain('├');
+      expect(output).not.toContain('┼');
+      // Header directly above first data row (no separator line)
+      expect(output).toContain('│TITLE');
+      // Data still present
+      expect(output).toContain('Test Task');
+      expect(output).toContain('Another Task');
+    });
+
+    it('maxRows limits the number of displayed rows', () => {
+      const output = Formatter.toTable(mockResult, 120, { maxRows: 1 });
+      expect(output).toContain('Test Task');
+      expect(output).not.toContain('Another Task');
+    });
+
+    it('columnWidths honors fixed char widths and auto-fills the rest', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Alpha', description: 'short' },
+          { id: '2', title: 'Beta', description: 'a much longer description here' }
+        ],
+        count: 2
+      };
+      const output = Formatter.toTable(result, 80, {
+        columnWidths: [{ kind: 'chars', value: 20 }, { kind: 'auto' }, { kind: 'chars', value: 10 }]
+      });
+      // Fixed widths honored: title column is 20 chars wide
+      const headerLine = output.split('\n')[1];
+      expect(headerLine).toContain('TITLE');
+      // Auto column gets the remaining space; full text present (wrapped)
+      const stripped = output.replace(/[^a-z]/gi, '');
+      expect(stripped).toContain('amuchlongerdescriptionhere');
+    });
+
+    it('columnWidths resolves percentages against the usable width', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', title: 'Alpha', description: 'short' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 100, {
+        columnWidths: [{ kind: 'pct', value: 25 }, { kind: 'pct', value: 75 }]
+      });
+      // 25% of usable (100 - 7 = 93) = 23 chars for title
+      const headerLine = output.split('\n')[1];
+      expect(headerLine).toContain('TITLE');
+      expect(headerLine.length).toBeLessThanOrEqual(100);
     });
   });
 

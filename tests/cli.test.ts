@@ -420,6 +420,9 @@ describe('color flags', () => {
     expect(out).toMatch(/\x1b\[1m\x1b\[36mUsage:/);
     expect(out).toMatch(/\x1b\[1m\x1b\[36mOptions:/);
     expect(out).toMatch(/\x1b\[1m\x1b\[36mExamples:/);
+    // Command name is bold mild orange (usage line + examples)
+    expect(out).toMatch(/\x1b\[1m\x1b\[38;2;255;158;100mmdquery/);
+    expect(out.match(/\x1b\[1m\x1b\[38;2;255;158;100mmdquery/g)!.length).toBeGreaterThan(1);
     // Option flags stay plain; explanations are muted (dim)
     expect(out).not.toMatch(/\x1b\[[0-9;]*m--dir/);
     expect(out).toMatch(/\x1b\[2mDirectories to query/);

@@ -7,22 +7,31 @@ import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
 
+// Column width specification for --columns: fixed chars, percentage of the
+// usable width, or 'auto' (natural allocation of the remaining space)
+export type ColumnWidthSpec =
+  | { kind: 'chars'; value: number }
+  | { kind: 'pct'; value: number }
+  | { kind: 'auto' };
+
+export interface TableOptions {
+  colorize?: boolean;
+  colors?: Map<string, string>;
+  compact?: boolean;
+  maxRows?: number;
+  columnWidths?: ColumnWidthSpec[];
+}
+
 const MIN_COLUMN_WIDTH = 3;
 const DEFAULT_TERMINAL_WIDTH = 80;
 
-// Semantic caps for known fields — fixed widths for predictable display
-const SEMANTIC_CAPS: Record<string, number> = {
-  content: 20,   // First line + ellipsis
-  abspath: 24,   // Tail: .../filename.md
-};
-
 export class Formatter {
-  static format(result: QueryResult, format: OutputFormat, options?: { colorize?: boolean, colors?: Map<string, string> }): string {
+  static format(result: QueryResult, format: OutputFormat, options?: TableOptions): string {
     switch (format) {
       case 'json':
         return this.toJSON(result);
       case 'table':
-        return this.toTable(result, 0, options?.colorize ?? false, options?.colors);
+        return this.toTable(result, 0, options);
       case 'csv':
         return this.toCSV(result);
       default:
@@ -30,15 +39,19 @@ export class Formatter {
     }
   }
 
-  static toTable(result: QueryResult, terminalWidth: number = 0, colorize: boolean = false, colors?: Map<string, string>): string {
+  static toTable(result: QueryResult, terminalWidth: number = 0, options?: TableOptions): string {
     if (!result.data || result.data.length === 0) {
       return 'No results';
     }
 
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
+    const { colorize = false, colors, compact = false, maxRows, columnWidths } = options ?? {};
 
-    const headers = Object.keys(result.data[0]);
-    const rows = result.data.map(row => headers.map(h => {
+    // Limit displayed rows (table view feature)
+    const data = maxRows !== undefined && maxRows > 0 ? result.data.slice(0, maxRows) : result.data;
+
+    const headers = Object.keys(data[0]);
+    const rows = data.map(row => headers.map(h => {
       const value = (row as any)[h];
       // Format toc and section fields specially
       if (h === 'toc' || h === 'toc()' || h.startsWith('toc(') || h === 'section' || h === 'section()' || h.startsWith('section(') || h.startsWith('section.')) {
@@ -47,53 +60,37 @@ export class Formatter {
       return String(value ?? '');
     }));
 
-    // Apply semantic caps to cell values (first-line extraction + truncation)
-    const cappedRows = rows.map(row =>
-      row.map((cell, i) => {
-        const header = headers[i];
-        const cap = SEMANTIC_CAPS[header];
-        if (cap !== undefined) {
-          const firstLine = cell.split('\n')[0];
-          if (firstLine.length > cap) {
-            // Special handling for abspath: show tail
-            if (header === 'abspath') {
-              return tailDisplay(firstLine, cap);
-            }
-            return ellipsize(firstLine, cap);
-          }
-          return firstLine;
-        }
-        return cell;
-      })
-    );
-
-    // Natural column widths after cap application
+    // Natural column widths: max line length per cell (multi-line cells don't
+    // inflate the width of their column)
     const naturalWidths = headers.map((h, i) =>
-      Math.max(h.length, ...cappedRows.map(r => r[i]?.length || 0))
+      Math.max(h.length, ...rows.map(r => maxLineLength(r[i])))
     );
 
     // cli-table3 uses 1 char per vertical border (left, right, and mid between columns)
-    // plus 2 chars of padding per column by default (padding-left: 1, padding-right: 1).
+    // plus padding per column (2 by default, 1 in compact mode).
     // The total non-content width = 1 (left) + 1 (right) + (headers.length - 1) (mids) = headers.length + 1
-    // Total padding = headers.length * 2
-    const nonContentCost = headers.length > 0 ? headers.length + 1 + headers.length * 2 : 0;
+    // Total padding = headers.length * paddingPerCol
+    const paddingPerCol = compact ? 1 : 2;
+    const nonContentCost = headers.length > 0 ? headers.length + 1 + headers.length * paddingPerCol : 0;
     const usable = width - nonContentCost;
 
-    // Apply semantic caps to natural widths
-    const cappedWidths = naturalWidths.map((w, i) => {
-      const cap = SEMANTIC_CAPS[headers[i]];
-      return cap !== undefined ? Math.min(w, cap) : w;
-    });
-
     let innerWidths: number[];
-    if (sum(cappedWidths) <= usable) {
-      innerWidths = cappedWidths;
+    if (columnWidths && columnWidths.length > 0) {
+      innerWidths = this.resolveColumnWidths(columnWidths, naturalWidths, usable);
+    } else if (sum(naturalWidths) <= usable) {
+      innerWidths = naturalWidths;
     } else {
-      innerWidths = this.allocateWidths(cappedWidths, usable);
+      innerWidths = this.allocateWidths(naturalWidths, usable);
     }
 
-    // cli-table3 colWidths include padding (default 2 per column)
-    const colWidths = innerWidths.map(w => w + 2);
+    // Wrap long text to its column width (breaking long unbroken words) instead
+    // of truncating with an ellipsis
+    const wrappedRows = rows.map(row =>
+      row.map((cell, i) => wrapText(cell, innerWidths[i]))
+    );
+
+    // cli-table3 colWidths include padding
+    const colWidths = innerWidths.map(w => w + paddingPerCol);
 
     // Colorize-gated wrapper around the canonical sgr from colors.ts
     const sgr = (text: string, code: string) => colorize ? sgrRaw(text, code) : text;
@@ -104,35 +101,74 @@ export class Formatter {
     // Header formatting: uppercase for distinction in both modes, SGR when colorized
     const styledHeaders = headers.map(h => sgr(h.toUpperCase(), titleColor));
 
+    const borderChars = {
+      'top': sgr('─', borderColor),
+      'top-mid': sgr('┬', borderColor),
+      'top-left': sgr('┌', borderColor),
+      'top-right': sgr('┐', borderColor),
+      'bottom': sgr('─', borderColor),
+      'bottom-mid': sgr('┴', borderColor),
+      'bottom-left': sgr('└', borderColor),
+      'bottom-right': sgr('┘', borderColor),
+      'left': sgr('│', borderColor),
+      'right': sgr('│', borderColor),
+      'middle': sgr('│', borderColor),
+      // Compact mode drops the row separators
+      'mid': compact ? '' : sgr('─', borderColor),
+      'left-mid': compact ? '' : sgr('├', borderColor),
+      'mid-mid': compact ? '' : sgr('┼', borderColor),
+      'right-mid': compact ? '' : sgr('┤', borderColor)
+    };
+
     const table = new Table({
       head: styledHeaders,
-      style: { head: [], border: [] },
-      // Fit text into column: truncate with ellipsis instead of wrapping
-      wordWrap: false,
-      chars: {
-        'top': sgr('─', borderColor),
-        'top-mid': sgr('┬', borderColor),
-        'top-left': sgr('┌', borderColor),
-        'top-right': sgr('┐', borderColor),
-        'bottom': sgr('─', borderColor),
-        'bottom-mid': sgr('┴', borderColor),
-        'bottom-left': sgr('└', borderColor),
-        'bottom-right': sgr('┘', borderColor),
-        'left': sgr('│', borderColor),
-        'right': sgr('│', borderColor),
-        'middle': sgr('│', borderColor),
-        // Border between items: row separators
-        'mid': sgr('─', borderColor),
-        'left-mid': sgr('├', borderColor),
-        'mid-mid': sgr('┼', borderColor),
-        'right-mid': sgr('┤', borderColor)
+      style: {
+        head: [],
+        border: [],
+        'padding-left': compact ? 0 : 1,
+        'padding-right': 1,
       },
+      // Cells are pre-wrapped to their column width; wordWrap stays off so
+      // cli-table3 renders them verbatim (its own wordWrap truncates long
+      // unbroken words, which we handle ourselves)
+      wordWrap: false,
+      chars: borderChars,
       colWidths: colWidths,
     });
 
-    table.push(...cappedRows);
+    table.push(...wrappedRows);
 
     return table.toString();
+  }
+
+  // Resolve user-specified column widths against the usable width. Fixed specs
+  // (chars/pct) are honored as-is; 'auto' columns share the remaining space via
+  // the natural allocation. Missing specs default to 'auto'.
+  private static resolveColumnWidths(specs: ColumnWidthSpec[], naturalWidths: number[], usable: number): number[] {
+    const n = naturalWidths.length;
+    const resolved: (number | 'auto')[] = [];
+    let fixedSum = 0;
+    let autoCount = 0;
+    for (let i = 0; i < n; i++) {
+      const spec = specs[i] ?? { kind: 'auto' as const };
+      if (spec.kind === 'auto') {
+        resolved.push('auto');
+        autoCount++;
+      } else {
+        const w = Math.max(1, spec.kind === 'pct' ? Math.floor(usable * spec.value / 100) : spec.value);
+        resolved.push(w);
+        fixedSum += w;
+      }
+    }
+    if (autoCount === 0) return resolved as number[];
+
+    const remaining = usable - fixedSum;
+    const autoNatural = naturalWidths.filter((_, i) => resolved[i] === 'auto');
+    const autoWidths = remaining > 0
+      ? this.allocateWidths(autoNatural, remaining)
+      : autoNatural.map(() => 1);
+    let ai = 0;
+    return resolved.map(w => w === 'auto' ? autoWidths[ai++] : w);
   }
 
   private static allocateWidths(rawWidths: number[], budget: number): number[] {
@@ -177,15 +213,44 @@ export class Formatter {
   }
 }
 
-function ellipsize(value: string, width: number): string {
-  if (width <= 1) return value.slice(0, width);
-  return value.slice(0, width - 1) + '…';
+function maxLineLength(value: string): number {
+  return Math.max(1, ...value.split('\n').map(l => l.length));
 }
 
-function tailDisplay(value: string, width: number): string {
-  if (width <= 3) return ellipsize(value, width);
-  // Show last (width - 3) chars with leading ellipsis
-  return '…' + value.slice(-(width - 1));
+// Wrap text to a column width, preserving existing newlines and breaking long
+// unbroken words (paths, URLs) so nothing is truncated
+function wrapText(text: string, width: number): string {
+  if (width <= 0) return text;
+  return text.split('\n').map(line => wrapLine(line, width)).join('\n');
+}
+
+function wrapLine(line: string, width: number): string {
+  if (line.length <= width) return line;
+  const words = line.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (word.length > width) {
+      // Hard-break words longer than the column
+      if (current) {
+        lines.push(current);
+        current = '';
+      }
+      for (let i = 0; i < word.length; i += width) {
+        lines.push(word.slice(i, i + width));
+      }
+      continue;
+    }
+    const candidate = current === '' ? word : current + ' ' + word;
+    if (candidate.length <= width) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join('\n');
 }
 
 function formatTocForTable(value: any): string {

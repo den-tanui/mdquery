@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // src/cli.ts
 import { Executor } from './executor';
-import { Formatter, OutputFormat } from './formatter';
+import { Formatter, OutputFormat, ColumnWidthSpec } from './formatter';
 import { VERSION } from './version';
 import { program } from 'commander';
 import chalk from 'chalk';
@@ -68,6 +68,9 @@ async function main() {
   const err = (msg: string) => colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg;
   const warn = (msg: string) => colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg;
 
+  // Command name style: bold mild orange (shared by the usage line and examples)
+  const commandStyle = chalk.bold.hex('#ff9e64');
+
   // Track the output format with last-wins semantics across --format and the
   // --json/--csv/--table shortcut flags (Commander processes options in order).
   // formatExplicit distinguishes "user passed a format flag" from the default,
@@ -101,6 +104,9 @@ async function main() {
     .option('--color', 'Force colored output (default: auto)')
     .option('--no-color', 'Disable colored output')
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
+    .option('--compact', 'Compact table view (no row separators, tighter padding)')
+    .option('--rows <n>', 'Maximum rows to display in table output', parseInt)
+    .option('--columns <spec>', 'Table column widths: comma-separated chars, percentages (10%), or * for auto (e.g. 20,*,40)')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
       // legacy "Error: Unknown option: --card" wording and colorize like the
@@ -129,19 +135,19 @@ async function main() {
       styleTitle: (str: string) => chalk.bold.cyan(str),       // section headers
       styleOptionText: (str: string) => str,                   // option flags: plain
       styleOptionDescription: (str: string) => chalk.dim(str), // option explanations: muted
-      styleCommandText: (str: string) => chalk.bold(str),      // command names
+      styleCommandText: (str: string) => commandStyle(str),    // command names: mild orange
       styleArgumentText: (str: string) => str,                 // arguments: plain
       styleDescriptionText: (str: string) => chalk.dim(str),   // other descriptions
     })
     .showHelpAfterError('Try "mdquery --help" for more information.')
     .addHelpText('after', `
 ${chalk.bold.cyan('Examples:')}
-  mdquery "SELECT WHERE status = 'done'"
-  mdquery --dir tasks/ "SELECT ORDER BY priority"
-  mdquery --dir ~/.agents/skills --dir ~/opt/skills "SELECT filename, source_dir"
-  mdquery --out results.json "SELECT filename, description"
-  mdquery --format=table --no-color "SELECT *"
-  fd SKILL.md | mdquery -f - "SELECT name, description"
+  ${commandStyle('mdquery')} "SELECT WHERE status = 'done'"
+  ${commandStyle('mdquery')} --dir tasks/ "SELECT ORDER BY priority"
+  ${commandStyle('mdquery')} --dir ~/.agents/skills --dir ~/opt/skills "SELECT filename, source_dir"
+  ${commandStyle('mdquery')} --out results.json "SELECT filename, description"
+  ${commandStyle('mdquery')} --format=table --no-color "SELECT *"
+  fd SKILL.md | ${commandStyle('mdquery')} -f - "SELECT name, description"
 
 ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
@@ -244,6 +250,21 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     process.exit(1);
   }
 
+  // Validate table view options
+  if (opts.rows !== undefined && (!Number.isInteger(opts.rows) || opts.rows < 1)) {
+    console.error(err(`Error: Invalid rows: ${opts.rows} (expected a positive integer)`));
+    process.exit(1);
+  }
+  let columnWidths: ColumnWidthSpec[] | undefined;
+  if (opts.columns !== undefined) {
+    try {
+      columnWidths = parseColumnWidths(opts.columns);
+    } catch (e: any) {
+      console.error(err(`Error: Invalid columns: ${opts.columns} (${e.message})`));
+      process.exit(1);
+    }
+  }
+
   // Confirmation for destructive operations
   const op = query.trim().split(/\s+/)[0].toLowerCase();
   if (op === 'delete' && !query.trim().toLowerCase().includes('where')) {
@@ -292,7 +313,13 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
       console.error(warn(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`));
     }
 
-    const output = Formatter.format(result, resolvedFormat, { colorize, colors });
+    const output = Formatter.format(result, resolvedFormat, {
+      colorize,
+      colors,
+      compact: opts.compact === true,
+      maxRows: opts.rows,
+      columnWidths,
+    });
 
     // --out: write to file or stdout (file output is clean by construction —
     // colorize is false whenever outPath is set)
@@ -310,4 +337,21 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
 if (import.meta.main) {
   main();
+}
+
+// Parse a --columns spec like "20,*,40%" into width specs. Each entry is a
+// fixed char count, a percentage of the usable width, or * / auto.
+function parseColumnWidths(spec: string): ColumnWidthSpec[] {
+  return spec.split(',').map(part => {
+    const p = part.trim();
+    if (p === '' || p === '*' || p === 'auto') return { kind: 'auto' };
+    if (p.endsWith('%')) {
+      const v = Number(p.slice(0, -1));
+      if (!Number.isFinite(v) || v < 0) throw new Error(`expected a percentage like 30%`);
+      return { kind: 'pct', value: v };
+    }
+    const v = Number(p);
+    if (!Number.isFinite(v) || v < 1) throw new Error(`expected chars, a percentage, or *`);
+    return { kind: 'chars', value: Math.floor(v) };
+  });
 }
