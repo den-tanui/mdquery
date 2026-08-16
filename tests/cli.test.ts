@@ -420,14 +420,16 @@ describe('color flags', () => {
     expect(out).toMatch(/\x1b\[1m\x1b\[36mUsage:/);
     expect(out).toMatch(/\x1b\[1m\x1b\[36mOptions:/);
     expect(out).toMatch(/\x1b\[1m\x1b\[36mExamples:/);
-    // Option entries stay plain (no ANSI on the flag or its description)
+    // Option flags stay plain; explanations are muted (dim)
     expect(out).not.toMatch(/\x1b\[[0-9;]*m--dir/);
-    expect(out).not.toMatch(/\x1b\[[0-9;]*mDirectories to query/);
-    // Arguments are yellow
-    expect(out).toMatch(/\x1b\[33m\[query\]/);
+    expect(out).toMatch(/\x1b\[2mDirectories to query/);
+    // Arguments are plain
+    expect(out).not.toMatch(/\x1b\[[0-9;]*m\[query\]/);
     // Examples use capitalized builtins
     expect(out).toContain('SELECT WHERE status');
     expect(out).toContain('SELECT ORDER BY priority');
+    // Version shown instead of query-language pointer
+    expect(out).toContain('Version:');
   });
 
   it('--color colorizes commander errors', () => {

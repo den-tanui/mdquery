@@ -123,15 +123,15 @@ async function main() {
       // Commander v15 ships plain style hooks; fill them with chalk so help
       // text is colorized on a terminal (chalk auto-detects TTY, so piped
       // help stays clean). --color/--no-color are pre-scanned above because
-      // help renders during parse, before opts are available. Option entries
-      // stay plain for scannability; only section headers, arguments, and
-      // descriptions are styled.
-      styleTitle: (str: string) => chalk.bold.cyan(str),     // section headers
-      styleOptionText: (str: string) => str,                 // option flags: plain
-      styleOptionDescription: (str: string) => str,          // option descriptions: plain
-      styleCommandText: (str: string) => chalk.bold(str),    // command names
-      styleArgumentText: (str: string) => chalk.yellow(str), // <query>, <args>
-      styleDescriptionText: (str: string) => chalk.dim(str), // other descriptions
+      // help renders during parse, before opts are available. Option flags and
+      // arguments stay plain; only section headers, command names, and
+      // explanations are styled.
+      styleTitle: (str: string) => chalk.bold.cyan(str),       // section headers
+      styleOptionText: (str: string) => str,                   // option flags: plain
+      styleOptionDescription: (str: string) => chalk.dim(str), // option explanations: muted
+      styleCommandText: (str: string) => chalk.bold(str),      // command names
+      styleArgumentText: (str: string) => str,                 // arguments: plain
+      styleDescriptionText: (str: string) => chalk.dim(str),   // other descriptions
     })
     .showHelpAfterError('Try "mdquery --help" for more information.')
     .addHelpText('after', `
@@ -143,7 +143,7 @@ ${chalk.bold.cyan('Examples:')}
   mdquery --format=table --no-color "SELECT *"
   fd SKILL.md | mdquery -f - "SELECT name, description"
 
-${chalk.bold.cyan('Query language:')} docs/syntax.md`);
+${chalk.bold.cyan('Version:')} ${VERSION}`);
 
   // No arguments at all: print help and exit 0 (legacy behavior)
   if (process.argv.slice(2).length === 0) {
