@@ -320,6 +320,60 @@ describe('CLI --out', () => {
   });
 });
 
+describe('color flags', () => {
+  it('--no-color produces no ANSI codes in table output', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-color-nc-'));
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--no-color', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      expect(out).not.toMatch(/\x1b\[/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--color forces ANSI codes even when piped', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-color-c-'));
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      expect(out).toMatch(/\x1b\[/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('default piped output has no ANSI codes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-color-def-'));
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir, '--format=table', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      expect(out).not.toMatch(/\x1b\[/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('MDQUERY_COLORS overrides title color', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-color-env-'));
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..'), env: { ...process.env, MDQUERY_COLORS: 'title=31' } });
+      expect(out).toMatch(/\x1b\[31m/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('resolveDir', () => {
   it('resolves . to cwd', () => {
     expect(resolveDir('.')).toBe(process.cwd());

@@ -3,6 +3,7 @@ import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
 import { stringify } from 'csv-stringify/sync';
 import Table from 'cli-table3';
+import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
 
@@ -16,12 +17,12 @@ const SEMANTIC_CAPS: Record<string, number> = {
 };
 
 export class Formatter {
-  static format(result: QueryResult, format: OutputFormat, options?: { colorize?: boolean }): string {
+  static format(result: QueryResult, format: OutputFormat, options?: { colorize?: boolean, colors?: Map<string, string> }): string {
     switch (format) {
       case 'json':
         return this.toJSON(result);
       case 'table':
-        return this.toTable(result, 0, options?.colorize ?? false);
+        return this.toTable(result, 0, options?.colorize ?? false, options?.colors);
       case 'csv':
         return this.toCSV(result);
       default:
@@ -29,7 +30,7 @@ export class Formatter {
     }
   }
 
-  static toTable(result: QueryResult, terminalWidth: number = 0, colorize: boolean = false): string {
+  static toTable(result: QueryResult, terminalWidth: number = 0, colorize: boolean = false, colors?: Map<string, string>): string {
     if (!result.data || result.data.length === 0) {
       return 'No results';
     }
@@ -94,10 +95,14 @@ export class Formatter {
     // cli-table3 colWidths include padding (default 2 per column)
     const colWidths = innerWidths.map(w => w + 2);
 
-    const sgr = (text: string, code: string) => colorize ? `\x1b[${code}m${text}\x1b[0m` : text;
+    // Colorize-gated wrapper around the canonical sgr from colors.ts
+    const sgr = (text: string, code: string) => colorize ? sgrRaw(text, code) : text;
 
-    // Header formatting: uppercase for distinction in both modes, bold-blue SGR when colorized
-    const styledHeaders = headers.map(h => sgr(h.toUpperCase(), '01;34'));
+    const titleColor = colors?.get('title') ?? DEFAULT_COLORS.title;
+    const borderColor = colors?.get('border') ?? DEFAULT_COLORS.border;
+
+    // Header formatting: uppercase for distinction in both modes, SGR when colorized
+    const styledHeaders = headers.map(h => sgr(h.toUpperCase(), titleColor));
 
     const table = new Table({
       head: styledHeaders,
@@ -105,22 +110,22 @@ export class Formatter {
       // Fit text into column: truncate with ellipsis instead of wrapping
       wordWrap: false,
       chars: {
-        'top': sgr('─', '90'),
-        'top-mid': sgr('┬', '90'),
-        'top-left': sgr('┌', '90'),
-        'top-right': sgr('┐', '90'),
-        'bottom': sgr('─', '90'),
-        'bottom-mid': sgr('┴', '90'),
-        'bottom-left': sgr('└', '90'),
-        'bottom-right': sgr('┘', '90'),
-        'left': sgr('│', '90'),
-        'right': sgr('│', '90'),
-        'middle': sgr('│', '90'),
+        'top': sgr('─', borderColor),
+        'top-mid': sgr('┬', borderColor),
+        'top-left': sgr('┌', borderColor),
+        'top-right': sgr('┐', borderColor),
+        'bottom': sgr('─', borderColor),
+        'bottom-mid': sgr('┴', borderColor),
+        'bottom-left': sgr('└', borderColor),
+        'bottom-right': sgr('┘', borderColor),
+        'left': sgr('│', borderColor),
+        'right': sgr('│', borderColor),
+        'middle': sgr('│', borderColor),
         // Border between items: row separators
-        'mid': sgr('─', '90'),
-        'left-mid': sgr('├', '90'),
-        'mid-mid': sgr('┼', '90'),
-        'right-mid': sgr('┤', '90')
+        'mid': sgr('─', borderColor),
+        'left-mid': sgr('├', borderColor),
+        'mid-mid': sgr('┼', borderColor),
+        'right-mid': sgr('┤', borderColor)
       },
       colWidths: colWidths,
     });

@@ -5,6 +5,7 @@ import { Formatter, OutputFormat } from './formatter';
 import { VERSION } from './version';
 import { program } from 'commander';
 import chalk from 'chalk';
+import { parseColorEnv, resolveColor, sgr } from './colors';
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { dirname, extname, resolve } from 'path';
 import { existsSync } from 'fs';
@@ -70,6 +71,8 @@ async function main() {
     .option('--json', 'Shortcut for --format=json', () => { format = 'json'; formatExplicit = true; return true; })
     .option('--csv', 'Shortcut for --format=csv', () => { format = 'csv'; formatExplicit = true; return true; })
     .option('--table', 'Shortcut for --format=table', () => { format = 'table'; formatExplicit = true; return true; })
+    .option('--color', 'Force colored output (default: auto)')
+    .option('--no-color', 'Disable colored output')
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
@@ -80,6 +83,16 @@ async function main() {
           .replace(/^error: /, 'Error: ');
         write(transformed);
       }
+    })
+    .configureHelp({
+      // Commander v15 ships plain style hooks; fill them with chalk so help
+      // text is colorized on a terminal (chalk auto-detects TTY, so piped
+      // help stays clean).
+      styleTitle: (str: string) => chalk.bold(str),
+      styleOptionText: (str: string) => chalk.bold(str),
+      styleCommandText: (str: string) => chalk.bold(str),
+      styleArgumentText: (str: string) => chalk.cyan(str),
+      styleDescriptionText: (str: string) => chalk.dim(str),
     })
     .showHelpAfterError('Try "mdquery --help" for more information.')
     .addHelpText('after', `
@@ -104,6 +117,18 @@ Query language: docs/syntax.md`);
   const opts = program.opts();
   let query = program.args[0] || '';
 
+  // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys) > defaults
+  const mdColors = parseColorEnv(process.env.MDQUERY_COLORS || '');
+  const lsColors = parseColorEnv(process.env.LS_COLORS || '');
+  const colors = new Map<string, string>();
+  for (const key of ['title', 'border', 'error', 'warning']) {
+    colors.set(key, resolveColor(key, mdColors, lsColors));
+  }
+  // --no-color disables all coloring; otherwise error/warning messages are colored
+  const colorEnabled = opts.color !== false;
+  const err = (msg: string) => colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg;
+  const warn = (msg: string) => colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg;
+
   // Resolve dirs: split comma-separated values, expand each
   const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : ['.'];
   const dirs: string[] = rawDirs
@@ -116,11 +141,11 @@ Query language: docs/syntax.md`);
   const missingDirs = dirs.filter(d => !existsSync(d));
   if (missingDirs.length > 0) {
     if (dirs.length === 1) {
-      console.error(chalk.red(`Error: directory ${missingDirs[0]} does not exist`));
+      console.error(err(`Error: directory ${missingDirs[0]} does not exist`));
       process.exit(1);
     }
     for (const d of missingDirs) {
-      console.error(chalk.yellow(`warning: directory ${d} does not exist`));
+      console.error(warn(`warning: directory ${d} does not exist`));
     }
   }
   const validDirs = dirs.filter(d => existsSync(d));
@@ -151,13 +176,13 @@ Query language: docs/syntax.md`);
   }
 
   if (!query) {
-    console.error(chalk.red('Error: No query provided'));
+    console.error(err('Error: No query provided'));
     console.error('Try "mdquery --help" for more information.');
     process.exit(1);
   }
 
   if (!['json', 'table', 'csv'].includes(format)) {
-    console.error(chalk.red(`Error: Invalid format: ${format}`));
+    console.error(err(`Error: Invalid format: ${format}`));
     process.exit(1);
   }
 
@@ -175,22 +200,32 @@ Query language: docs/syntax.md`);
     }
   }
 
+  // Presentation-layer decision: color only table output, and only when forced
+  // (--color) or when writing to a terminal (auto). File output stays clean.
+  // Cast: TS narrows resolvedFormat to 'json' | 'csv' after extension inference,
+  // but the declared type is OutputFormat — 'table' is reachable via --format/--table.
+  const toTerminal = !outPath || outPath === '-';
+  const colorize = (resolvedFormat as OutputFormat) === 'table' && (
+    opts.color === true ||
+    (opts.color !== false && toTerminal && !!process.stdout.isTTY)
+  );
+
   // Commander passes the value of the short `-d=...` form with a leading '='
   const depth = Number(String(opts.depth).replace(/^=/, ''));
   if (!Number.isFinite(depth)) {
-    console.error(chalk.red(`Error: Invalid depth: ${opts.depth}`));
+    console.error(err(`Error: Invalid depth: ${opts.depth}`));
     process.exit(1);
   }
 
   // Confirmation for destructive operations
   const op = query.trim().split(/\s+/)[0].toLowerCase();
   if (op === 'delete' && !query.trim().toLowerCase().includes('where')) {
-    console.error(chalk.red('Error: delete requires a where clause to prevent accidental deletion'));
+    console.error(err('Error: delete requires a where clause to prevent accidental deletion'));
     process.exit(1);
   }
   if ((op === 'update' || op === 'delete') && !opts.yes) {
     if (!process.stdin.isTTY) {
-      console.error(chalk.red('Error: confirmation requires a terminal; use -y to skip'));
+      console.error(err('Error: confirmation requires a terminal; use -y to skip'));
       process.exit(1);
     }
     const { createInterface } = await import('readline');
@@ -226,22 +261,21 @@ Query language: docs/syntax.md`);
     const result = await executor.execute(query);
 
     if (result.meta?.errors?.length) {
-      console.error(chalk.yellow(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`));
+      console.error(warn(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`));
     }
 
-    const output = Formatter.format(result, resolvedFormat);
+    const output = Formatter.format(result, resolvedFormat, { colorize, colors });
 
-    // --out: write to file or stdout
+    // --out: write to file or stdout (file output is clean by construction —
+    // colorize is false whenever outPath is set)
     if (outPath && outPath !== '-') {
       await mkdir(dirname(outPath), { recursive: true });
-      // Strip ANSI codes for file output
-      const stripped = output.replace(/\x1B\[[0-9;]*[mK]/g, '');
-      await writeFile(outPath, stripped, 'utf-8');
+      await writeFile(outPath, output, 'utf-8');
     } else {
       console.log(output);
     }
   } catch (error: any) {
-    console.error(chalk.red(`Error: ${error.message}`));
+    console.error(err(`Error: ${error.message}`));
     process.exit(1);
   }
 }

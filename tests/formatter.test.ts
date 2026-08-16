@@ -154,6 +154,14 @@ describe('Formatter', () => {
       expect(output).toMatch(/\x1b\[01;34m/);  // title color
       expect(output).toMatch(/\x1b\[90m/);     // border color
     });
+
+    it('uses custom colors from the colors map', () => {
+      const colors = new Map<string, string>([['title', '31'], ['border', '32']]);
+      const output = Formatter.toTable(mockResult, 120, true, colors);
+      expect(output).toMatch(/\x1b\[31m/);  // title red
+      expect(output).toMatch(/\x1b\[32m/);  // border green
+      expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
+    });
   });
 
   describe('CSV', () => {
