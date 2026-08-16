@@ -161,6 +161,18 @@ describe('mdquery CLI', () => {
     expect(status).toBe(1);
     expect(stderr).toContain('Unknown option: --card');
   });
+
+  it('--rows accepts a positive integer', () => {
+    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--rows', '2', 'SELECT title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('┌');
+  });
+
+  it('--rows 0 errors', () => {
+    const { stderr, status } = runCli(['--dir', fixtureDir, '--rows', '0', 'SELECT title']);
+    expect(status).not.toBe(0);
+    expect(stderr).toContain('Invalid rows');
+  });
 });
 
 describe('CLI --dir', () => {

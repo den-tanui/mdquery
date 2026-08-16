@@ -1,6 +1,6 @@
 // tests/table-renderer.test.ts
 import { describe, it, expect } from 'vitest';
-import { renderTable, truncateToWidth, TableBorderChars } from '../src/table-renderer';
+import { renderTable, truncateToWidth, capLines, TableBorderChars } from '../src/table-renderer';
 
 const chars: TableBorderChars = {
   top: '─', topMid: '┬', topLeft: '┌', topRight: '┐',
@@ -125,5 +125,23 @@ describe('truncateToWidth', () => {
   });
   it('handles narrow widths', () => {
     expect(truncateToWidth('DESCRIPTION', 1)).toBe('…');
+  });
+});
+
+describe('capLines', () => {
+  it('returns text unchanged when it fits within maxLines', () => {
+    expect(capLines('short', 10, 3)).toBe('short');
+  });
+
+  it('caps wrapped text at maxLines with ellipsis on the last line', () => {
+    const out = capLines('a very long description that keeps going and going', 10, 2);
+    expect(out.split('\n')).toHaveLength(2);
+    expect(out).toMatch(/…$/);
+  });
+
+  it('maxLines 1 returns a single truncated line', () => {
+    const out = capLines('a very long description', 10, 1);
+    expect(out.split('\n')).toHaveLength(1);
+    expect(out).toMatch(/…$/);
   });
 });

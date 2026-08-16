@@ -105,7 +105,7 @@ async function main() {
     .option('--no-color', 'Disable colored output')
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
     .option('--compact', 'Compact table view (no row separators, tighter padding)')
-    .option('--rows <n>', 'Maximum rows to display in table output', parseInt)
+    .option('--rows <n>', 'Max terminal lines per record in table output (LIMIT controls result count)', parseInt)
     .option('--columns <spec>', 'Table column widths: comma-separated chars, percentages (10%), or * for auto (e.g. 20,*,40)')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
@@ -317,7 +317,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
       colorize,
       colors,
       compact: opts.compact === true,
-      maxRows: opts.rows,
+      maxLinesPerRecord: opts.rows,
       columnWidths,
     });
 

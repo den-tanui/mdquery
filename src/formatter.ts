@@ -2,7 +2,7 @@
 import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
 import { stringify } from 'csv-stringify/sync';
-import { renderTable, truncateToWidth, wrapText, TableBorderChars } from './table-renderer';
+import { renderTable, truncateToWidth, wrapText, capLines, TableBorderChars } from './table-renderer';
 import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
@@ -18,7 +18,7 @@ export interface TableOptions {
   colorize?: boolean;
   colors?: Map<string, string>;
   compact?: boolean;
-  maxRows?: number;
+  maxLinesPerRecord?: number; // cap each record at N terminal lines (--rows)
   columnWidths?: ColumnWidthSpec[];
 }
 
@@ -45,10 +45,9 @@ export class Formatter {
     }
 
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
-    const { colorize = false, colors, compact = false, maxRows, columnWidths } = options ?? {};
+    const { colorize = false, colors, compact = false, maxLinesPerRecord, columnWidths } = options ?? {};
 
-    // Limit displayed rows (table view feature)
-    const data = maxRows !== undefined && maxRows > 0 ? result.data.slice(0, maxRows) : result.data;
+    const data = result.data;
 
     const headers = Object.keys(data[0]);
     const rows = data.map(row => headers.map(h => {
@@ -83,10 +82,10 @@ export class Formatter {
       innerWidths = this.allocateWidths(naturalWidths, usable);
     }
 
-    // Wrap long text to its column width (breaking long unbroken words) instead
-    // of truncating with an ellipsis
+    // Wrap long text to its column width (breaking long unbroken words); with
+    // --rows, cap each record at maxLinesPerRecord terminal lines
     const wrappedRows = rows.map(row =>
-      row.map((cell, i) => wrapText(cell, innerWidths[i]))
+      row.map((cell, i) => maxLinesPerRecord !== undefined ? capLines(cell, innerWidths[i], maxLinesPerRecord) : wrapText(cell, innerWidths[i]))
     );
 
     // Colorize-gated wrapper around the canonical sgr from colors.ts

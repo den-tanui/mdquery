@@ -213,10 +213,29 @@ describe('Formatter', () => {
       expect(output).toContain('Another Task');
     });
 
-    it('maxRows limits the number of displayed rows', () => {
-      const output = Formatter.toTable(mockResult, 120, { maxRows: 1 });
-      expect(output).toContain('Test Task');
-      expect(output).not.toContain('Another Task');
+    it('maxLinesPerRecord caps each record at one line', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ id: '1', title: 'x'.repeat(300) }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { maxLinesPerRecord: 1 });
+      // data row is a single line (no wrapped continuation lines)
+      const dataLines = output.split('\n').filter(l => l.includes('x'));
+      expect(dataLines).toHaveLength(1);
+      expect(output).toContain('…');
+    });
+
+    it('maxLinesPerRecord 2 keeps two lines with ellipsis', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ id: '1', title: 'x'.repeat(300) }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { maxLinesPerRecord: 2 });
+      const dataLines = output.split('\n').filter(l => l.includes('x'));
+      expect(dataLines).toHaveLength(2);
+      expect(output).toContain('…');
     });
 
     it('columnWidths honors fixed char widths and auto-fills the rest', () => {

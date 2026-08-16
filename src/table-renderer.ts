@@ -81,6 +81,19 @@ function wrapLine(line: string, width: number): string {
   return lines.join('\n');
 }
 
+// Wrap text to a column width, then cap the result at maxLines lines. If the
+// wrapped text overflows, the last visible line is truncated with '…'.
+export function capLines(text: string, width: number, maxLines: number): string {
+  if (maxLines <= 0) return text;
+  const wrapped = wrapText(text, width);
+  const lines = wrapped.split('\n');
+  if (lines.length <= maxLines) return wrapped;
+  const kept = lines.slice(0, maxLines - 1);
+  const rest = lines.slice(maxLines - 1).join(' ');
+  kept.push(truncateToWidth(rest, width));
+  return kept.join('\n');
+}
+
 export function renderTable(opts: RenderTableOptions): string {
   const { headers, rows, colWidths, paddingLeft, paddingRight, chars } = opts;
   const n = colWidths.length;
