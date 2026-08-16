@@ -102,6 +102,7 @@ Examples:
   mdquery --dir tasks/ "select order by priority"
   mdquery --dir ~/.agents/skills --dir ~/opt/skills "select filename, source_dir"
   mdquery --out results.json "select filename, description"
+  mdquery --format=table --no-color "select *"
   fd SKILL.md | mdquery -f - "select name, description"
 
 Query language: docs/syntax.md`);

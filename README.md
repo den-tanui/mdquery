@@ -102,7 +102,7 @@ mdquery --format=json "select title, status" > saved.json  # valid JSON, include
 | --- | --- |
 | `-h`, `--help` | Print the full manual and exit |
 | `-v`, `--version` | Print the version and exit |
-| `--dir=<path>` | Directory to query (default `.`) |
+| `--dir=<path>` | Directory to query (default `.`); repeatable or comma-separated. Supports `.`, `..`, `~`/`~/...`, `$VAR`/`$VAR/suffix` expansion |
 | `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated. Use `-f -` to read file paths from stdin |
 | `-d`, `--depth=<n>` | Search depth: `0` = recursive (default), `1` = top level only, `2+` = limited depth |
 | `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
@@ -112,6 +112,9 @@ mdquery --format=json "select title, status" > saved.json  # valid JSON, include
 | `--json` | Shortcut for `--format=json` |
 | `--csv` | Shortcut for `--format=csv` |
 | `--table` | Shortcut for `--format=table` |
+| `-o`, `--out=<file>` | Write output to a file instead of stdout. If the filename has no extension, the resolved format's extension is appended (e.g. `--out results` → `results.json`); an explicit extension is kept as-is. Parent directories are created automatically |
+| `--color` | Force colored output, even when piped (default: auto) |
+| `--no-color` | Disable colored output entirely |
 
 Calling `mdquery` with no arguments prints the manual.
 
@@ -119,7 +122,7 @@ Calling `mdquery` with no arguments prints the manual.
 
 **JSON** (default) and **CSV** are data formats — `mdquery "query" --json > saved.json` and `--csv > saved.csv` produce valid files. JSON emits the full result object `{type, data, count, meta}`; CSV is RFC 4180 (proper quoting, newlines, formula escaping).
 
-**Table** is the presentation format: all fields in a grid. Content column capped at 20 chars (first line + `…`). `abspath` capped at 24 chars (tail display). Good for piping, scripts, and quick browsing.
+**Table** is the presentation format: all fields in a box-drawing grid with uppercase headers and row separators. Content column capped at 20 chars (first line + `…`). `abspath` capped at 24 chars (tail display). Long values are truncated with `…` to fit their column (no wrapping). Good for piping, scripts, and quick browsing.
 
 Table/CSV require **scalar columns** (string/number/boolean/null). Arrays of scalars (e.g. `tags`) flatten to `"a,b"`. Functions returning maps or arrays of maps (e.g. `sections()`, `links()`, `codeblocks()`) are JSON-only — table/CSV throw an early error suggesting a rewrite (e.g. `sections().map('title')`).
 
@@ -130,7 +133,29 @@ mdquery --format=table "select *"
 # Data formats for piping
 mdquery --format=json "select *" > saved.json
 mdquery --format=csv "select *" > saved.csv
+
+# Write to a file (extension inferred from format)
+mdquery --out results "select *"
 ```
+
+### Colors
+
+Table output is colorized automatically when stdout is a terminal (headers bold blue, borders gray). Piped output and `--out` files are always clean. Override with `--color` (force, even piped) or `--no-color` (disable).
+
+Colors are configurable via the `MDQUERY_COLORS` environment variable (LS_COLORS-style, colon-separated `key=value` SGR codes):
+
+| Key | Default | Used for |
+| --- | --- | --- |
+| `title` | `01;34` (bold blue) | Table headers |
+| `border` | `90` (bright black) | Table borders |
+| `error` | `31` (red) | Error messages |
+| `warning` | `33` (yellow) | Warning messages |
+
+```bash
+MDQUERY_COLORS="title=31:border=36" mdquery --format=table "select *"
+```
+
+Unspecified keys fall through to `LS_COLORS` file-like entries (`fi` for title, `di` for border), then to the defaults above. Help text is styled with chalk when on a terminal.
 
 ### File identity fields
 
@@ -141,6 +166,7 @@ Every row exposes these fields regardless of frontmatter:
 | `filename` | File name without the `.md` extension (e.g. `task-001`) |
 | `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
 | `abspath` | Absolute path to the file |
+| `source_dir` | The search directory the file was found in (useful with multiple `--dir`s) |
 | `body` | Markdown body with the frontmatter block stripped |
 | `frontmatter` | Raw parsed frontmatter object as a single field |
 
