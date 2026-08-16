@@ -41,6 +41,33 @@ export function resolveDir(input: string): string {
 }
 
 async function main() {
+  // Pre-scan argv for color flags so help styling and Commander error output
+  // can respect them: help is rendered during parse (before opts are
+  // available) and Commander processes options left-to-right, so
+  // `--help --no-color` would otherwise miss the flag. Last flag wins,
+  // matching Commander's own option processing. chalk.level is read at call
+  // time, so setting it here is enough.
+  const argv = process.argv.slice(2);
+  let colorFlag: boolean | undefined;
+  for (const a of argv) {
+    if (a === '--color') colorFlag = true;
+    if (a === '--no-color') colorFlag = false;
+  }
+  if (colorFlag === true) chalk.level = 3;   // force color even when piped
+  if (colorFlag === false) chalk.level = 0;  // disable color entirely
+
+  // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys) > defaults
+  const mdColors = parseColorEnv(process.env.MDQUERY_COLORS || '');
+  const lsColors = parseColorEnv(process.env.LS_COLORS || '');
+  const colors = new Map<string, string>();
+  for (const key of ['title', 'border', 'error', 'warning']) {
+    colors.set(key, resolveColor(key, mdColors, lsColors));
+  }
+  // --no-color disables all coloring; otherwise error/warning messages are colored
+  const colorEnabled = colorFlag !== false;
+  const err = (msg: string) => colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg;
+  const warn = (msg: string) => colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg;
+
   // Track the output format with last-wins semantics across --format and the
   // --json/--csv/--table shortcut flags (Commander processes options in order).
   // formatExplicit distinguishes "user passed a format flag" from the default,
@@ -56,7 +83,7 @@ async function main() {
     .name('mdquery')
     .version(VERSION, '-v, --version')
     .description('Query YAML frontmatter of markdown files with a SQL-like language')
-    .argument('[query]', 'SQL-like query string (or pipe from stdin)')
+    .argument('[query]', 'SQL-like query string (or pipe from stdin); keywords are case-insensitive')
     .option('--dir <dir>', 'Directories to query (default: .); repeatable or comma-separated', collect)
     .option('-f, --file <file>', 'Specific file(s) to query; repeatable or comma-separated. Use -f - to read file paths from stdin', collect)
     .option('-d, --depth <n>', 'Directory depth (0 = recursive)', '0')
@@ -76,36 +103,47 @@ async function main() {
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
-      // legacy "Error: Unknown option: --card" wording.
+      // legacy "Error: Unknown option: --card" wording and colorize like the
+      // other error messages (red unless --no-color).
       outputError: (str, write) => {
         const transformed = str
           .replace(/^error: unknown option '([^']+)'/, 'Error: Unknown option: $1')
           .replace(/^error: /, 'Error: ');
-        write(transformed);
-      }
+        write(colorEnabled ? sgr(transformed, colors.get('error') ?? '31') : transformed);
+      },
+      // Commander strips ANSI from help unless the output "has colors"; make
+      // that follow --color/--no-color (pre-scanned above) instead of relying
+      // on TTY detection alone, so --color forces styled help even when piped.
+      getOutHasColors: () =>
+        colorFlag === true ? true : colorFlag === false ? false : (process.stdout.isTTY && process.stdout.hasColors?.()),
+      getErrHasColors: () =>
+        colorFlag === true ? true : colorFlag === false ? false : (process.stderr.isTTY && process.stderr.hasColors?.()),
     })
     .configureHelp({
       // Commander v15 ships plain style hooks; fill them with chalk so help
       // text is colorized on a terminal (chalk auto-detects TTY, so piped
-      // help stays clean).
-      styleTitle: (str: string) => chalk.bold(str),
-      styleOptionText: (str: string) => chalk.bold(str),
-      styleCommandText: (str: string) => chalk.bold(str),
-      styleArgumentText: (str: string) => chalk.cyan(str),
-      styleDescriptionText: (str: string) => chalk.dim(str),
+      // help stays clean). --color/--no-color are pre-scanned above because
+      // help renders during parse, before opts are available. Option entries
+      // stay plain for scannability; only section headers, arguments, and
+      // descriptions are styled.
+      styleTitle: (str: string) => chalk.bold.cyan(str),     // section headers
+      styleOptionText: (str: string) => str,                 // option flags: plain
+      styleOptionDescription: (str: string) => str,          // option descriptions: plain
+      styleCommandText: (str: string) => chalk.bold(str),    // command names
+      styleArgumentText: (str: string) => chalk.yellow(str), // <query>, <args>
+      styleDescriptionText: (str: string) => chalk.dim(str), // other descriptions
     })
     .showHelpAfterError('Try "mdquery --help" for more information.')
     .addHelpText('after', `
+${chalk.bold.cyan('Examples:')}
+  mdquery "SELECT WHERE status = 'done'"
+  mdquery --dir tasks/ "SELECT ORDER BY priority"
+  mdquery --dir ~/.agents/skills --dir ~/opt/skills "SELECT filename, source_dir"
+  mdquery --out results.json "SELECT filename, description"
+  mdquery --format=table --no-color "SELECT *"
+  fd SKILL.md | mdquery -f - "SELECT name, description"
 
-Examples:
-  mdquery "select where status = 'done'"
-  mdquery --dir tasks/ "select order by priority"
-  mdquery --dir ~/.agents/skills --dir ~/opt/skills "select filename, source_dir"
-  mdquery --out results.json "select filename, description"
-  mdquery --format=table --no-color "select *"
-  fd SKILL.md | mdquery -f - "select name, description"
-
-Query language: docs/syntax.md`);
+${chalk.bold.cyan('Query language:')} docs/syntax.md`);
 
   // No arguments at all: print help and exit 0 (legacy behavior)
   if (process.argv.slice(2).length === 0) {
@@ -117,18 +155,6 @@ Query language: docs/syntax.md`);
 
   const opts = program.opts();
   let query = program.args[0] || '';
-
-  // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys) > defaults
-  const mdColors = parseColorEnv(process.env.MDQUERY_COLORS || '');
-  const lsColors = parseColorEnv(process.env.LS_COLORS || '');
-  const colors = new Map<string, string>();
-  for (const key of ['title', 'border', 'error', 'warning']) {
-    colors.set(key, resolveColor(key, mdColors, lsColors));
-  }
-  // --no-color disables all coloring; otherwise error/warning messages are colored
-  const colorEnabled = opts.color !== false;
-  const err = (msg: string) => colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg;
-  const warn = (msg: string) => colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg;
 
   // Resolve dirs: split comma-separated values, expand each
   const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : ['.'];
@@ -207,8 +233,8 @@ Query language: docs/syntax.md`);
   // but the declared type is OutputFormat — 'table' is reachable via --format/--table.
   const toTerminal = !outPath || outPath === '-';
   const colorize = (resolvedFormat as OutputFormat) === 'table' && (
-    opts.color === true ||
-    (opts.color !== false && toTerminal && !!process.stdout.isTTY)
+    colorFlag === true ||
+    (colorFlag !== false && toTerminal && !!process.stdout.isTTY)
   );
 
   // Commander passes the value of the short `-d=...` form with a leading '='
@@ -231,8 +257,9 @@ Query language: docs/syntax.md`);
     }
     const { createInterface } = await import('readline');
     const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const prompt = colorEnabled ? sgr(`${op} (y/N) `, '01;36') : `${op} (y/N) `;
     const answer = await new Promise<string>(resolve => {
-      rl.question(`${op} (y/N) `, resolve);
+      rl.question(prompt, resolve);
     });
     rl.close();
     if (answer.trim().toLowerCase() !== 'y') {

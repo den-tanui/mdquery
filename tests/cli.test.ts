@@ -410,6 +410,65 @@ describe('color flags', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('--color forces ANSI codes in help output', () => {
+    const out = execFileSync('bun', [
+      'run', 'src/cli.ts', '--color', '--help'
+    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    expect(out).toMatch(/\x1b\[/);
+    // Section headers are bold cyan
+    expect(out).toMatch(/\x1b\[1m\x1b\[36mUsage:/);
+    expect(out).toMatch(/\x1b\[1m\x1b\[36mOptions:/);
+    expect(out).toMatch(/\x1b\[1m\x1b\[36mExamples:/);
+    // Option entries stay plain (no ANSI on the flag or its description)
+    expect(out).not.toMatch(/\x1b\[[0-9;]*m--dir/);
+    expect(out).not.toMatch(/\x1b\[[0-9;]*mDirectories to query/);
+    // Arguments are yellow
+    expect(out).toMatch(/\x1b\[33m\[query\]/);
+    // Examples use capitalized builtins
+    expect(out).toContain('SELECT WHERE status');
+    expect(out).toContain('SELECT ORDER BY priority');
+  });
+
+  it('--color colorizes commander errors', () => {
+    let threw = false;
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--color', '--card'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    } catch (e: any) {
+      threw = true;
+      expect(e.stderr.toString()).toMatch(/\x1b\[31mError: Unknown option: --card/);
+    }
+    expect(threw).toBe(true);
+  });
+
+  it('--no-color keeps commander errors clean', () => {
+    let threw = false;
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--no-color', '--card'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    } catch (e: any) {
+      threw = true;
+      expect(e.stderr.toString()).not.toMatch(/\x1b\[/);
+    }
+    expect(threw).toBe(true);
+  });
+
+  it('--no-color keeps help output clean even with --color', () => {
+    const out = execFileSync('bun', [
+      'run', 'src/cli.ts', '--color', '--no-color', '--help'
+    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    expect(out).not.toMatch(/\x1b\[/);
+  });
+
+  it('piped help output is clean by default', () => {
+    const out = execFileSync('bun', [
+      'run', 'src/cli.ts', '--help'
+    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    expect(out).not.toMatch(/\x1b\[/);
+  });
 });
 
 describe('resolveDir', () => {
