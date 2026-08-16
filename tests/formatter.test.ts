@@ -41,11 +41,13 @@ describe('Formatter', () => {
   describe('Table', () => {
     it('formats as table', () => {
       const output = Formatter.toTable(mockResult, 120);
-      expect(output).toContain('id');
-      expect(output).toContain('title');
+      expect(output).toContain('ID');
+      expect(output).toContain('TITLE');
       expect(output).toContain('Test Task');
       expect(output).toContain('┌');
       expect(output).toContain('│');
+      // Border between items: row separator present
+      expect(output).toContain('├');
     });
 
     it('shrinks wide columns to fit terminal width', () => {
@@ -71,7 +73,7 @@ describe('Formatter', () => {
         count: 1
       };
       const output = Formatter.toTable(smallResult, 200);
-      expect(output).toContain('id');
+      expect(output).toContain('ID');
       expect(output).toContain('hi');
       expect(output).not.toContain('…');
     });
@@ -138,7 +140,7 @@ describe('Formatter', () => {
       const output = Formatter.toTable(squashingResult, 100);
       // Title should not be squashed to 3 chars
       const lines = output.split('\n');
-      const dataLine = lines[2]; // First data line
+      const dataLine = lines[3]; // First data line (after top border, header, separator)
       expect(dataLine).toContain('Short');
     });
 

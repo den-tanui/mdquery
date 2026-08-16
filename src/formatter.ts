@@ -96,13 +96,15 @@ export class Formatter {
 
     const sgr = (text: string, code: string) => colorize ? `\x1b[${code}m${text}\x1b[0m` : text;
 
-    const styledHeaders = headers.map(h => sgr(h, '01;34'));
+    // Header formatting: uppercase for distinction in both modes, bold-blue SGR when colorized
+    const styledHeaders = headers.map(h => sgr(h.toUpperCase(), '01;34'));
 
     const table = new Table({
       head: styledHeaders,
       style: { head: [], border: [] },
+      // Fit text into column: truncate with ellipsis instead of wrapping
+      wordWrap: false,
       chars: {
-        'mid': '', 'left-mid': '', 'mid-mid': '', 'right-mid': '',
         'top': sgr('─', '90'),
         'top-mid': sgr('┬', '90'),
         'top-left': sgr('┌', '90'),
@@ -113,7 +115,12 @@ export class Formatter {
         'bottom-right': sgr('┘', '90'),
         'left': sgr('│', '90'),
         'right': sgr('│', '90'),
-        'middle': sgr('│', '90')
+        'middle': sgr('│', '90'),
+        // Border between items: row separators
+        'mid': sgr('─', '90'),
+        'left-mid': sgr('├', '90'),
+        'mid-mid': sgr('┼', '90'),
+        'right-mid': sgr('┤', '90')
       },
       colWidths: colWidths,
     });
