@@ -487,3 +487,139 @@ describe('Executor multi-dir', () => {
     expect(err!.phase).toBe('read');
   });
 });
+
+describe('SELECT strips all-null rows', () => {
+  const STRIP_DIR = join(__dirname, 'fixtures', 'executor-strip');
+
+  beforeAll(() => {
+    mkdirSync(STRIP_DIR, { recursive: true });
+    // has title + status
+    writeFileSync(join(STRIP_DIR, 'task.md'), `---
+title: Has Title
+status: todo
+---
+
+Body.
+`);
+    // has status only, no title
+    writeFileSync(join(STRIP_DIR, 'note.md'), `---
+status: doing
+---
+
+Body.
+`);
+    // no frontmatter at all
+    writeFileSync(join(STRIP_DIR, 'plain.md'), `Just a body.
+`);
+  });
+
+  afterAll(() => {
+    rmSync(STRIP_DIR, { recursive: true, force: true });
+  });
+
+  it('drops rows where every selected field is absent', async () => {
+    const executor = new Executor(STRIP_DIR);
+    const result = await executor.execute('select title');
+    expect(result.data).toHaveLength(1);
+    expect(result.data?.[0].title).toBe('Has Title');
+  });
+
+  it('returns zero rows when no file has the selected field', async () => {
+    const executor = new Executor(STRIP_DIR);
+    const result = await executor.execute('select name');
+    expect(result.data).toHaveLength(0);
+  });
+
+  it('keeps rows where at least one selected field is present', async () => {
+    const executor = new Executor(STRIP_DIR);
+    const result = await executor.execute('select title, status');
+    expect(result.data).toHaveLength(2);
+    const statuses = result.data!.map(r => r.status).sort();
+    expect(statuses).toEqual(['doing', 'todo']);
+  });
+
+  it('keeps all rows for select * (identity fields always present)', async () => {
+    const executor = new Executor(STRIP_DIR);
+    const result = await executor.execute('select *');
+    expect(result.data).toHaveLength(3);
+  });
+
+  it('keeps all rows for bare select (defaults to wildcard)', async () => {
+    const executor = new Executor(STRIP_DIR);
+    const result = await executor.execute('select');
+    expect(result.data).toHaveLength(3);
+  });
+});
+
+describe('SELECT LIMIT/OFFSET count result rows', () => {
+  const LIMIT_DIR = join(__dirname, 'fixtures', 'executor-limit');
+
+  beforeAll(() => {
+    mkdirSync(LIMIT_DIR, { recursive: true });
+    // first two files (by seq) have NO title — LIMIT must skip them to fill N rows
+    writeFileSync(join(LIMIT_DIR, 'f1.md'), `---
+seq: 1
+---
+
+Body.
+`);
+    writeFileSync(join(LIMIT_DIR, 'f2.md'), `---
+seq: 2
+---
+
+Body.
+`);
+    writeFileSync(join(LIMIT_DIR, 'f3.md'), `---
+seq: 3
+title: Third
+---
+
+Body.
+`);
+    writeFileSync(join(LIMIT_DIR, 'f4.md'), `---
+seq: 4
+title: Fourth
+---
+
+Body.
+`);
+  });
+
+  afterAll(() => {
+    rmSync(LIMIT_DIR, { recursive: true, force: true });
+  });
+
+  it('limit counts result rows, skipping files without the selected field', async () => {
+    const executor = new Executor(LIMIT_DIR);
+    const result = await executor.execute('select title order by seq limit 2');
+    expect(result.data).toHaveLength(2);
+    expect(result.data!.map(r => r.title)).toEqual(['Third', 'Fourth']);
+  });
+
+  it('limit 1 returns the first non-empty row', async () => {
+    const executor = new Executor(LIMIT_DIR);
+    const result = await executor.execute('select title order by seq limit 1');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].title).toBe('Third');
+  });
+
+  it('offset skips non-empty rows', async () => {
+    const executor = new Executor(LIMIT_DIR);
+    const result = await executor.execute('select title order by seq offset 1');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].title).toBe('Fourth');
+  });
+
+  it('limit + offset combine', async () => {
+    const executor = new Executor(LIMIT_DIR);
+    const result = await executor.execute('select title order by seq limit 1 offset 1');
+    expect(result.data).toHaveLength(1);
+    expect(result.data![0].title).toBe('Fourth');
+  });
+
+  it('limit larger than available rows returns all', async () => {
+    const executor = new Executor(LIMIT_DIR);
+    const result = await executor.execute('select title order by seq limit 10');
+    expect(result.data).toHaveLength(2);
+  });
+});

@@ -286,16 +286,6 @@ export class Executor {
       files = this.orderBy(files, node.orderBy);
     }
 
-    // LIMIT
-    if (node.limit) {
-      files = files.slice(0, node.limit);
-    }
-
-    // OFFSET
-    if (node.offset) {
-      files = files.slice(node.offset);
-    }
-
     // JOIN
     if (node.join) {
       files = await this.executeJoin(files, node.join);
@@ -306,11 +296,26 @@ export class Executor {
       files = this.distinct(files, node.fields);
     }
 
-    // Projection — per-file try/catch, skip + record
+    // Projection — per-file try/catch, skip + record. Rows where every
+    // selected field is undefined (files that matched but declare none of
+    // the selected fields) are dropped. LIMIT/OFFSET apply to result rows
+    // (not input files), so the loop stops once `limit` rows are collected.
     const data: Record<string, any>[] = [];
+    let skipped = 0;
     for (const f of files) {
+      if (node.limit && data.length >= node.limit) break;
       try {
-        data.push(this.project(f, node.fields));
+        const row = this.project(f, node.fields);
+        // Strip rows where every selected field is undefined (files that
+        // matched but declare none of the selected fields). null is a
+        // legitimate value (e.g. section("Nope") → null) and is kept.
+        const hasValue = Object.values(row).some(v => v !== undefined);
+        if (!hasValue) continue;
+        if (node.offset && skipped < node.offset) {
+          skipped++;
+          continue;
+        }
+        data.push(row);
       } catch (e: any) {
         state.errors.push({ path: f.path, error: e?.message ?? String(e), phase: 'evaluate' });
       }
