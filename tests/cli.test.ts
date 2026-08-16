@@ -176,9 +176,30 @@ describe('CLI --dir', () => {
       ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
       const json = JSON.parse(out);
       expect(json.data).toHaveLength(2);
+      const sources = json.data.map((r: any) => r.source_dir).sort();
+      expect(sources).toContain(dirA);
+      expect(sources).toContain(dirB);
     } finally {
       rmSync(dirA, { recursive: true, force: true });
       rmSync(dirB, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves ~ in --dir end-to-end', () => {
+    const home = homedir();
+    const dir = join(home, `.mdquery-tilde-${randomUUID()}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: Tilde\n---\n');
+    try {
+      const rel = dir.replace(home, '~');
+      const out = execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', rel, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const json = JSON.parse(out);
+      expect(json.data).toHaveLength(1);
+      expect(json.data[0].filename).toBe('a');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -313,6 +334,23 @@ describe('CLI --out', () => {
       // File still written to results.csv (user extension kept)
       const content = readFileSync(outFile, 'utf-8');
       const json = JSON.parse(content); // JSON content despite .csv extension
+      expect(json.data).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--out creates parent dirs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-out-parent-'));
+    const outFile = join(dir, 'sub', 'dir', 'results.json');
+    writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
+    try {
+      execFileSync('bun', [
+        'run', 'src/cli.ts', '--dir', dir,
+        '--out', outFile, 'select filename'
+      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const content = readFileSync(outFile, 'utf-8');
+      const json = JSON.parse(content); // valid JSON
       expect(json.data).toHaveLength(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
