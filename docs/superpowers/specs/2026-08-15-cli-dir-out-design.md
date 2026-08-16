@@ -300,15 +300,15 @@ Partial env var → only specified keys override; rest fall through. The future
 config system becomes another layer in the same chain (config → env → flags),
 writing the same `key=value` pairs — no new mechanism needed.
 
-### Table rendering: cli-table3
+### Table rendering: custom box-drawing renderer
 
-Table output is rendered by **cli-table3** (battle-tested, ANSI-aware width via
-`string-width`, custom borders, per-column alignment/wrapping, cell colors).
+Table output is rendered by a dependency-free custom renderer in
+`src/table-renderer.ts` (replaces cli-table3, whose debug-logging truncation in
+`Cell.draw` cost ~60x the render time on wrapped cells).
 
 - Full box-drawing borders (`│ ─ ┌ ┐ └ ┘`) — style configurable later via config system
-- `style: { head: [], border: [] }` → clean output by default (file-safe by construction)
 - MDQUERY_COLORS SGR codes applied to titles/border as pre-colored strings; the
-  library's ANSI-aware width calculation handles them
+  renderer's ANSI-aware width calculation handles them
 - mdquery-specific pre-processing stays: semantic caps (content → 20 chars,
   abspath → tail display), toc/section formatting, width fitting to terminal
   (reuse `allocateWidths` → pass as `colWidths`), `No results` for empty
@@ -392,7 +392,7 @@ Update examples:
 - `--out=nonexistent/dir/file.json` → creates parent dirs
 - `--out=test.json` → clean output, no ANSI codes (clean by construction)
 
-### Table rendering (cli-table3)
+### Table rendering (custom renderer)
 - Box-drawing borders present in table output
 - Width fitting: longest line ≤ terminal width (semantic caps + allocateWidths preserved)
 - Semantic caps: content → 20 chars, abspath → tail display
@@ -400,6 +400,8 @@ Update examples:
 - toc/section special formatting preserved
 - `colorize: false` → no ANSI codes (clean output)
 - `colorize: true` → titles/border colored per MDQUERY_COLORS
+- `--rows N` → each record capped at N terminal lines (last line truncated with
+  `…`); `LIMIT` controls the number of records
 
 ### Coloring
 - `--no-color` flag → no ANSI codes in output
@@ -421,7 +423,7 @@ Update examples:
 | `src/executor.ts` | `dir: string` → `dirs: string[]`, loop in `readFilesWithHooks`, stamp `source_dir` |
 | `src/files.ts` | No changes (already takes single `dir` per call) |
 | `src/file-io.ts` | No changes (already takes single `dir` per call) |
-| `src/formatter.ts` | Rewrite `toTable` with cli-table3 (box-drawing borders), `colorize` option, MDQUERY_COLORS parsing, keep semantic caps + width fitting |
+| `src/formatter.ts` | `toTable` renders via custom renderer, `colorize` option, MDQUERY_COLORS parsing, `--rows` lines-per-record cap, keep semantic caps + width fitting |
 | `src/types.ts` | `QueryOptions.dir` → `dirs?: string[]` |
 | `tests/cli.test.ts` | Add tests for `--dir` multi-dir, path expansion, `--out`, `--color`/`--no-color` |
 | `tests/executor.test.ts` | Add tests for multi-dir `readFilesWithHooks` |
@@ -433,4 +435,3 @@ Update examples:
 |---------|---------|
 | `commander` | CLI argument parsing |
 | `chalk` | Terminal coloring (CLI messages) |
-| `cli-table3` | Table rendering (box-drawing borders, ANSI-aware width) |
