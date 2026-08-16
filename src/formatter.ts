@@ -2,7 +2,7 @@
 import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
 import { stringify } from 'csv-stringify/sync';
-import Table from 'cli-table3';
+import { renderTable, truncateToWidth, wrapText, TableBorderChars } from './table-renderer';
 import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
@@ -66,7 +66,7 @@ export class Formatter {
       Math.max(h.length, ...rows.map(r => maxLineLength(r[i])))
     );
 
-    // cli-table3 uses 1 char per vertical border (left, right, and mid between columns)
+    // Each column costs 1 vertical border (left, right, and mid between columns)
     // plus padding per column (2 by default, 1 in compact mode).
     // The total non-content width = 1 (left) + 1 (right) + (headers.length - 1) (mids) = headers.length + 1
     // Total padding = headers.length * paddingPerCol
@@ -89,56 +89,44 @@ export class Formatter {
       row.map((cell, i) => wrapText(cell, innerWidths[i]))
     );
 
-    // cli-table3 colWidths include padding
-    const colWidths = innerWidths.map(w => w + paddingPerCol);
-
     // Colorize-gated wrapper around the canonical sgr from colors.ts
     const sgr = (text: string, code: string) => colorize ? sgrRaw(text, code) : text;
 
     const titleColor = colors?.get('title') ?? DEFAULT_COLORS.title;
     const borderColor = colors?.get('border') ?? DEFAULT_COLORS.border;
 
-    // Header formatting: uppercase for distinction in both modes, SGR when colorized
-    const styledHeaders = headers.map(h => sgr(h.toUpperCase(), titleColor));
+    // Header formatting: uppercase, truncated to its column width (like
+    // cli-table3), SGR-wrapped when colorized
+    const rawHeaders = headers.map((h, i) => truncateToWidth(h.toUpperCase(), innerWidths[i]));
+    const styledHeaders = rawHeaders.map(h => sgr(h, titleColor));
 
-    const borderChars = {
-      'top': sgr('─', borderColor),
-      'top-mid': sgr('┬', borderColor),
-      'top-left': sgr('┌', borderColor),
-      'top-right': sgr('┐', borderColor),
-      'bottom': sgr('─', borderColor),
-      'bottom-mid': sgr('┴', borderColor),
-      'bottom-left': sgr('└', borderColor),
-      'bottom-right': sgr('┘', borderColor),
-      'left': sgr('│', borderColor),
-      'right': sgr('│', borderColor),
-      'middle': sgr('│', borderColor),
-      // Compact mode drops the row separators
-      'mid': compact ? '' : sgr('─', borderColor),
-      'left-mid': compact ? '' : sgr('├', borderColor),
-      'mid-mid': compact ? '' : sgr('┼', borderColor),
-      'right-mid': compact ? '' : sgr('┤', borderColor)
+    const chars: TableBorderChars = {
+      top: sgr('─', borderColor),
+      topMid: sgr('┬', borderColor),
+      topLeft: sgr('┌', borderColor),
+      topRight: sgr('┐', borderColor),
+      bottom: sgr('─', borderColor),
+      bottomMid: sgr('┴', borderColor),
+      bottomLeft: sgr('└', borderColor),
+      bottomRight: sgr('┘', borderColor),
+      left: sgr('│', borderColor),
+      right: sgr('│', borderColor),
+      middle: sgr('│', borderColor),
+      // Compact mode drops the row separators (empty mid chars → separator lines skipped)
+      mid: compact ? '' : sgr('─', borderColor),
+      leftMid: compact ? '' : sgr('├', borderColor),
+      midMid: compact ? '' : sgr('┼', borderColor),
+      rightMid: compact ? '' : sgr('┤', borderColor),
     };
 
-    const table = new Table({
-      head: styledHeaders,
-      style: {
-        head: [],
-        border: [],
-        'padding-left': compact ? 0 : 1,
-        'padding-right': 1,
-      },
-      // Cells are pre-wrapped to their column width; wordWrap stays off so
-      // cli-table3 renders them verbatim (its own wordWrap truncates long
-      // unbroken words, which we handle ourselves)
-      wordWrap: false,
-      chars: borderChars,
-      colWidths: colWidths,
+    return renderTable({
+      headers: styledHeaders,
+      rows: wrappedRows,
+      colWidths: innerWidths,
+      paddingLeft: compact ? 0 : 1,
+      paddingRight: 1,
+      chars,
     });
-
-    table.push(...wrappedRows);
-
-    return table.toString();
   }
 
   // Resolve user-specified column widths against the usable width. Fixed specs
@@ -215,42 +203,6 @@ export class Formatter {
 
 function maxLineLength(value: string): number {
   return Math.max(1, ...value.split('\n').map(l => l.length));
-}
-
-// Wrap text to a column width, preserving existing newlines and breaking long
-// unbroken words (paths, URLs) so nothing is truncated
-function wrapText(text: string, width: number): string {
-  if (width <= 0) return text;
-  return text.split('\n').map(line => wrapLine(line, width)).join('\n');
-}
-
-function wrapLine(line: string, width: number): string {
-  if (line.length <= width) return line;
-  const words = line.split(' ');
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words) {
-    if (word.length > width) {
-      // Hard-break words longer than the column
-      if (current) {
-        lines.push(current);
-        current = '';
-      }
-      for (let i = 0; i < word.length; i += width) {
-        lines.push(word.slice(i, i + width));
-      }
-      continue;
-    }
-    const candidate = current === '' ? word : current + ' ' + word;
-    if (candidate.length <= width) {
-      current = candidate;
-    } else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.join('\n');
 }
 
 function formatTocForTable(value: any): string {
