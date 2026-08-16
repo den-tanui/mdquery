@@ -44,6 +44,8 @@ describe('Formatter', () => {
       expect(output).toContain('id');
       expect(output).toContain('title');
       expect(output).toContain('Test Task');
+      expect(output).toContain('┌');
+      expect(output).toContain('│');
     });
 
     it('shrinks wide columns to fit terminal width', () => {
@@ -93,10 +95,10 @@ describe('Formatter', () => {
         ],
         count: 1
       };
-      // 10 columns: minimum is 10 chars + 9 separators * 3 = 37
-      const output = Formatter.toTable(wideResult, 40);
+      // 10 columns: cli-table3 minimum is 10 chars content + 10*2 padding + 11 borders = 41
+      const output = Formatter.toTable(wideResult, 45);
       const longestLine = Math.max(...output.split('\n').map(l => l.length));
-      expect(longestLine).toBeLessThanOrEqual(40);
+      expect(longestLine).toBeLessThanOrEqual(45);
     });
 
     it('applies semantic cap to content column', () => {
@@ -138,6 +140,17 @@ describe('Formatter', () => {
       const lines = output.split('\n');
       const dataLine = lines[2]; // First data line
       expect(dataLine).toContain('Short');
+    });
+
+    it('colorize false produces clean output', () => {
+      const output = Formatter.toTable(mockResult, 120, false);
+      expect(output).not.toMatch(/\x1b\[/);
+    });
+
+    it('colorize true wraps titles and border in SGR codes', () => {
+      const output = Formatter.toTable(mockResult, 120, true);
+      expect(output).toMatch(/\x1b\[01;34m/);  // title color
+      expect(output).toMatch(/\x1b\[90m/);     // border color
     });
   });
 

@@ -2,6 +2,7 @@
 import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
 import { stringify } from 'csv-stringify/sync';
+import Table from 'cli-table3';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
 
@@ -15,12 +16,12 @@ const SEMANTIC_CAPS: Record<string, number> = {
 };
 
 export class Formatter {
-  static format(result: QueryResult, format: OutputFormat): string {
+  static format(result: QueryResult, format: OutputFormat, options?: { colorize?: boolean }): string {
     switch (format) {
       case 'json':
         return this.toJSON(result);
       case 'table':
-        return this.toTable(result);
+        return this.toTable(result, 0, options?.colorize ?? false);
       case 'csv':
         return this.toCSV(result);
       default:
@@ -28,7 +29,7 @@ export class Formatter {
     }
   }
 
-  static toTable(result: QueryResult, terminalWidth: number = 0): string {
+  static toTable(result: QueryResult, terminalWidth: number = 0, colorize: boolean = false): string {
     if (!result.data || result.data.length === 0) {
       return 'No results';
     }
@@ -70,9 +71,12 @@ export class Formatter {
       Math.max(h.length, ...cappedRows.map(r => r[i]?.length || 0))
     );
 
-    // " | " separator costs 3 chars between columns
-    const separators = headers.length > 0 ? (headers.length - 1) * 3 : 0;
-    const usable = width - separators;
+    // cli-table3 uses 1 char per vertical border (left, right, and mid between columns)
+    // plus 2 chars of padding per column by default (padding-left: 1, padding-right: 1).
+    // The total non-content width = 1 (left) + 1 (right) + (headers.length - 1) (mids) = headers.length + 1
+    // Total padding = headers.length * 2
+    const nonContentCost = headers.length > 0 ? headers.length + 1 + headers.length * 2 : 0;
+    const usable = width - nonContentCost;
 
     // Apply semantic caps to natural widths
     const cappedWidths = naturalWidths.map((w, i) => {
@@ -80,20 +84,43 @@ export class Formatter {
       return cap !== undefined ? Math.min(w, cap) : w;
     });
 
-    let widths: number[];
+    let innerWidths: number[];
     if (sum(cappedWidths) <= usable) {
-      widths = cappedWidths;
+      innerWidths = cappedWidths;
     } else {
-      widths = this.allocateWidths(cappedWidths, usable);
+      innerWidths = this.allocateWidths(cappedWidths, usable);
     }
 
-    const headerLine = headers.map((h, i) => pad(h, widths[i])).join(' | ');
-    const separatorLine = widths.map(w => '-'.repeat(w)).join(' | ');
-    const dataLines = cappedRows.map(row =>
-      row.map((cell, i) => pad(cell, widths[i])).join(' | ')
-    );
+    // cli-table3 colWidths include padding (default 2 per column)
+    const colWidths = innerWidths.map(w => w + 2);
 
-    return [headerLine, separatorLine, ...dataLines].join('\n');
+    const sgr = (text: string, code: string) => colorize ? `\x1b[${code}m${text}\x1b[0m` : text;
+
+    const styledHeaders = headers.map(h => sgr(h, '01;34'));
+
+    const table = new Table({
+      head: styledHeaders,
+      style: { head: [], border: [] },
+      chars: {
+        'mid': '', 'left-mid': '', 'mid-mid': '', 'right-mid': '',
+        'top': sgr('─', '90'),
+        'top-mid': sgr('┬', '90'),
+        'top-left': sgr('┌', '90'),
+        'top-right': sgr('┐', '90'),
+        'bottom': sgr('─', '90'),
+        'bottom-mid': sgr('┴', '90'),
+        'bottom-left': sgr('└', '90'),
+        'bottom-right': sgr('┘', '90'),
+        'left': sgr('│', '90'),
+        'right': sgr('│', '90'),
+        'middle': sgr('│', '90')
+      },
+      colWidths: colWidths,
+    });
+
+    table.push(...cappedRows);
+
+    return table.toString();
   }
 
   private static allocateWidths(rawWidths: number[], budget: number): number[] {
@@ -136,10 +163,6 @@ export class Formatter {
     }
     return stringify(result.data, { header: true, escape_formulas: true });
   }
-}
-
-function pad(value: string, width: number): string {
-  return value.length > width ? ellipsize(value, width) : value.padEnd(width);
 }
 
 function ellipsize(value: string, width: number): string {
