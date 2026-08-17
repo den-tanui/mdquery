@@ -531,23 +531,6 @@ describe('config file', () => {
     expect(json.data).toHaveLength(1);
   });
 
-  it('config dir applies when no --dir flag is given', () => {
-    writeConfig(`dir: ["${fixtureDir}"]\n`);
-    const { stdout, status } = runWithConfig(['select title']);
-    expect(status).toBe(0);
-    const json = JSON.parse(stdout);
-    expect(json.data).toHaveLength(1);
-    expect(json.data[0].title).toBe('Test Task');
-  });
-
-  it('--dir flag overrides config dir', () => {
-    writeConfig('dir: ["/nonexistent"]\n');
-    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
-    expect(status).toBe(0);
-    const json = JSON.parse(stdout);
-    expect(json.data).toHaveLength(1);
-  });
-
   it('config rows caps table lines per record', () => {
     writeConfig('format: table\nrows: 1\n');
     const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);

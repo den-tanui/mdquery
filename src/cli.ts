@@ -178,7 +178,7 @@ ${chalk.bold.cyan('Examples:')}
 ${chalk.bold.cyan('Configuration:')}
   Defaults can be set in ~/.config/mdquery/config.yaml (or
   $XDG_CONFIG_HOME/mdquery/config.yaml). Keys mirror the CLI flags:
-  dir, depth, hidden, ignore, format, color, compact, rows, columns, colors.
+  depth, hidden, ignore, format, color, compact, rows, columns, colors.
   Flags always override config values.
 
 ${chalk.bold.cyan('Version:')} ${VERSION}`);
@@ -194,9 +194,9 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   const opts = program.opts();
   let query = program.args[0] || '';
 
-  // Resolve dirs: split comma-separated values, expand each. Config dir is the
-  // default when no --dir flag is given (flags override config).
-  const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : (config?.dir ?? ['.']);
+  // Resolve dirs: split comma-separated values, expand each. Defaults to the
+// current directory when no --dir flag is given.
+  const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : ['.'];
   const dirs: string[] = rawDirs
     .flatMap((d: string) => d.split(','))
     .map((d: string) => d.trim())

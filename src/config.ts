@@ -6,7 +6,6 @@ import { join } from 'path';
 import { load as yamlLoad } from 'js-yaml';
 
 export interface Config {
-  dir?: string[];
   depth?: number;
   hidden?: boolean;
   ignore?: boolean;
@@ -45,9 +44,6 @@ export function validateConfig(raw: Record<string, unknown>): Config {
   const config: Config = {};
   for (const [key, value] of Object.entries(raw)) {
     switch (key) {
-      case 'dir':
-        config.dir = normalizeStringArray(value, key);
-        break;
       case 'depth':
         config.depth = expectNumber(value, key);
         break;
@@ -105,12 +101,6 @@ function expectEnum<T extends string>(value: unknown, key: string, allowed: read
     throw new Error(`Invalid config: ${key} must be one of: ${allowed.join(', ')}`);
   }
   return value as T;
-}
-
-function normalizeStringArray(value: unknown, key: string): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value) && value.every(v => typeof v === 'string')) return value;
-  throw new Error(`Invalid config: ${key} must be a string or array of strings`);
 }
 
 function expectStringMap(value: unknown, key: string): Record<string, string> {

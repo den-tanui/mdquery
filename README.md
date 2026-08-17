@@ -163,7 +163,6 @@ Defaults can be set in a user-level YAML config file at `$XDG_CONFIG_HOME/mdquer
 
 ```yaml
 # ~/.config/mdquery/config.yaml
-dir: ["~/tasks", "~/notes"]   # default search dirs (--dir)
 depth: 2                      # default depth (--depth, 0 = recursive)
 hidden: false                 # include hidden files (--hidden)
 ignore: true                  # respect .gitignore (--no-ignore to disable)
@@ -177,7 +176,7 @@ colors:                       # SGR codes, same keys as MDQUERY_COLORS
   border: "90"
 ```
 
-Unknown keys are ignored (forward compatible); values of the wrong type produce an error. The `colors` map sits below `MDQUERY_COLORS` and `LS_COLORS` in precedence, above the built-in defaults.
+Unknown keys are ignored (forward compatible); values of the wrong type produce an error. The `colors` map sits below `MDQUERY_COLORS` and `LS_COLORS` in precedence, above the built-in defaults. There is no `dir` key: a query without `--dir` always runs against the current directory.
 
 ### File identity fields
 

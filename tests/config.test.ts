@@ -26,7 +26,6 @@ describe('resolveConfigPath', () => {
 describe('validateConfig', () => {
   it('parses a full config', () => {
     const c = validateConfig({
-      dir: ['./tasks', './notes'],
       depth: 2,
       hidden: true,
       ignore: false,
@@ -38,7 +37,6 @@ describe('validateConfig', () => {
       colors: { title: '31', border: '90' },
     });
     expect(c).toEqual({
-      dir: ['./tasks', './notes'],
       depth: 2,
       hidden: true,
       ignore: false,
@@ -49,11 +47,6 @@ describe('validateConfig', () => {
       columns: '20,*,40',
       colors: { title: '31', border: '90' },
     });
-  });
-
-  it('accepts a single string for dir', () => {
-    const c = validateConfig({ dir: './tasks' });
-    expect(c.dir).toEqual(['./tasks']);
   });
 
   it('ignores unknown keys (forward compatible)', () => {
@@ -66,7 +59,6 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ hidden: 'yes' })).toThrow('Invalid config: hidden must be a boolean');
     expect(() => validateConfig({ format: 'xml' })).toThrow('Invalid config: format must be one of: json, table, csv');
     expect(() => validateConfig({ color: 'sometimes' })).toThrow('Invalid config: color must be one of: auto, always, never');
-    expect(() => validateConfig({ dir: 42 })).toThrow('Invalid config: dir must be a string or array of strings');
     expect(() => validateConfig({ colors: { title: 7 } })).toThrow('Invalid config: colors.title must be a string');
   });
 });
