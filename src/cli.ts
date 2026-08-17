@@ -7,6 +7,7 @@ import { program } from 'commander';
 import chalk from 'chalk';
 import { parseColorEnv, resolveColor, sgr } from './colors';
 import { loadConfig, Config } from './config';
+import { mergeDirContinuations } from './argv';
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { dirname, extname, resolve } from 'path';
 import { existsSync } from 'fs';
@@ -189,7 +190,11 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     process.exit(0);
   }
 
-  program.parse();
+  // Merge `--dir a, b` continuations (shell split on the space after the
+  // comma) before Commander parses, so flag order doesn't matter.
+  const mergedArgv = mergeDirContinuations(process.argv.slice(2));
+
+  program.parse([process.argv[0], process.argv[1], ...mergedArgv]);
 
   const opts = program.opts();
   let query = program.args[0] || '';

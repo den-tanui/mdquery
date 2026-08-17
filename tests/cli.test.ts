@@ -100,6 +100,34 @@ describe('mdquery CLI', () => {
     expect(stdout).toContain('Task');
   });
 
+  it('supports --dir with a space after the comma (query first)', () => {
+    const sub = join(fixtureDir, 'sub');
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, 'nested.md'), '---\ntitle: Nested\n---\n');
+    try {
+      const { stdout, status } = runCli(['select title', `--dir=${fixtureDir},`, sub]);
+      expect(status).toBe(0);
+      const json = JSON.parse(stdout);
+      expect(json.data.map((r: any) => r.title)).toContain('Nested');
+    } finally {
+      rmSync(sub, { recursive: true, force: true });
+    }
+  });
+
+  it('supports --dir with a space after the comma (query last)', () => {
+    const sub = join(fixtureDir, 'sub');
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, 'nested.md'), '---\ntitle: Nested\n---\n');
+    try {
+      const { stdout, status } = runCli([`--dir=${fixtureDir},`, sub, 'select title']);
+      expect(status).toBe(0);
+      const json = JSON.parse(stdout);
+      expect(json.data.map((r: any) => r.title)).toContain('Nested');
+    } finally {
+      rmSync(sub, { recursive: true, force: true });
+    }
+  });
+
   it('invalid format exits non-zero', () => {
     const { stderr, status } = runCli(['--format=xml', 'select']);
     expect(status).not.toBe(0);
