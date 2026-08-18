@@ -315,12 +315,8 @@ export class Parser {
       if (this.current().type === 'AS') {
         this.advance();
         alias = this.expect('IDENTIFIER').value;
-        // Add alias to the last field
-        if (expr.type === 'field') {
-          expr.alias = alias;
-        } else if (expr.type === 'function_call') {
-          expr.alias = alias;
-        }
+        // Add alias to the last field — any expression type can be aliased
+        (expr as { alias?: string }).alias = alias;
       }
       
       fields.push(expr);
@@ -360,6 +356,14 @@ export class Parser {
     if (token.type === 'LPAREN') {
       this.advance(); // skip (
       const expr = this.parseExpression();
+      // Support alias inside parens: (expr as alias)
+      if (this.current().type === 'AS') {
+        this.advance();
+        const alias = this.expect('IDENTIFIER').value;
+        (expr as { alias?: string }).alias = alias;
+        this.expect('RPAREN');
+        return { type: 'paren', expression: expr, alias };
+      }
       this.expect('RPAREN');
       return { type: 'paren', expression: expr };
     }

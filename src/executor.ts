@@ -374,7 +374,7 @@ export class Executor {
         result[field.alias || this.generateFieldName(field)] = value;
       } else {
         const value = this.evaluateExpression(field, { file });
-        result[this.generateFieldName(field)] = value;
+        result[(field as { alias?: string }).alias || this.generateFieldName(field)] = value;
       }
     }
 
@@ -417,6 +417,7 @@ export class Executor {
       }
       case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
       case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
+      case 'paren': return this.generateFieldName(expr.expression);
       case 'string': return `"${expr.value}"`;
       case 'regex': return expr.value;
       case 'number': return String(expr.value);

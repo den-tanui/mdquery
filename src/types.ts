@@ -128,6 +128,7 @@ export interface MethodCallNode {
   object: Expression;
   method: string;
   args: Expression[];
+  alias?: string;
 }
 
 export interface ArrayIndexNode {
@@ -155,6 +156,7 @@ export interface WildcardNode {
 export interface ParenNode {
   type: 'paren';
   expression: Expression;
+  alias?: string;
 }
 
 export interface SubqueryNode {
