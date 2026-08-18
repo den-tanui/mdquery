@@ -1,17 +1,6 @@
-# mdquery
-
-A SQL-like query language for markdown files. Query the YAML frontmatter of your markdown docs as if it were a database table.
-
-```bash
-$ mdquery "select title, status where status = 'todo' order by priority"
-+----------+--------+
-| title    | status |
-+----------+--------+
-| Fix bug  | todo   |
-| Add logo | todo   |
-+----------+--------+
-$ mdquery "select count(*) group by status"
-```
+<p align="center">
+  <img src="assets/images/Logo-Banner.png" alt="mdquery banner" width="100%">
+</p>
 
 ## Features
 
@@ -98,23 +87,23 @@ mdquery --format=json "select title, status" > saved.json  # valid JSON, include
 
 ### Options
 
-| Flag | Description |
-| --- | --- |
-| `-h`, `--help` | Print the full manual and exit |
-| `-v`, `--version` | Print the version and exit |
-| `--dir=<path>` | Directory to query (default `.`); repeatable or comma-separated. Supports `.`, `..`, `~`/`~/...`, `$VAR`/`$VAR/suffix` expansion |
-| `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated. Use `-f -` to read file paths from stdin |
-| `-d`, `--depth=<n>` | Search depth: `0` = recursive (default), `1` = top level only, `2+` = limited depth |
-| `-H`, `--hidden` | Include hidden files/directories (skipped by default) |
-| `--no-ignore` | Disable `.gitignore` filtering (enabled by default) |
-| `-y`, `--yes` | Skip confirmation prompts for `update`/`delete` |
-| `--format=<fmt>` | Output format: `json`, `table`, `csv` (default `json`) |
-| `--json` | Shortcut for `--format=json` |
-| `--csv` | Shortcut for `--format=csv` |
-| `--table` | Shortcut for `--format=table` |
-| `-o`, `--out=<file>` | Write output to a file instead of stdout. If the filename has no extension, the resolved format's extension is appended (e.g. `--out results` → `results.json`); an explicit extension is kept as-is. Parent directories are created automatically |
-| `--color` | Force colored output, even when piped (default: auto) |
-| `--no-color` | Disable colored output entirely |
+| Flag                  | Description                                                                                                                                                                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-h`, `--help`        | Print the full manual and exit                                                                                                                                                                                                                     |
+| `-v`, `--version`     | Print the version and exit                                                                                                                                                                                                                         |
+| `--dir=<path>`        | Directory to query (default `.`); repeatable or comma-separated. Supports `.`, `..`, `~`/`~/...`, `$VAR`/`$VAR/suffix` expansion                                                                                                                   |
+| `-f`, `--file=<path>` | Query specific markdown file(s); repeatable or comma-separated. Use `-f -` to read file paths from stdin                                                                                                                                           |
+| `-d`, `--depth=<n>`   | Search depth: `0` = recursive (default), `1` = top level only, `2+` = limited depth                                                                                                                                                                |
+| `-H`, `--hidden`      | Include hidden files/directories (skipped by default)                                                                                                                                                                                              |
+| `--no-ignore`         | Disable `.gitignore` filtering (enabled by default)                                                                                                                                                                                                |
+| `-y`, `--yes`         | Skip confirmation prompts for `update`/`delete`                                                                                                                                                                                                    |
+| `--format=<fmt>`      | Output format: `json`, `table`, `csv` (default `json`)                                                                                                                                                                                             |
+| `--json`              | Shortcut for `--format=json`                                                                                                                                                                                                                       |
+| `--csv`               | Shortcut for `--format=csv`                                                                                                                                                                                                                        |
+| `--table`             | Shortcut for `--format=table`                                                                                                                                                                                                                      |
+| `-o`, `--out=<file>`  | Write output to a file instead of stdout. If the filename has no extension, the resolved format's extension is appended (e.g. `--out results` → `results.json`); an explicit extension is kept as-is. Parent directories are created automatically |
+| `--color`             | Force colored output, even when piped (default: auto)                                                                                                                                                                                              |
+| `--no-color`          | Disable colored output entirely                                                                                                                                                                                                                    |
 
 Calling `mdquery` with no arguments prints the manual.
 
@@ -144,12 +133,12 @@ Table output is colorized automatically when stdout is a terminal (headers bold 
 
 Colors are configurable via the `MDQUERY_COLORS` environment variable (LS_COLORS-style, colon-separated `key=value` SGR codes):
 
-| Key | Default | Used for |
-| --- | --- | --- |
-| `title` | `01;34` (bold blue) | Table headers |
-| `border` | `90` (bright black) | Table borders |
-| `error` | `31` (red) | Error messages |
-| `warning` | `33` (yellow) | Warning messages |
+| Key       | Default             | Used for         |
+| --------- | ------------------- | ---------------- |
+| `title`   | `01;34` (bold blue) | Table headers    |
+| `border`  | `90` (bright black) | Table borders    |
+| `error`   | `31` (red)          | Error messages   |
+| `warning` | `33` (yellow)       | Warning messages |
 
 ```bash
 MDQUERY_COLORS="title=31:border=36" mdquery --format=table "select *"
@@ -163,15 +152,15 @@ Defaults can be set in a user-level YAML config file at `$XDG_CONFIG_HOME/mdquer
 
 ```yaml
 # ~/.config/mdquery/config.yaml
-depth: 2                      # default depth (--depth, 0 = recursive)
-hidden: false                 # include hidden files (--hidden)
-ignore: true                  # respect .gitignore (--no-ignore to disable)
-format: table                 # default output format (--format)
-color: auto                   # auto | always | never (--color / --no-color)
-compact: false                # compact table view (--compact)
-rows: 10                      # max table lines per record (--rows)
-columns: "20,*,40"            # table column widths (--columns)
-colors:                       # SGR codes, same keys as MDQUERY_COLORS
+depth: 2 # default depth (--depth, 0 = recursive)
+hidden: false # include hidden files (--hidden)
+ignore: true # respect .gitignore (--no-ignore to disable)
+format: table # default output format (--format)
+color: auto # auto | always | never (--color / --no-color)
+compact: false # compact table view (--compact)
+rows: 10 # max table lines per record (--rows)
+columns: "20,*,40" # table column widths (--columns)
+colors: # SGR codes, same keys as MDQUERY_COLORS
   title: "01;34"
   border: "90"
 ```
@@ -182,14 +171,14 @@ Unknown keys are ignored (forward compatible); values of the wrong type produce 
 
 Every row exposes these fields regardless of frontmatter:
 
-| Field | Meaning |
-| --- | --- |
-| `filename` | File name without the `.md` extension (e.g. `task-001`) |
-| `path` | Path relative to the search directory (e.g. `tasks/task-001`) |
-| `abspath` | Absolute path to the file |
-| `source_dir` | The search directory the file was found in (useful with multiple `--dir`s) |
-| `body` | Markdown body with the frontmatter block stripped |
-| `frontmatter` | Raw parsed frontmatter object as a single field |
+| Field         | Meaning                                                                    |
+| ------------- | -------------------------------------------------------------------------- |
+| `filename`    | File name without the `.md` extension (e.g. `task-001`)                    |
+| `path`        | Path relative to the search directory (e.g. `tasks/task-001`)              |
+| `abspath`     | Absolute path to the file                                                  |
+| `source_dir`  | The search directory the file was found in (useful with multiple `--dir`s) |
+| `body`        | Markdown body with the frontmatter block stripped                          |
+| `frontmatter` | Raw parsed frontmatter object as a single field                            |
 
 `id` is a plain frontmatter field — it is only present when the file defines it.
 

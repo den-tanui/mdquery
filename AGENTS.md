@@ -16,6 +16,10 @@ bun run build       # build:lib (dist/) + build:cli (standalone ./mdquery binary
 - `tests/cli.test.ts` runs the compiled `./mdquery` binary and auto-rebuilds it with `bun run build:cli` when the binary is stale vs `src/cli.ts`. The binary is gitignored but required by tests.
 - `dist/` is gitignored yet `dist/index.js` and `dist/cli.js` are **tracked in git**. Rebuilding dirties the working tree; don't commit dist churn unless asked.
 
+## IMPORTANT
+
+When making big changes, always consider how the lib will be affected. Remember that a primary use case for mdquery is to become the backbone of projext, a project management tui that stores tasks as markdown files. always show how the changes will be implemented in projext.
+
 ## Architecture
 
 Pipeline: `cli.ts` → `lexer.ts` (tokens) → `parser.ts` (AST) → `executor.ts` → `formatter.ts` (json/table/csv). Supporting modules:
