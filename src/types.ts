@@ -294,3 +294,162 @@ export interface ExecutorHooks {
   // Handle custom builtin function calls
   onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any;
 }
+
+// ===== Body element data types (body-syntax design, 2026-08-17) =====
+
+/** mdast source position */
+export interface ElementPosition {
+  start: { line: number; column: number; offset?: number };
+  end: { line: number; column: number; offset?: number };
+}
+
+export interface HeadingElement {
+  title: string;
+  level: number;
+  content?: string;
+  position?: ElementPosition;
+}
+
+export interface LinkElement {
+  text: string;
+  url: string;
+  position?: ElementPosition;
+}
+
+export interface LinkRefElement {
+  text: string;
+  identifier: string;
+  position?: ElementPosition;
+}
+
+export interface ImageElement {
+  alt: string;
+  url: string;
+  position?: ElementPosition;
+}
+
+export interface ImageRefElement {
+  alt: string;
+  identifier: string;
+  position?: ElementPosition;
+}
+
+export interface CodeElement {
+  lang?: string;
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface InlineCodeElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface TableCellElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface TableRowElement {
+  cells: TableCellElement[];
+  position?: ElementPosition;
+}
+
+export interface TableElement {
+  headers: TableCellElement[];
+  rows: TableRowElement[];
+  position?: ElementPosition;
+}
+
+export interface ListItemElement {
+  content: string;
+  checked: boolean | null;
+  children: ListItemElement[];
+  position?: ElementPosition;
+}
+
+export interface ListElement {
+  ordered: boolean;
+  items: ListItemElement[];
+  position?: ElementPosition;
+}
+
+export interface BlockquoteElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface ParagraphElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface HtmlElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface EmphasisElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface StrongElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface DeleteElement {
+  content: string;
+  position?: ElementPosition;
+}
+
+export interface BreakElement {
+  position?: ElementPosition;
+}
+
+export interface FootnoteRefElement {
+  label: string;
+  position?: ElementPosition;
+}
+
+export interface DefinitionElement {
+  identifier: string;
+  url: string;
+  title?: string;
+  position?: ElementPosition;
+}
+
+export interface TocEntry {
+  level: number;
+  title: string;
+}
+
+/**
+ * BodyIndex — lazy markdown body index. Constructed on first body-element
+ * access, then cached on the FileData. One AST walk builds every index.
+ */
+export interface BodyIndex {
+  headings: { [level: number]: HeadingElement[] };
+  links: LinkElement[];
+  linkRefs: LinkRefElement[];
+  images: ImageElement[];
+  imageRefs: ImageRefElement[];
+  code: CodeElement[];
+  inlineCode: InlineCodeElement[];
+  tables: TableElement[];
+  tableRows: TableRowElement[];
+  tableCells: TableCellElement[];
+  lists: ListElement[];
+  listItems: ListItemElement[];
+  blockquotes: BlockquoteElement[];
+  paragraphs: ParagraphElement[];
+  html: HtmlElement[];
+  emphasis: EmphasisElement[];
+  strong: StrongElement[];
+  del: DeleteElement[];
+  breaks: BreakElement[];
+  footnotes: FootnoteRefElement[];
+  definitions: DefinitionElement[];
+  toc: TocEntry[];
+}
