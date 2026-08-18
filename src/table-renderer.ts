@@ -1,7 +1,8 @@
 // src/table-renderer.ts
-// Dependency-free box-drawing table renderer. Replaces cli-table3, which spent
-// ~60x the time in debug-logging truncation (Cell.draw → utils.truncate) on
-// every line of every cell.
+// Minimal box-drawing table renderer. Replaces cli-table3, which spent ~60x
+// the time in debug-logging truncation (Cell.draw → utils.truncate) on every
+// line of every cell. string-width measures display columns: wide (CJK/emoji)
+// characters count as 2 and ANSI SGR sequences are stripped.
 
 export interface TableBorderChars {
   top: string;
@@ -30,19 +31,27 @@ export interface RenderTableOptions {
   chars: TableBorderChars;
 }
 
-const ANSI_RE = /\u001b\[[0-9;]*m/g;
+import stringWidth from 'string-width';
 
 export function displayWidth(text: string): number {
-  return text.replace(ANSI_RE, '').length;
+  return stringWidth(text);
 }
 
 // Truncate to a display width, appending '…' when the text overflows (matches
-// cli-table3's header behavior). Plain length-based: headers are ASCII field
-// names, so length == display width.
+// cli-table3's header behavior). Width-aware: wide (CJK/emoji) characters
+// count as 2 columns, and code points are never split mid-character.
 export function truncateToWidth(text: string, width: number): string {
-  if (text.length <= width) return text;
+  if (displayWidth(text) <= width) return text;
   if (width <= 1) return '…';
-  return text.slice(0, width - 1) + '…';
+  let acc = '';
+  let w = 0;
+  for (const ch of text) {
+    const cw = stringWidth(ch);
+    if (w + cw > width - 1) break;
+    acc += ch;
+    w += cw;
+  }
+  return acc + '…';
 }
 
 // Wrap text to a column width, preserving existing newlines and breaking long
@@ -53,24 +62,37 @@ export function wrapText(text: string, width: number): string {
 }
 
 function wrapLine(line: string, width: number): string {
-  if (line.length <= width) return line;
+  if (displayWidth(line) <= width) return line;
   const words = line.split(' ');
   const lines: string[] = [];
   let current = '';
   for (const word of words) {
-    if (word.length > width) {
-      // Hard-break words longer than the column
+    if (displayWidth(word) > width) {
+      // Hard-break words longer than the column (by display width)
       if (current) {
         lines.push(current);
         current = '';
       }
-      for (let i = 0; i < word.length; i += width) {
-        lines.push(word.slice(i, i + width));
+      let rest = word;
+      while (displayWidth(rest) > width) {
+        let take = '';
+        let w = 0;
+        for (const ch of rest) {
+          const cw = stringWidth(ch);
+          // Always take the first character even if it alone exceeds the
+          // column, so a wide char can never stall the loop
+          if (take !== '' && w + cw > width) break;
+          take += ch;
+          w += cw;
+        }
+        lines.push(take);
+        rest = rest.slice(take.length);
       }
+      if (rest) current = rest;
       continue;
     }
     const candidate = current === '' ? word : current + ' ' + word;
-    if (candidate.length <= width) {
+    if (displayWidth(candidate) <= width) {
       current = candidate;
     } else {
       lines.push(current);

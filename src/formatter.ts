@@ -4,7 +4,7 @@ import { formatTocAsTree, Section } from './files';
 import { Builtins } from './builtins';
 import { TitleFormat } from './config';
 import { stringify } from 'csv-stringify/sync';
-import { renderTable, truncateToWidth, wrapText, capLines, TableBorderChars } from './table-renderer';
+import { renderTable, truncateToWidth, wrapText, capLines, displayWidth, TableBorderChars } from './table-renderer';
 import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
@@ -223,7 +223,7 @@ export class Formatter {
 }
 
 function maxLineLength(value: string): number {
-  return Math.max(1, ...value.split('\n').map(l => l.length));
+  return Math.max(1, ...value.split('\n').map(l => displayWidth(l)));
 }
 
 // Apply trimAll per line so multi-line structured cells (toc trees, section

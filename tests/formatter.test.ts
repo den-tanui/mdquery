@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { Formatter, OutputFormat } from '../src/formatter';
 import { QueryResult } from '../src/types';
+import { displayWidth } from '../src/table-renderer';
 
 describe('Formatter', () => {
   const mockResult: QueryResult = {
@@ -101,6 +102,24 @@ describe('Formatter', () => {
       const output = Formatter.toTable(wideResult, 45);
       const longestLine = Math.max(...output.split('\n').map(l => l.length));
       expect(longestLine).toBeLessThanOrEqual(45);
+    });
+
+    it('keeps the table within width and preserves wide characters', () => {
+      const wideResult: QueryResult = {
+        type: 'select',
+        data: [
+          { id: '1', description: '漢字'.repeat(20), filename: '', path: '', abspath: '', filepath: '', content: '' }
+        ],
+        count: 1
+      };
+      const output = Formatter.toTable(wideResult, 80);
+      const longestLine = Math.max(...output.split('\n').map(l => displayWidth(l)));
+      expect(longestLine).toBeLessThanOrEqual(80);
+      // Wide pairs render unbroken (allocated width accounts for 2-col chars)
+      expect(output).toContain('漢字');
+      // Every character survives wrapping — no truncation or dropping
+      expect((output.match(/漢/g) ?? []).length).toBe(20);
+      expect((output.match(/字/g) ?? []).length).toBe(20);
     });
 
     it('wraps long content instead of truncating', () => {
