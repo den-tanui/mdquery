@@ -844,6 +844,7 @@ export class Executor {
       case 'file': return this.evaluateFile(args, context);
       case 'has': return args[0] !== undefined && args[0] !== null;
       case 'has_section': return this.evaluateHasSection(args, context);
+      case 'outline': return this.evaluateOutline(args, context);
     }
 
     // Apply hooks
@@ -1190,14 +1191,74 @@ export class Executor {
   private evaluateToc(args: any[], context: EvaluationContext): any {
     const file = context.file as FileData;
     // Prefer precomputed regex-based sections (fast path, avoids remark parse)
+    let entries: { level: number; title: string }[] = [];
     if (file.sections && file.sections.size > 0) {
-      return Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+      entries = Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+    } else if (this.getFileBody(file)) {
+      const extractor = this.getContentExtractor(file);
+      entries = extractor.extractToc();
     }
-    if (!this.getFileBody(file)) {
-      return [];
+    // Level filter: toc(1, 2) → only levels 1 and 2
+    if (args.length > 0) {
+      const levels = new Set<number>();
+      for (const arg of args) {
+        if (typeof arg === 'number') levels.add(arg);
+        else if (Array.isArray(arg)) arg.forEach(a => { if (typeof a === 'number') levels.add(a); });
+      }
+      if (levels.size > 0) {
+        entries = entries.filter(e => levels.has(e.level));
+      }
     }
-    const extractor = this.getContentExtractor(file);
-    return extractor.extractToc();
+    return entries;
+  }
+
+  // outline(depth?) — box-drawing heading tree as a scalar string.
+  private evaluateOutline(args: any[], context: EvaluationContext): any {
+    const file = context.file as FileData;
+    const maxDepth = args[0] && typeof args[0] === 'number' ? args[0] : 6;
+
+    let entries: { level: number; title: string }[] = [];
+    if (file.sections && file.sections.size > 0) {
+      entries = Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+    } else if (this.getFileBody(file)) {
+      const extractor = this.getContentExtractor(file);
+      entries = extractor.extractToc();
+    }
+
+    const filtered = entries.filter(e => e.level <= maxDepth);
+    if (filtered.length === 0) return '';
+
+    // Classic tree-drawing: track pending vertical bars per depth.
+    // prefix[i] = true  → a vertical bar continues at this depth
+    // prefix[i] = false → blank at this depth (last sibling)
+    const lines: string[] = [];
+    const bars: boolean[] = [];
+
+    filtered.forEach((entry, i) => {
+      const depth = entry.level;
+
+      // Find whether this heading has a following sibling at the same level
+      // (scanning forward until a lower-level heading is found).
+      let hasNext = false;
+      for (let j = i + 1; j < filtered.length; j++) {
+        if (filtered[j].level === depth) { hasNext = true; break; }
+        if (filtered[j].level < depth) break;
+      }
+
+      // Compute the prefix: for each ancestor depth, draw a bar or blank.
+      let prefix = '';
+      for (let d = 1; d < depth; d++) {
+        prefix += bars[d - 1] ? '│   ' : '    ';
+      }
+      lines.push(prefix + (hasNext ? '├── ' : '└── ') + entry.title);
+
+      // Update bar state for this depth.
+      bars[depth - 1] = hasNext;
+      // Clear deeper bars (no longer relevant after this heading).
+      while (bars.length > depth) bars.pop();
+    });
+
+    return lines.join('\n');
   }
 
   private evaluateContent(args: any[], context: EvaluationContext): any {
@@ -1227,7 +1288,41 @@ export class Executor {
     if (args[0] === 'values') {
       return Object.values(frontmatter);
     }
+    // fields("query") / fields("query", true) — wildcard filtering
+    if (typeof args[0] === 'string') {
+      const pattern = args[0];
+      const withValues = args[1] === true;
+      const matches = this.wildcardMatch(pattern);
+      const keys = Object.keys(frontmatter).filter(k => matches(k));
+      if (withValues) {
+        const result: Record<string, any> = {};
+        for (const key of keys) result[key] = frontmatter[key];
+        return result;
+      }
+      return keys;
+    }
     return { ...frontmatter };
+  }
+
+  // Wildcard matcher: no wildcards → exact; leading * → contains;
+  // trailing * → starts_with; both * → contains.
+  private wildcardMatch(pattern: string): (value: string) => boolean {
+    if (pattern === '*') return () => true;
+    const leading = pattern.startsWith('*');
+    const trailing = pattern.endsWith('*');
+    if (leading && trailing) {
+      const mid = pattern.slice(1, -1);
+      return v => v.includes(mid);
+    }
+    if (trailing) {
+      const prefix = pattern.slice(0, -1);
+      return v => v.startsWith(prefix);
+    }
+    if (leading) {
+      const suffix = pattern.slice(1);
+      return v => v.endsWith(suffix);
+    }
+    return v => v === pattern;
   }
 
   // file() returns the current file's metadata map (lazily loaded during the

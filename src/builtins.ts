@@ -215,12 +215,18 @@ export class Builtins {
     return now.toISOString().split('T')[0];
   }
 
-  static fields(context?: Record<string, any>, includeValues?: boolean): string[] | Record<string, any> {
+  static fields(context?: Record<string, any>, includeValues?: boolean, pattern?: string): string[] | Record<string, any> {
     if (!context) return includeValues ? {} : [];
     
     // Filter out internal fields
     const internalFields = ['filename', 'path', 'abspath', 'filepath', 'content', 'sections'];
-    const fields = Object.keys(context).filter(key => !internalFields.includes(key));
+    let fields = Object.keys(context).filter(key => !internalFields.includes(key));
+    
+    // Wildcard pattern: fields("*or*") → keys containing "or"
+    if (pattern) {
+      const matches = this.wildcardMatch(pattern);
+      fields = fields.filter(k => matches(k));
+    }
     
     if (includeValues) {
       const result: Record<string, any> = {};
@@ -233,22 +239,80 @@ export class Builtins {
     return fields;
   }
 
-  static toc(context?: Record<string, any>, levels?: number | number[]): string[] {
+  // Wildcard matcher: no wildcards → exact; leading * → contains;
+  // trailing * → starts_with; both * → contains.
+  private static wildcardMatch(pattern: string): (value: string) => boolean {
+    if (pattern === '*') return () => true;
+    const leading = pattern.startsWith('*');
+    const trailing = pattern.endsWith('*');
+    if (leading && trailing) {
+      const mid = pattern.slice(1, -1);
+      return v => v.includes(mid);
+    }
+    if (trailing) {
+      const prefix = pattern.slice(0, -1);
+      return v => v.startsWith(prefix);
+    }
+    if (leading) {
+      const suffix = pattern.slice(1);
+      return v => v.endsWith(suffix);
+    }
+    return v => v === pattern;
+  }
+
+  static toc(context?: Record<string, any>, ...levels: any[]): { level: number; title: string }[] {
     if (!context?.sections) return [];
     
     const sections: Section[] = Array.from(context.sections.values());
     
     // Normalize levels to array
-    const levelArray = Array.isArray(levels) ? levels : 
-                       typeof levels === 'number' ? [levels] : [];
+    const levelArray = levels
+      .flat()
+      .filter((l): l is number => typeof l === 'number');
     
     // Filter by levels if specified
     const filtered = levelArray.length > 0
       ? sections.filter(s => levelArray.includes(s.level))
       : sections;
     
-    // Return flat list as "level:title" strings
-    return filtered.map(s => `${s.level}:${s.title}`);
+    // Structured entries: {level, title}
+    return filtered.map(s => ({ level: s.level, title: s.title }));
+  }
+
+  // outline(depth?) — box-drawing heading tree as a scalar string.
+  static outline(context?: Record<string, any>, maxDepth: number = 6): string {
+    if (!context?.sections) return '';
+
+    const sections: Section[] = Array.from((context.sections as Map<string, Section>).values())
+      .filter(s => s.level <= maxDepth);
+
+    if (sections.length === 0) return '';
+
+    const lines: string[] = [];
+    const bars: boolean[] = [];
+
+    sections.forEach((section, i) => {
+      const depth = section.level;
+
+      // Whether a following sibling exists at the same level before any
+      // lower-level heading.
+      let hasNext = false;
+      for (let j = i + 1; j < sections.length; j++) {
+        if (sections[j].level === depth) { hasNext = true; break; }
+        if (sections[j].level < depth) break;
+      }
+
+      let prefix = '';
+      for (let d = 1; d < depth; d++) {
+        prefix += bars[d - 1] ? '│   ' : '    ';
+      }
+      lines.push(prefix + (hasNext ? '├── ' : '└── ') + section.title);
+
+      bars[depth - 1] = hasNext;
+      while (bars.length > depth) bars.pop();
+    });
+
+    return lines.join('\n');
   }
 
   static section(context?: Record<string, any>, name?: string): string | Record<string, string> | null {
@@ -403,7 +467,19 @@ export class Builtins {
         return builtin(args[0]);
       }
       
-      if (normalizedName === 'fields' || normalizedName === 'toc' || normalizedName === 'section') {
+      if (normalizedName === 'fields') {
+        return builtin(context, args[0], args[1]);
+      }
+
+      if (normalizedName === 'section') {
+        return builtin(context, args[0]);
+      }
+
+      if (normalizedName === 'toc') {
+        return builtin(context, ...args);
+      }
+
+      if (normalizedName === 'outline') {
         return builtin(context, args[0]);
       }
       
