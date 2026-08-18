@@ -15,6 +15,17 @@ function requireStringOrArray(value: any, fn: string): string | any[] {
   return value;
 }
 
+// Split a string into lowercase words on whitespace, underscores, hyphens, and
+// camelCase boundaries: "Setup Guide" / "setup_guide" / "setup-guide" /
+// "setupGuide" all → ["setup", "guide"]
+function splitWords(value: string): string[] {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter(Boolean);
+}
+
 export class Builtins {
   static now(): string {
     return new Date().toISOString();
@@ -50,6 +61,51 @@ export class Builtins {
     return value.replace(/[\u0000-\u001f\u2028\u2029\u0085|]/g, ' ');
   }
 
+  // Case-formatting builtins. These are the single source of truth for string
+  // case conversion: queries can call them directly and the table formatter
+  // uses the same functions for header title-formatting.
+
+  // First letter of each word up, rest down: "setup guide" → "Setup Guide"
+  static capitalize(value: string): string {
+    requireString(value, 'capitalize');
+    return value.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+  }
+
+  // Strip separators, camelCase: "setup guide" → "setupGuide"
+  static camelCase(value: string): string {
+    requireString(value, 'camel_case');
+    return splitWords(value)
+      .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
+  }
+
+  // camelCase with the first letter up: "setup guide" → "SetupGuide"
+  static pascalCase(value: string): string {
+    requireString(value, 'pascal_case');
+    return splitWords(value)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join('');
+  }
+
+  // First letter of the first word up, rest down: "setup guide" → "Setup guide"
+  static sentence(value: string): string {
+    requireString(value, 'sentence');
+    const s = value.toLowerCase();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // Lowercase, underscore-separated: "Setup Guide" → "setup_guide"
+  static snakeCase(value: string): string {
+    requireString(value, 'snake_case');
+    return splitWords(value).join('_');
+  }
+
+  // Lowercase, hyphen-separated: "Setup Guide" → "setup-guide"
+  static kebabCase(value: string): string {
+    requireString(value, 'kebab_case');
+    return splitWords(value).join('-');
+  }
+
   static contains(value: string, substring: string): boolean {
     requireString(value, 'contains');
     return value.includes(substring);
@@ -75,6 +131,14 @@ export class Builtins {
       throw new TypeError(`join() requires an array, got ${typeof array}`);
     }
     return array.join(delimiter);
+  }
+
+  // Replace all occurrences of a substring (String.replaceAll semantics)
+  static replace(value: string, search: string, replacement: string): string {
+    requireString(value, 'replace');
+    requireString(search, 'replace');
+    requireString(replacement, 'replace');
+    return value.replaceAll(search, replacement);
   }
 
   static id(context?: Record<string, any>): string {

@@ -95,4 +95,68 @@ describe('Builtins', () => {
       expect(Builtins.trimAll('line1\u2028line2')).toBe('line1 line2');
     });
   });
+
+  describe('replace()', () => {
+    it('replaces all occurrences of a substring', () => {
+      expect(Builtins.replace('a-b-c', '-', '_')).toBe('a_b_c');
+      expect(Builtins.replace('hello world', 'o', '0')).toBe('hell0 w0rld');
+    });
+
+    it('requires string args', () => {
+      expect(() => Builtins.replace(42 as any, 'a', 'b')).toThrow('replace() requires a string');
+    });
+  });
+
+  describe('capitalize()', () => {
+    it('uppercases the first letter of each word, lowercases the rest', () => {
+      expect(Builtins.capitalize('setup guide')).toBe('Setup Guide');
+      expect(Builtins.capitalize('SETUP GUIDE')).toBe('Setup Guide');
+      expect(Builtins.capitalize('hello')).toBe('Hello');
+    });
+
+    it('does not touch separators (title normalization is formatter-side)', () => {
+      expect(Builtins.capitalize('some-text')).toBe('Some-text');
+      expect(Builtins.capitalize('some_title')).toBe('Some_title');
+    });
+  });
+
+  describe('camelCase()', () => {
+    it('strips separators and camelCases', () => {
+      expect(Builtins.camelCase('setup guide')).toBe('setupGuide');
+      expect(Builtins.camelCase('setup_guide')).toBe('setupGuide');
+      expect(Builtins.camelCase('setup-guide')).toBe('setupGuide');
+      expect(Builtins.camelCase('setupGuide')).toBe('setupGuide');
+    });
+  });
+
+  describe('pascalCase()', () => {
+    it('camelCases with the first letter up', () => {
+      expect(Builtins.pascalCase('setup guide')).toBe('SetupGuide');
+      expect(Builtins.pascalCase('setup_guide')).toBe('SetupGuide');
+      expect(Builtins.pascalCase('setup-guide')).toBe('SetupGuide');
+    });
+  });
+
+  describe('sentence()', () => {
+    it('uppercases only the first letter of the first word', () => {
+      expect(Builtins.sentence('setup guide')).toBe('Setup guide');
+      expect(Builtins.sentence('SETUP GUIDE')).toBe('Setup guide');
+    });
+  });
+
+  describe('snakeCase()', () => {
+    it('lowercases and joins with underscores', () => {
+      expect(Builtins.snakeCase('Setup Guide')).toBe('setup_guide');
+      expect(Builtins.snakeCase('setup-guide')).toBe('setup_guide');
+      expect(Builtins.snakeCase('setupGuide')).toBe('setup_guide');
+    });
+  });
+
+  describe('kebabCase()', () => {
+    it('lowercases and joins with hyphens', () => {
+      expect(Builtins.kebabCase('Setup Guide')).toBe('setup-guide');
+      expect(Builtins.kebabCase('setup_guide')).toBe('setup-guide');
+      expect(Builtins.kebabCase('setupGuide')).toBe('setup-guide');
+    });
+  });
 });

@@ -5,6 +5,15 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { load as yamlLoad } from 'js-yaml';
 
+export type TitleFormat = 'none' | 'upper' | 'capitalize' | 'camel-case' | 'pascal-case';
+
+export interface TableConfig {
+  trim?: boolean;
+  'title-formatting'?: TitleFormat;
+  colors?: Record<string, string>;
+  normalize?: boolean;
+}
+
 export interface Config {
   depth?: number;
   hidden?: boolean;
@@ -15,6 +24,7 @@ export interface Config {
   rows?: number;
   columns?: string;
   colors?: Record<string, string>;
+  table?: TableConfig;
 }
 
 // Resolve the config file path: $XDG_CONFIG_HOME/mdquery/config.yaml or
@@ -71,6 +81,9 @@ export function validateConfig(raw: Record<string, unknown>): Config {
       case 'colors':
         config.colors = expectStringMap(value, key);
         break;
+      case 'table':
+        config.table = expectTableConfig(value, key);
+        break;
       default:
         // Unknown keys are ignored for forward compatibility
         break;
@@ -113,4 +126,31 @@ function expectStringMap(value: unknown, key: string): Record<string, string> {
     out[k] = v;
   }
   return out;
+}
+
+function expectTableConfig(value: unknown, key: string): TableConfig {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Invalid config: ${key} must be a mapping`);
+  }
+  const table: TableConfig = {};
+  for (const [k, v] of Object.entries(value)) {
+    switch (k) {
+      case 'trim':
+        table.trim = expectBoolean(v, `${key}.trim`);
+        break;
+      case 'title-formatting':
+        table['title-formatting'] = expectEnum(v, `${key}.title-formatting`, ['none', 'upper', 'capitalize', 'camel-case', 'pascal-case'] as const);
+        break;
+      case 'colors':
+        table.colors = expectStringMap(v, `${key}.colors`);
+        break;
+      case 'normalize':
+        table.normalize = expectBoolean(v, `${key}.normalize`);
+        break;
+      default:
+        // Unknown table keys are ignored for forward compatibility
+        break;
+    }
+  }
+  return table;
 }

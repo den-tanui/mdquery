@@ -1,6 +1,8 @@
 // src/formatter.ts
 import { QueryResult } from './types';
 import { formatTocAsTree, Section } from './files';
+import { Builtins } from './builtins';
+import { TitleFormat } from './config';
 import { stringify } from 'csv-stringify/sync';
 import { renderTable, truncateToWidth, wrapText, capLines, TableBorderChars } from './table-renderer';
 import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
@@ -20,6 +22,9 @@ export interface TableOptions {
   compact?: boolean;
   maxLinesPerRecord?: number; // cap each record at N terminal lines (--rows)
   columnWidths?: ColumnWidthSpec[];
+  trim?: boolean | boolean[]; // trimAll cell values; array = per-column (default true)
+  titleFormat?: TitleFormat;  // header case formatting (default 'capitalize')
+  normalize?: boolean;        // replace non-alphanumeric runs with spaces before title formatting (default true)
 }
 
 const MIN_COLUMN_WIDTH = 3;
@@ -45,18 +50,24 @@ export class Formatter {
     }
 
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
-    const { colorize = false, colors, compact = false, maxLinesPerRecord, columnWidths } = options ?? {};
+    const { colorize = false, colors, compact = false, maxLinesPerRecord, columnWidths, trim = true, titleFormat = 'capitalize', normalize = true } = options ?? {};
 
     const data = result.data;
 
     const headers = Object.keys(data[0]);
-    const rows = data.map(row => headers.map(h => {
+    const rows = data.map(row => headers.map((h, colIdx) => {
       const value = (row as any)[h];
-      // Format toc and section fields specially
+      // Per-column trim: array entries apply positionally; unspecified
+      // positions default to trim (true), so `--trim 0` trims all but col 1
+      const shouldTrim = Array.isArray(trim) ? (trim[colIdx] ?? true) : trim;
+      // Format toc and section fields specially (tree structure preserved);
+      // when trimming, sanitize per line so box-drawing chars survive
       if (h === 'toc' || h === 'toc()' || h.startsWith('toc(') || h === 'section' || h === 'section()' || h.startsWith('section(') || h.startsWith('section.')) {
-        return formatTocForTable(value);
+        const formatted = formatTocForTable(value);
+        return shouldTrim ? trimAllPerLine(formatted) : formatted;
       }
-      return String(value ?? '');
+      const cell = String(value ?? '');
+      return shouldTrim ? Builtins.trimAll(cell) : cell;
     }));
 
     // Natural column widths: max line length per cell (multi-line cells don't
@@ -94,10 +105,21 @@ export class Formatter {
     const titleColor = colors?.get('title') ?? DEFAULT_COLORS.title;
     const borderColor = colors?.get('border') ?? DEFAULT_COLORS.border;
 
-    // Header formatting: uppercase, truncated to its column width (like
-    // cli-table3), SGR-wrapped when colorized
-    const rawHeaders = headers.map((h, i) => truncateToWidth(h.toUpperCase(), innerWidths[i]));
-    const styledHeaders = rawHeaders.map(h => sgr(h, titleColor));
+    // Table element colors: header/separator/cell keys fall back to the base
+    // title/border colors (empty string = no color for that element)
+    const headerColor = (colors?.get('header') || colors?.get('title')) || DEFAULT_COLORS.title;
+    const separatorColor = (colors?.get('separator') || colors?.get('border')) || DEFAULT_COLORS.border;
+    const cellColor = colors?.get('cell') || '';
+
+    // Header formatting: case-formatted via the shared builtins, truncated to
+    // its column width (like cli-table3), SGR-wrapped when colorized
+    const rawHeaders = headers.map((h, i) => truncateToWidth(formatHeader(h, titleFormat, normalize), innerWidths[i]));
+    const styledHeaders = rawHeaders.map(h => sgr(h, headerColor));
+
+    // Cell color: applied per line after wrapping so displayWidth stays correct
+    const styledRows = colorize && cellColor
+      ? wrappedRows.map(row => row.map(cell => cell.split('\n').map(line => sgr(line, cellColor)).join('\n')))
+      : wrappedRows;
 
     const chars: TableBorderChars = {
       top: sgr('─', borderColor),
@@ -112,15 +134,15 @@ export class Formatter {
       right: sgr('│', borderColor),
       middle: sgr('│', borderColor),
       // Compact mode drops the row separators (empty mid chars → separator lines skipped)
-      mid: compact ? '' : sgr('─', borderColor),
-      leftMid: compact ? '' : sgr('├', borderColor),
-      midMid: compact ? '' : sgr('┼', borderColor),
-      rightMid: compact ? '' : sgr('┤', borderColor),
+      mid: compact ? '' : sgr('─', separatorColor),
+      leftMid: compact ? '' : sgr('├', separatorColor),
+      midMid: compact ? '' : sgr('┼', separatorColor),
+      rightMid: compact ? '' : sgr('┤', separatorColor),
     };
 
     return renderTable({
       headers: styledHeaders,
-      rows: wrappedRows,
+      rows: styledRows,
       colWidths: innerWidths,
       paddingLeft: compact ? 0 : 1,
       paddingRight: 1,
@@ -202,6 +224,29 @@ export class Formatter {
 
 function maxLineLength(value: string): number {
   return Math.max(1, ...value.split('\n').map(l => l.length));
+}
+
+// Apply trimAll per line so multi-line structured cells (toc trees, section
+// maps) keep their line structure while control chars and pipes are sanitized
+function trimAllPerLine(value: string): string {
+  return value.split('\n').map(line => Builtins.trimAll(line)).join('\n');
+}
+
+// Format a header using the shared case builtins (single source of truth with
+// the query-level functions). When normalize is true (default), runs of
+// non-alphanumeric characters are replaced with spaces first so separators
+// (hyphens, underscores, dots) become word boundaries: "some-title" with
+// capitalize → "Some Title", not "Some-title".
+function formatHeader(header: string, format: TitleFormat, normalize: boolean): string {
+  if (format === 'none') return header;
+  const value = normalize ? header.replace(/[^\p{L}\p{N}]+/gu, ' ').trim() : header;
+  switch (format) {
+    case 'upper': return Builtins.upper(value);
+    case 'capitalize': return Builtins.capitalize(value);
+    case 'camel-case': return Builtins.camelCase(value);
+    case 'pascal-case': return Builtins.pascalCase(value);
+    default: return header;
+  }
 }
 
 function formatTocForTable(value: any): string {

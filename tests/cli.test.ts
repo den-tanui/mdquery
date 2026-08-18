@@ -204,6 +204,71 @@ describe('mdquery CLI', () => {
     expect(status).not.toBe(0);
     expect(stderr).toContain('Invalid rows');
   });
+
+  it('--trim * trims all columns (pipes and control chars → spaces)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-trim-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: "a|b"\nnote: "c\\nd"\n---\n');
+    try {
+      const { stdout, status } = runCli(['--dir', dir, '--table', '--trim', '*', 'select title, note']);
+      expect(status).toBe(0);
+      expect(stdout).toContain('a b');
+      expect(stdout).not.toContain('a|b');
+      expect(stdout).toContain('c d');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--trim 0 trims all columns except the first', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-trim0-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: "a|b"\nnote: "c|d"\n---\n');
+    try {
+      const { stdout, status } = runCli(['--dir', dir, '--table', '--trim', '0', 'select title, note']);
+      expect(status).toBe(0);
+      expect(stdout).toContain('a|b');   // col 1 (title) not trimmed
+      expect(stdout).not.toContain('c|d'); // col 2 (note) trimmed
+      expect(stdout).toContain('c d');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--no-trim preserves pipes and control chars', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-notrim-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: "a|b"\n---\n');
+    try {
+      const { stdout, status } = runCli(['--dir', dir, '--table', '--no-trim', 'select title']);
+      expect(status).toBe(0);
+      expect(stdout).toContain('a|b');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('invalid --trim spec errors', () => {
+    const { stderr, status } = runCli(['--dir', fixtureDir, '--trim', 'x,y', 'select title']);
+    expect(status).not.toBe(0);
+    expect(stderr).toContain('Invalid trim');
+  });
+
+  it('--title-format upper uppercases headers', () => {
+    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--title-format', 'upper', 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('TITLE');
+  });
+
+  it('--title-format none keeps headers as-is', () => {
+    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--title-format', 'none', 'select title']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('title');
+    expect(stdout).not.toContain('Title');
+  });
+
+  it('invalid --title-format errors', () => {
+    const { stderr, status } = runCli(['--dir', fixtureDir, '--title-format', 'title', 'select title']);
+    expect(status).not.toBe(0);
+    expect(stderr).toContain('Invalid title-format');
+  });
 });
 
 describe('CLI --dir', () => {
@@ -529,8 +594,8 @@ describe('config file', () => {
     writeFileSync(join(dir, 'config.yaml'), yaml);
   }
 
-  function runWithConfig(args: string[]): { stdout: string; stderr: string; status: number } {
-    return runCli(args, { XDG_CONFIG_HOME: configHome });
+  function runWithConfig(args: string[], env?: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
+    return runCli(args, { XDG_CONFIG_HOME: configHome, ...env });
   }
 
   beforeAll(() => {
@@ -548,7 +613,7 @@ describe('config file', () => {
     const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
     expect(status).toBe(0);
     expect(stdout).toContain('┌');
-    expect(stdout).toContain('TITLE');
+    expect(stdout).toContain('Title');
   });
 
   it('--format flag overrides config format', () => {
@@ -629,6 +694,61 @@ describe('config file', () => {
     const { stderr, status } = runWithConfig([`--dir=${fixtureDir}`, 'select title']);
     expect(status).toBe(1);
     expect(stderr).toContain('Invalid config');
+  });
+
+  it('table.normalize: false keeps separators in formatted headers', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-normalize-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
+    try {
+      writeConfig('format: table\ntable:\n  normalize: false\n');
+      const { stdout, status } = runWithConfig([`--dir=${dir}`, 'select *'], { COLUMNS: '200' });
+      expect(status).toBe(0);
+      expect(stdout).toContain('Some-text');
+      expect(stdout).not.toContain('Some Text');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('table.normalize defaults to true (hyphenated headers get word-separated)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-normalize-true-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
+    try {
+      writeConfig('format: table\n');
+      const { stdout, status } = runWithConfig([`--dir=${dir}`, 'select *'], { COLUMNS: '200' });
+      expect(status).toBe(0);
+      expect(stdout).toContain('Some Text');
+      expect(stdout).not.toContain('Some-text');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--no-normalize keeps separators in formatted headers', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-no-normalize-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
+    try {
+      const { stdout, status } = runCli(['--dir', dir, '--table', '--no-normalize', 'select *'], { COLUMNS: '200' });
+      expect(status).toBe(0);
+      expect(stdout).toContain('Some-text');
+      expect(stdout).not.toContain('Some Text');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('--normalize overrides config table.normalize: false', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cli-normalize-flag-'));
+    writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
+    try {
+      writeConfig('format: table\ntable:\n  normalize: false\n');
+      const { stdout, status } = runWithConfig([`--dir=${dir}`, '--normalize', 'select *'], { COLUMNS: '200' });
+      expect(status).toBe(0);
+      expect(stdout).toContain('Some Text');
+      expect(stdout).not.toContain('Some-text');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -35,6 +35,12 @@ describe('validateConfig', () => {
       rows: 5,
       columns: '20,*,40',
       colors: { title: '31', border: '90' },
+      table: {
+        trim: false,
+        'title-formatting': 'pascal-case',
+        colors: { header: '01;35', separator: '90', cell: '' },
+        normalize: false,
+      },
     });
     expect(c).toEqual({
       depth: 2,
@@ -46,6 +52,12 @@ describe('validateConfig', () => {
       rows: 5,
       columns: '20,*,40',
       colors: { title: '31', border: '90' },
+      table: {
+        trim: false,
+        'title-formatting': 'pascal-case',
+        colors: { header: '01;35', separator: '90', cell: '' },
+        normalize: false,
+      },
     });
   });
 
@@ -60,6 +72,14 @@ describe('validateConfig', () => {
     expect(() => validateConfig({ format: 'xml' })).toThrow('Invalid config: format must be one of: json, table, csv');
     expect(() => validateConfig({ color: 'sometimes' })).toThrow('Invalid config: color must be one of: auto, always, never');
     expect(() => validateConfig({ colors: { title: 7 } })).toThrow('Invalid config: colors.title must be a string');
+  });
+
+  it('validates the table group', () => {
+    expect(() => validateConfig({ table: { trim: 'yes' } })).toThrow('Invalid config: table.trim must be a boolean');
+    expect(() => validateConfig({ table: { 'title-formatting': 'title' } })).toThrow('Invalid config: table.title-formatting must be one of: none, upper, capitalize, camel-case, pascal-case');
+    expect(() => validateConfig({ table: { colors: { header: 7 } } })).toThrow('Invalid config: table.colors.header must be a string');
+    expect(() => validateConfig({ table: 'nope' })).toThrow('Invalid config: table must be a mapping');
+    expect(() => validateConfig({ table: { normalize: 'yes' } })).toThrow('Invalid config: table.normalize must be a boolean');
   });
 });
 

@@ -6,7 +6,7 @@ import { VERSION } from './version';
 import { program } from 'commander';
 import chalk from 'chalk';
 import { parseColorEnv, resolveColor, sgr } from './colors';
-import { loadConfig, Config } from './config';
+import { loadConfig, Config, TitleFormat } from './config';
 import { mergeDirContinuations } from './argv';
 import { writeFile, mkdir, readFile } from 'fs/promises';
 import { dirname, extname, resolve } from 'path';
@@ -81,13 +81,25 @@ async function main() {
     if (a === '--ignore') ignoreFlag = true;
   }
 
+  // --no-normalize is likewise always defined (defaults true); pre-scan argv so
+  // the explicit positive flag can override a config table.normalize: false.
+  let normalizeFlag: boolean | undefined;
+  for (const a of argv) {
+    if (a === '--no-normalize') normalizeFlag = false;
+    if (a === '--normalize') normalizeFlag = true;
+  }
+
   // Build the color environment: MDQUERY_COLORS > LS_COLORS (file-like keys)
-  // > config colors > defaults
+  // > config colors > defaults. Table element colors (header/separator/cell)
+  // come from config.table.colors, merged over the top-level colors map.
   const mdColors = parseColorEnv(process.env.MDQUERY_COLORS || '');
   const lsColors = parseColorEnv(process.env.LS_COLORS || '');
   const configColors = new Map(Object.entries(config?.colors ?? {}));
+  for (const [k, v] of Object.entries(config?.table?.colors ?? {})) {
+    configColors.set(k, v);
+  }
   const colors = new Map<string, string>();
-  for (const key of ['title', 'border', 'error', 'warning']) {
+  for (const key of ['title', 'border', 'error', 'warning', 'header', 'separator', 'cell']) {
     colors.set(key, resolveColor(key, mdColors, lsColors, configColors));
   }
   // --no-color disables all coloring; otherwise error/warning messages are colored
@@ -134,6 +146,11 @@ async function main() {
     .option('--compact', 'Compact table view (no row separators, tighter padding)')
     .option('--rows <n>', 'Max terminal lines per record in table output (LIMIT controls result count)', parseInt)
     .option('--columns <spec>', 'Table column widths: comma-separated chars, percentages (10%), or * for auto (e.g. 20,*,40)')
+    .option('--trim <spec>', 'Trim table cell values: * for all columns, or positional 1/0 per column (e.g. 1,0,1); unspecified columns default to trim')
+    .option('--no-trim', 'Disable trimming of table cell values')
+    .option('--title-format <format>', 'Table header case: none | upper | capitalize | camel-case | pascal-case')
+    .option('--normalize', 'Replace non-alphanumeric separators in table headers before case formatting (default)')
+    .option('--no-normalize', 'Do not replace non-alphanumeric separators in table headers before case formatting')
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
       // legacy "Error: Unknown option: --card" wording and colorize like the
@@ -179,7 +196,8 @@ ${chalk.bold.cyan('Examples:')}
 ${chalk.bold.cyan('Configuration:')}
   Defaults can be set in ~/.config/mdquery/config.yaml (or
   $XDG_CONFIG_HOME/mdquery/config.yaml). Keys mirror the CLI flags:
-  depth, hidden, ignore, format, color, compact, rows, columns, colors.
+  depth, hidden, ignore, format, color, compact, rows, columns, colors,
+  and table (trim, title-formatting, colors, normalize).
   Flags always override config values.
 
 ${chalk.bold.cyan('Version:')} ${VERSION}`);
@@ -307,6 +325,30 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     }
   }
 
+  // Resolve trim: --trim <spec> (positional per-column) > --no-trim (none) >
+  // config.table.trim (boolean only) > default all columns
+  let trimValue: boolean | boolean[] = config?.table?.trim ?? true;
+  if (opts.trim === false) {
+    trimValue = false;
+  } else if (typeof opts.trim === 'string') {
+    try {
+      trimValue = parseTrimSpec(opts.trim);
+    } catch (e: any) {
+      console.error(err(`Error: Invalid trim: ${opts.trim} (${e.message})`));
+      process.exit(1);
+    }
+  }
+
+  // Resolve title-formatting: --title-format flag > config.table.title-formatting > capitalize
+  const titleFormatValue: TitleFormat = opts.titleFormat ?? config?.table?.['title-formatting'] ?? 'capitalize';
+  if (!['none', 'upper', 'capitalize', 'camel-case', 'pascal-case'].includes(titleFormatValue)) {
+    console.error(err(`Error: Invalid title-format: ${titleFormatValue} (expected none, upper, capitalize, camel-case, or pascal-case)`));
+    process.exit(1);
+  }
+
+  // Resolve title normalization: flag (pre-scanned) > config.table.normalize > true
+  const normalizeValue = normalizeFlag ?? config?.table?.normalize ?? true;
+
   // Confirmation for destructive operations
   const op = query.trim().split(/\s+/)[0].toLowerCase();
   if (op === 'delete' && !query.trim().toLowerCase().includes('where')) {
@@ -361,6 +403,9 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
       compact: opts.compact ?? config?.compact ?? false,
       maxLinesPerRecord: opts.rows ?? config?.rows,
       columnWidths,
+      trim: trimValue,
+      titleFormat: titleFormatValue,
+      normalize: normalizeValue,
     });
 
     // --out: write to file or stdout (file output is clean by construction —
@@ -379,6 +424,18 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
 if (import.meta.main) {
   main();
+}
+
+// Parse a --trim spec like "1,0,1" into per-column booleans. Each entry is a
+// trim flag: 1/true/on/yes/* → trim, 0/false/off/no → no trim. Unspecified
+// columns default to trim (true) at render time.
+function parseTrimSpec(spec: string): boolean[] {
+  return spec.split(',').map(part => {
+    const p = part.trim().toLowerCase();
+    if (p === '' || p === '1' || p === 'true' || p === 'on' || p === 'yes' || p === '*') return true;
+    if (p === '0' || p === 'false' || p === 'off' || p === 'no') return false;
+    throw new Error(`expected 1/0, true/false, on/off, or *`);
+  });
 }
 
 // Parse a --columns spec like "20,*,40%" into width specs. Each entry is a

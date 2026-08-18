@@ -41,8 +41,8 @@ describe('Formatter', () => {
   describe('Table', () => {
     it('formats as table', () => {
       const output = Formatter.toTable(mockResult, 120);
-      expect(output).toContain('ID');
-      expect(output).toContain('TITLE');
+      expect(output).toContain('Id');
+      expect(output).toContain('Title');
       expect(output).toContain('Test Task');
       expect(output).toContain('┌');
       expect(output).toContain('│');
@@ -73,7 +73,7 @@ describe('Formatter', () => {
         count: 1
       };
       const output = Formatter.toTable(smallResult, 200);
-      expect(output).toContain('ID');
+      expect(output).toContain('Id');
       expect(output).toContain('hi');
       expect(output).not.toContain('…');
     });
@@ -201,13 +201,115 @@ describe('Formatter', () => {
       expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
     });
 
+    it('uses table element colors (header/separator/cell) when provided', () => {
+      const colors = new Map<string, string>([
+        ['header', '35'], ['separator', '33'], ['cell', '36']
+      ]);
+      const output = Formatter.toTable(mockResult, 120, { colorize: true, colors });
+      expect(output).toMatch(/\x1b\[35m/);  // header magenta
+      expect(output).toMatch(/\x1b\[33m/);  // separator yellow
+      expect(output).toMatch(/\x1b\[36m/);  // cell cyan
+      expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
+    });
+
+    it('header color falls back to title color when header key is absent', () => {
+      const colors = new Map<string, string>([['title', '31']]);
+      const output = Formatter.toTable(mockResult, 120, { colorize: true, colors });
+      expect(output).toMatch(/\x1b\[31m/);
+    });
+
+    it('trims cell values by default (control chars and pipes → spaces)', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ title: 'a|b\nc', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120);
+      expect(output).toContain('a b c');
+      expect(output).not.toContain('a|b');
+    });
+
+    it('trim: false preserves control chars and pipes', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ title: 'a|b\nc', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { trim: false });
+      expect(output).toContain('a|b');
+    });
+
+    it('trim array applies per column; unspecified columns default to trim', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ title: 'a|b', note: 'c|d', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      // Column 0 (title) not trimmed, column 1 (note) trimmed
+      const output = Formatter.toTable(result, 120, { trim: [false, true] });
+      expect(output).toContain('a|b');
+      expect(output).not.toContain('c|d');
+      expect(output).toContain('c d');
+    });
+
+    it('titleFormat: none keeps headers as-is', () => {
+      const output = Formatter.toTable(mockResult, 120, { titleFormat: 'none' });
+      expect(output).toContain('id');
+      expect(output).toContain('title');
+      expect(output).not.toContain('Title');
+    });
+
+    it('titleFormat: upper uppercases headers', () => {
+      const output = Formatter.toTable(mockResult, 120, { titleFormat: 'upper' });
+      expect(output).toContain('ID');
+      expect(output).toContain('TITLE');
+    });
+
+    it('titleFormat: pascal-case PascalCases headers', () => {
+      const output = Formatter.toTable(mockResult, 120, { titleFormat: 'pascal-case' });
+      expect(output).toContain('Id');
+      expect(output).toContain('Title');
+    });
+
+    it('titleFormat normalizes separators by default (hyphens → word boundaries)', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { titleFormat: 'capitalize' });
+      expect(output).toContain('Some Text');
+      expect(output).not.toContain('Some-text');
+    });
+
+    it('normalize: false keeps separators in formatted headers', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { titleFormat: 'capitalize', normalize: false });
+      expect(output).toContain('Some-text');
+      expect(output).not.toContain('Some Text');
+    });
+
+    it('titleFormat: none keeps headers raw regardless of normalize', () => {
+      const result: QueryResult = {
+        type: 'select',
+        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
+        count: 1
+      };
+      const output = Formatter.toTable(result, 120, { titleFormat: 'none', normalize: true });
+      expect(output).toContain('some-text');
+    });
+
     it('compact mode drops row separators and tightens padding', () => {
       const output = Formatter.toTable(mockResult, 120, { compact: true });
       // No row separators between data rows
       expect(output).not.toContain('├');
       expect(output).not.toContain('┼');
       // Header directly above first data row (no separator line)
-      expect(output).toContain('│TITLE');
+      expect(output).toContain('│Title');
       // Data still present
       expect(output).toContain('Test Task');
       expect(output).toContain('Another Task');
@@ -252,7 +354,7 @@ describe('Formatter', () => {
       });
       // Fixed widths honored: title column is 20 chars wide
       const headerLine = output.split('\n')[1];
-      expect(headerLine).toContain('TITLE');
+      expect(headerLine).toContain('Title');
       // Auto column gets the remaining space; full text present (wrapped)
       const stripped = output.replace(/[^a-z]/gi, '');
       expect(stripped).toContain('amuchlongerdescriptionhere');
@@ -271,7 +373,7 @@ describe('Formatter', () => {
       });
       // 25% of usable (100 - 7 = 93) = 23 chars for title
       const headerLine = output.split('\n')[1];
-      expect(headerLine).toContain('TITLE');
+      expect(headerLine).toContain('Title');
       expect(headerLine.length).toBeLessThanOrEqual(100);
     });
   });
