@@ -1,51 +1,79 @@
 // tests/table-renderer.test.ts
-import { describe, it, expect } from 'vitest';
-import { renderTable, truncateToWidth, wrapText, capLines, displayWidth, TableBorderChars } from '../src/table-renderer';
+import { describe, expect, it } from 'vitest';
+import {
+  capLines,
+  displayWidth,
+  renderTable,
+  TableBorderChars,
+  truncateToWidth,
+  wrapText,
+} from '../src/table-renderer';
 
 const chars: TableBorderChars = {
-  top: '─', topMid: '┬', topLeft: '┌', topRight: '┐',
-  bottom: '─', bottomMid: '┴', bottomLeft: '└', bottomRight: '┘',
-  left: '│', right: '│', middle: '│',
-  mid: '─', leftMid: '├', midMid: '┼', rightMid: '┤',
+  top: '─',
+  topMid: '┬',
+  topLeft: '┌',
+  topRight: '┐',
+  bottom: '─',
+  bottomMid: '┴',
+  bottomLeft: '└',
+  bottomRight: '┘',
+  left: '│',
+  right: '│',
+  middle: '│',
+  mid: '─',
+  leftMid: '├',
+  midMid: '┼',
+  rightMid: '┤',
 };
 
 describe('renderTable', () => {
   it('renders a basic table with exact output', () => {
     const output = renderTable({
       headers: ['ID', 'TITLE'],
-      rows: [['1', 'Test Task'], ['2', 'Another Task']],
+      rows: [
+        ['1', 'Test Task'],
+        ['2', 'Another Task'],
+      ],
       colWidths: [2, 12],
       paddingLeft: 1,
       paddingRight: 1,
       chars,
     });
-    expect(output).toBe([
-      '┌────┬──────────────┐',
-      '│ ID │ TITLE        │',
-      '├────┼──────────────┤',
-      '│ 1  │ Test Task    │',
-      '├────┼──────────────┤',
-      '│ 2  │ Another Task │',
-      '└────┴──────────────┘',
-    ].join('\n'));
+    expect(output).toBe(
+      [
+        '┌────┬──────────────┐',
+        '│ ID │ TITLE        │',
+        '├────┼──────────────┤',
+        '│ 1  │ Test Task    │',
+        '├────┼──────────────┤',
+        '│ 2  │ Another Task │',
+        '└────┴──────────────┘',
+      ].join('\n'),
+    );
   });
 
   it('compact mode drops separators and tightens padding', () => {
     const output = renderTable({
       headers: ['ID', 'TITLE'],
-      rows: [['1', 'Test Task'], ['2', 'Another Task']],
+      rows: [
+        ['1', 'Test Task'],
+        ['2', 'Another Task'],
+      ],
       colWidths: [2, 12],
       paddingLeft: 0,
       paddingRight: 1,
       chars: { ...chars, mid: '', leftMid: '', midMid: '', rightMid: '' },
     });
-    expect(output).toBe([
-      '┌───┬─────────────┐',
-      '│ID │TITLE        │',
-      '│1  │Test Task    │',
-      '│2  │Another Task │',
-      '└───┴─────────────┘',
-    ].join('\n'));
+    expect(output).toBe(
+      [
+        '┌───┬─────────────┐',
+        '│ID │TITLE        │',
+        '│1  │Test Task    │',
+        '│2  │Another Task │',
+        '└───┴─────────────┘',
+      ].join('\n'),
+    );
   });
 
   it('renders a single column without mid borders', () => {
@@ -57,13 +85,9 @@ describe('renderTable', () => {
       paddingRight: 1,
       chars,
     });
-    expect(output).toBe([
-      '┌───────┐',
-      '│ TITLE │',
-      '├───────┤',
-      '│ Only  │',
-      '└───────┘',
-    ].join('\n'));
+    expect(output).toBe(
+      ['┌───────┐', '│ TITLE │', '├───────┤', '│ Only  │', '└───────┘'].join('\n'),
+    );
   });
 
   it('multi-line cells expand row height', () => {
@@ -75,14 +99,16 @@ describe('renderTable', () => {
       paddingRight: 1,
       chars,
     });
-    expect(output).toBe([
-      '┌─────┬────────────────────────────────┐',
-      '│ ID  │ DESCRIPTION                    │',
-      '├─────┼────────────────────────────────┤',
-      '│ 1   │ a very long description that   │',
-      '│     │ keeps going and going          │',
-      '└─────┴────────────────────────────────┘',
-    ].join('\n'));
+    expect(output).toBe(
+      [
+        '┌─────┬────────────────────────────────┐',
+        '│ ID  │ DESCRIPTION                    │',
+        '├─────┼────────────────────────────────┤',
+        '│ 1   │ a very long description that   │',
+        '│     │ keeps going and going          │',
+        '└─────┴────────────────────────────────┘',
+      ].join('\n'),
+    );
   });
 
   it('pads styled headers with ANSI-aware width', () => {
@@ -92,7 +118,13 @@ describe('renderTable', () => {
       colWidths: [2, 12],
       paddingLeft: 1,
       paddingRight: 1,
-      chars: { ...chars, top: '\x1b[90m─\x1b[0m', topMid: '\x1b[90m┬\x1b[0m', topLeft: '\x1b[90m┌\x1b[0m', topRight: '\x1b[90m┐\x1b[0m' },
+      chars: {
+        ...chars,
+        top: '\x1b[90m─\x1b[0m',
+        topMid: '\x1b[90m┬\x1b[0m',
+        topLeft: '\x1b[90m┌\x1b[0m',
+        topRight: '\x1b[90m┐\x1b[0m',
+      },
     });
     expect(output).toContain('\x1b[90m');
     expect(output).toContain('│ \x1b[01;34mID\x1b[0m │ \x1b[01;34mTITLE\x1b[0m        │');
@@ -107,13 +139,7 @@ describe('renderTable', () => {
       paddingRight: 1,
       chars,
     });
-    expect(output).toBe([
-      '┌──────┐',
-      '│ NAME │',
-      '├──────┤',
-      '│ 漢字 │',
-      '└──────┘',
-    ].join('\n'));
+    expect(output).toBe(['┌──────┐', '│ NAME │', '├──────┤', '│ 漢字 │', '└──────┘'].join('\n'));
   });
 
   it('renders header-only table when rows are empty', () => {
@@ -125,12 +151,7 @@ describe('renderTable', () => {
       paddingRight: 1,
       chars,
     });
-    expect(output).toBe([
-      '┌────┐',
-      '│ ID │',
-      '├────┤',
-      '└────┘',
-    ].join('\n'));
+    expect(output).toBe(['┌────┐', '│ ID │', '├────┤', '└────┘'].join('\n'));
   });
 });
 

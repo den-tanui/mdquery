@@ -1,10 +1,11 @@
 // tests/config.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+
 import { randomUUID } from 'crypto';
-import { resolveConfigPath, loadConfig, validateConfig } from '../src/config';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { loadConfig, resolveConfigPath, validateConfig } from '../src/config';
 
 describe('resolveConfigPath', () => {
   it('uses XDG_CONFIG_HOME when set', () => {
@@ -67,19 +68,39 @@ describe('validateConfig', () => {
   });
 
   it('throws on wrong types', () => {
-    expect(() => validateConfig({ depth: 'deep' })).toThrow('Invalid config: depth must be a number');
-    expect(() => validateConfig({ hidden: 'yes' })).toThrow('Invalid config: hidden must be a boolean');
-    expect(() => validateConfig({ format: 'xml' })).toThrow('Invalid config: format must be one of: json, table, csv');
-    expect(() => validateConfig({ color: 'sometimes' })).toThrow('Invalid config: color must be one of: auto, always, never');
-    expect(() => validateConfig({ colors: { title: 7 } })).toThrow('Invalid config: colors.title must be a string');
+    expect(() => validateConfig({ depth: 'deep' })).toThrow(
+      'Invalid config: depth must be a number',
+    );
+    expect(() => validateConfig({ hidden: 'yes' })).toThrow(
+      'Invalid config: hidden must be a boolean',
+    );
+    expect(() => validateConfig({ format: 'xml' })).toThrow(
+      'Invalid config: format must be one of: json, table, csv',
+    );
+    expect(() => validateConfig({ color: 'sometimes' })).toThrow(
+      'Invalid config: color must be one of: auto, always, never',
+    );
+    expect(() => validateConfig({ colors: { title: 7 } })).toThrow(
+      'Invalid config: colors.title must be a string',
+    );
   });
 
   it('validates the table group', () => {
-    expect(() => validateConfig({ table: { trim: 'yes' } })).toThrow('Invalid config: table.trim must be a boolean');
-    expect(() => validateConfig({ table: { 'title-formatting': 'title' } })).toThrow('Invalid config: table.title-formatting must be one of: none, upper, capitalize, camel-case, pascal-case');
-    expect(() => validateConfig({ table: { colors: { header: 7 } } })).toThrow('Invalid config: table.colors.header must be a string');
-    expect(() => validateConfig({ table: 'nope' })).toThrow('Invalid config: table must be a mapping');
-    expect(() => validateConfig({ table: { normalize: 'yes' } })).toThrow('Invalid config: table.normalize must be a boolean');
+    expect(() => validateConfig({ table: { trim: 'yes' } })).toThrow(
+      'Invalid config: table.trim must be a boolean',
+    );
+    expect(() => validateConfig({ table: { 'title-formatting': 'title' } })).toThrow(
+      'Invalid config: table.title-formatting must be one of: none, upper, capitalize, camel-case, pascal-case',
+    );
+    expect(() => validateConfig({ table: { colors: { header: 7 } } })).toThrow(
+      'Invalid config: table.colors.header must be a string',
+    );
+    expect(() => validateConfig({ table: 'nope' })).toThrow(
+      'Invalid config: table must be a mapping',
+    );
+    expect(() => validateConfig({ table: { normalize: 'yes' } })).toThrow(
+      'Invalid config: table.normalize must be a boolean',
+    );
   });
 });
 

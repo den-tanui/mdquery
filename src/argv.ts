@@ -3,7 +3,18 @@
 
 // Options that consume a following value (used to distinguish true
 // positionals from option values when scanning argv).
-const VALUE_TAKING_OPTS = new Set(['--dir', '-f', '--file', '-d', '--depth', '--format', '-o', '--out', '--rows', '--columns']);
+const VALUE_TAKING_OPTS = new Set([
+  '--dir',
+  '-f',
+  '--file',
+  '-d',
+  '--depth',
+  '--format',
+  '-o',
+  '--out',
+  '--rows',
+  '--columns',
+]);
 
 // Collect true positionals: bare words that are not option values.
 export function collectPositionals(argv: string[]): string[] {

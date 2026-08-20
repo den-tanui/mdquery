@@ -1,10 +1,11 @@
 // src/files.ts
-import { readdir, readFile, writeFile } from 'fs/promises';
+
 import { statSync } from 'fs';
-import { join, basename, dirname, relative, isAbsolute, resolve } from 'path';
-import { userInfo } from 'os';
+import { readdir, readFile, writeFile } from 'fs/promises';
 import matter from 'gray-matter';
 import ignore from 'ignore';
+import { userInfo } from 'os';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import type { FileError } from './types';
 
 export interface Section {
@@ -61,7 +62,9 @@ function uidToName(uid: number): string {
       }
       return cachedUsername;
     }
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   return String(uid);
 }
 
@@ -77,7 +80,7 @@ function modeToString(mode: number): string {
   const chars = 'rwxrwxrwx';
   let s = '';
   for (let i = 0; i < 9; i++) {
-    s += (m & (0o400 >> i)) ? chars[i] : '-';
+    s += m & (0o400 >> i) ? chars[i] : '-';
   }
   return s;
 }
@@ -96,7 +99,7 @@ export function buildFileMetadata(abspath: string): FileMetadata | undefined {
       owner: uidToName(stat.uid),
       group: gidToName(stat.gid),
       size: stat.size,
-      mode: modeToString(stat.mode)
+      mode: modeToString(stat.mode),
     };
   } catch {
     return undefined;
@@ -125,7 +128,7 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'format'>> = {
   ignore: true,
   fast: false,
   metadata: false,
-  onError: () => {}
+  onError: () => {},
 };
 
 // Fields that are row-level identity/metadata, never part of the file's
@@ -137,8 +140,17 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'format'>> = {
 // - metadata: stat-derived FileMetadata (mtime, size, ...), never persisted
 // - sections/frontmatter: parsed views of the file, not source fields
 const NON_FRONTMATTER_FIELDS = [
-  'filename', 'path', 'abspath', 'filepath', 'file', 'content',
-  'source_dir', 'metadata', 'body', 'sections', 'frontmatter'
+  'filename',
+  'path',
+  'abspath',
+  'filepath',
+  'file',
+  'content',
+  'source_dir',
+  'metadata',
+  'body',
+  'sections',
+  'frontmatter',
 ];
 
 export class FileOps {
@@ -150,14 +162,14 @@ export class FileOps {
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = await this.read(dir, f, opts);
+        const file = await FileOps.read(dir, f, opts);
         if (file) files.push(file);
       }
       return files;
     }
 
     const files: FileData[] = [];
-    await this.walk(dir, dir, opts, [], files);
+    await FileOps.walk(dir, dir, opts, [], files);
     return files;
   }
 
@@ -166,14 +178,14 @@ export class FileOps {
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = this.readSync(dir, f, opts);
+        const file = FileOps.readSync(dir, f, opts);
         if (file) files.push(file);
       }
       return files;
     }
 
     const files: FileData[] = [];
-    this.walkSync(dir, dir, opts, [], files);
+    FileOps.walkSync(dir, dir, opts, [], files);
     return files;
   }
 
@@ -182,7 +194,7 @@ export class FileOps {
     currentDir: string,
     opts: Required<Omit<ReadOptions, 'files' | 'format'>>,
     parentIgnores: IgnoreLayer[],
-    out: FileData[]
+    out: FileData[],
   ): Promise<void> {
     let entries;
     try {
@@ -215,14 +227,14 @@ export class FileOps {
       if (!opts.hidden && name.startsWith('.')) continue;
 
       // Respect .gitignore (dirs and files)
-      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+      if (opts.ignore && FileOps.isIgnored(ignores, fullPath, entry.isDirectory())) {
         continue;
       }
 
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = await this.read(root, fullPath, opts);
+        const file = await FileOps.read(root, fullPath, opts);
         if (file) out.push(file);
       }
     }
@@ -233,7 +245,13 @@ export class FileOps {
     if (canRecurse) {
       const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
-        await this.walk(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+        await FileOps.walk(
+          root,
+          join(currentDir, dir.name),
+          { ...opts, depth: nextDepth },
+          ignores,
+          out,
+        );
       }
     }
   }
@@ -248,7 +266,11 @@ export class FileOps {
     return false;
   }
 
-  private static async read(root: string, filepath: string, options?: ReadOptions): Promise<FileData | null> {
+  private static async read(
+    root: string,
+    filepath: string,
+    options?: ReadOptions,
+  ): Promise<FileData | null> {
     try {
       const { readFileSync } = require('fs');
       const content = readFileSync(filepath, 'utf-8');
@@ -271,7 +293,7 @@ export class FileOps {
         content,
         body: contentBody,
         sections,
-        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined
+        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined,
       };
     } catch (e: any) {
       options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });
@@ -300,7 +322,7 @@ export class FileOps {
         content,
         body: contentBody,
         sections,
-        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined
+        metadata: options?.metadata ? buildFileMetadata(filepath) : undefined,
       };
     } catch (e: any) {
       options?.onError?.({ path: filepath, error: e?.message ?? String(e), phase: 'read' });
@@ -313,7 +335,7 @@ export class FileOps {
     currentDir: string,
     opts: Required<Omit<ReadOptions, 'files' | 'format'>>,
     parentIgnores: IgnoreLayer[],
-    out: FileData[]
+    out: FileData[],
   ): void {
     const { readdirSync } = require('fs');
     let entries;
@@ -348,14 +370,14 @@ export class FileOps {
       if (!opts.hidden && name.startsWith('.')) continue;
 
       // Respect .gitignore (dirs and files)
-      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+      if (opts.ignore && FileOps.isIgnored(ignores, fullPath, entry.isDirectory())) {
         continue;
       }
 
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = this.readSync(root, fullPath, opts);
+        const file = FileOps.readSync(root, fullPath, opts);
         if (file) out.push(file);
       }
     }
@@ -366,7 +388,13 @@ export class FileOps {
     if (canRecurse) {
       const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
-        this.walkSync(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+        FileOps.walkSync(
+          root,
+          join(currentDir, dir.name),
+          { ...opts, depth: nextDepth },
+          ignores,
+          out,
+        );
       }
     }
   }
@@ -374,7 +402,7 @@ export class FileOps {
   static async writeFile(
     target: string,
     data: Record<string, any>,
-    content: string
+    content: string,
   ): Promise<string> {
     // target may be a directory (create with file/filename) or a full path
     let filepath: string;
@@ -434,17 +462,17 @@ export function parseSections(content: string): Map<string, Section> {
   const lines = content.split('\n');
   let currentSection: Section | null = null;
   let currentContent: string[] = [];
-  
+
   for (const line of lines) {
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    
+
     if (headerMatch) {
       // Save previous section
       if (currentSection) {
         currentSection.content = currentContent.join('\n').trim();
         sections.set(currentSection.title, currentSection);
       }
-      
+
       // Start new section
       const level = headerMatch[1].length;
       const title = headerMatch[2].trim();
@@ -454,21 +482,23 @@ export function parseSections(content: string): Map<string, Section> {
       currentContent.push(line);
     }
   }
-  
+
   // Save last section
   if (currentSection) {
     currentSection.content = currentContent.join('\n').trim();
     sections.set(currentSection.title, currentSection);
   }
-  
+
   return sections;
 }
 
-export function formatTocAsTree(sections: Section[] | string[] | { level: number; title: string }[]): string {
+export function formatTocAsTree(
+  sections: Section[] | string[] | { level: number; title: string }[],
+): string {
   if (sections.length === 0) return '';
-  
+
   // Convert to uniform format with level and title
-  const parsed: { level: number; title: string }[] = sections.map(s => {
+  const parsed: { level: number; title: string }[] = sections.map((s) => {
     if (typeof s === 'string') {
       // Handle "level:title" format
       if (s.includes(':')) {
@@ -485,17 +515,19 @@ export function formatTocAsTree(sections: Section[] | string[] | { level: number
     // Already an object with level and title
     return { level: s.level, title: s.title };
   });
-  
+
   const lines: string[] = [];
   const stack: number[] = [];
-  
+
   for (let i = 0; i < parsed.length; i++) {
     const section = parsed[i];
     const isLast = i === parsed.length - 1;
-    const prefix = stack.map((_, idx) => idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   ').join('');
-    
+    const prefix = stack
+      .map((_, idx) => (idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   '))
+      .join('');
+
     lines.push(`${prefix}${section.title}`);
-    
+
     // Update stack for next iteration
     if (i < parsed.length - 1) {
       const nextSection = parsed[i + 1];
@@ -508,10 +540,10 @@ export function formatTocAsTree(sections: Section[] | string[] | { level: number
       }
     }
   }
-  
+
   return lines.join('\n');
 }
 
 export function formatTocIndented(sections: Section[]): string {
-  return sections.map(s => '  '.repeat(s.level - 1) + s.title).join('\n');
+  return sections.map((s) => '  '.repeat(s.level - 1) + s.title).join('\n');
 }

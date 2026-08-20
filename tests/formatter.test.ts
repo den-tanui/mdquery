@@ -1,17 +1,37 @@
 // tests/formatters.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Formatter, OutputFormat } from '../src/formatter';
-import { QueryResult } from '../src/types';
 import { displayWidth } from '../src/table-renderer';
+import { QueryResult } from '../src/types';
 
 describe('Formatter', () => {
   const mockResult: QueryResult = {
     type: 'select',
     data: [
-      { id: '1', title: 'Test Task', status: 'todo', priority: 3, filename: '', path: '', abspath: '', filepath: '', content: '' },
-      { id: '2', title: 'Another Task', status: 'done', priority: 5, filename: '', path: '', abspath: '', filepath: '', content: '' }
+      {
+        id: '1',
+        title: 'Test Task',
+        status: 'todo',
+        priority: 3,
+        filename: '',
+        path: '',
+        abspath: '',
+        filepath: '',
+        content: '',
+      },
+      {
+        id: '2',
+        title: 'Another Task',
+        status: 'done',
+        priority: 5,
+        filename: '',
+        path: '',
+        abspath: '',
+        filepath: '',
+        content: '',
+      },
     ],
-    count: 2
+    count: 2,
   };
 
   describe('JSON', () => {
@@ -28,7 +48,12 @@ describe('Formatter', () => {
         type: 'select',
         data: [{ title: 'A' }],
         count: 1,
-        meta: { filesSearched: 2, filesMatched: 1, timings: { list: 1, read: 2, prefilter: 0, evaluate: 1, total: 4 }, errors: [] }
+        meta: {
+          filesSearched: 2,
+          filesMatched: 1,
+          timings: { list: 1, read: 2, prefilter: 0, evaluate: 1, total: 4 },
+          errors: [],
+        },
       };
       const output = Formatter.format(result, 'json');
       const parsed = JSON.parse(output);
@@ -55,23 +80,41 @@ describe('Formatter', () => {
       const wideResult: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', description: 'a very long description that keeps going and going', filename: '', path: '', abspath: '', filepath: '', content: '' },
-          { id: '2', description: 'another lengthy value exceeding the width limit here too', filename: '', path: '', abspath: '', filepath: '', content: '' }
+          {
+            id: '1',
+            description: 'a very long description that keeps going and going',
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+            content: '',
+          },
+          {
+            id: '2',
+            description: 'another lengthy value exceeding the width limit here too',
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+            content: '',
+          },
         ],
-        count: 2
+        count: 2,
       };
 
       const width = 40;
       const output = Formatter.toTable(wideResult, width);
-      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      const longestLine = Math.max(...output.split('\n').map((l) => l.length));
       expect(longestLine).toBeLessThanOrEqual(width);
     });
 
     it('does not shrink when content fits the width', () => {
       const smallResult: QueryResult = {
         type: 'select',
-        data: [{ id: '1', title: 'hi', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        data: [
+          { id: '1', title: 'hi', filename: '', path: '', abspath: '', filepath: '', content: '' },
+        ],
+        count: 1,
       };
       const output = Formatter.toTable(smallResult, 200);
       expect(output).toContain('Id');
@@ -93,14 +136,14 @@ describe('Formatter', () => {
             one: 'x'.repeat(100),
             two: 'x'.repeat(100),
             three: 'x'.repeat(100),
-            four: 'x'.repeat(100)
-          }
+            four: 'x'.repeat(100),
+          },
         ],
-        count: 1
+        count: 1,
       };
       // 10 columns: cli-table3 minimum is 10 chars content + 10*2 padding + 11 borders = 41
       const output = Formatter.toTable(wideResult, 45);
-      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      const longestLine = Math.max(...output.split('\n').map((l) => l.length));
       expect(longestLine).toBeLessThanOrEqual(45);
     });
 
@@ -108,12 +151,20 @@ describe('Formatter', () => {
       const wideResult: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', description: '漢字'.repeat(20), filename: '', path: '', abspath: '', filepath: '', content: '' }
+          {
+            id: '1',
+            description: '漢字'.repeat(20),
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+            content: '',
+          },
         ],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(wideResult, 80);
-      const longestLine = Math.max(...output.split('\n').map(l => displayWidth(l)));
+      const longestLine = Math.max(...output.split('\n').map((l) => displayWidth(l)));
       expect(longestLine).toBeLessThanOrEqual(80);
       // Wide pairs render unbroken (allocated width accounts for 2-col chars)
       expect(output).toContain('漢字');
@@ -126,9 +177,16 @@ describe('Formatter', () => {
       const longContentResult: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', content: 'This is a very long content that should be truncated to 20 chars', filename: '', path: '', abspath: '', filepath: '' }
+          {
+            id: '1',
+            content: 'This is a very long content that should be truncated to 20 chars',
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+          },
         ],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(longContentResult, 200);
       // Full content shown (fits at this width), no ellipsis truncation
@@ -140,9 +198,16 @@ describe('Formatter', () => {
       const longAbspathResult: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md', filename: '', path: '', filepath: '', content: '' }
+          {
+            id: '1',
+            abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md',
+            filename: '',
+            path: '',
+            filepath: '',
+            content: '',
+          },
         ],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(longAbspathResult, 200);
       // Full path shown (fits at this width), no ellipsis truncation
@@ -154,13 +219,16 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', description: 'a very long description that keeps going and going and going and going' }
+          {
+            id: '1',
+            description: 'a very long description that keeps going and going and going and going',
+          },
         ],
-        count: 1
+        count: 1,
       };
       const width = 40;
       const output = Formatter.toTable(result, width);
-      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      const longestLine = Math.max(...output.split('\n').map((l) => l.length));
       expect(longestLine).toBeLessThanOrEqual(width);
       // Full text present across wrapped lines (borders/padding stripped), no ellipsis
       expect(output).not.toContain('…');
@@ -172,13 +240,13 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md' }
+          { id: '1', abspath: '/home/projects/mdquery-repo/tests/fixtures/advanced/task-001.md' },
         ],
-        count: 1
+        count: 1,
       };
       const width = 40;
       const output = Formatter.toTable(result, width);
-      const longestLine = Math.max(...output.split('\n').map(l => l.length));
+      const longestLine = Math.max(...output.split('\n').map((l) => l.length));
       expect(longestLine).toBeLessThanOrEqual(width);
       // Full path present across wrapped lines, no ellipsis
       expect(output).not.toContain('…');
@@ -190,9 +258,17 @@ describe('Formatter', () => {
       const squashingResult: QueryResult = {
         type: 'select',
         data: [
-          { id: '1', title: 'Short', filename: '', path: '', abspath: '', filepath: '', content: 'x'.repeat(500) }
+          {
+            id: '1',
+            title: 'Short',
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+            content: 'x'.repeat(500),
+          },
         ],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(squashingResult, 100);
       // Title should not be squashed to 3 chars
@@ -208,27 +284,32 @@ describe('Formatter', () => {
 
     it('colorize true wraps titles and border in SGR codes', () => {
       const output = Formatter.toTable(mockResult, 120, { colorize: true });
-      expect(output).toMatch(/\x1b\[01;34m/);  // title color
-      expect(output).toMatch(/\x1b\[90m/);     // border color
+      expect(output).toMatch(/\x1b\[01;34m/); // title color
+      expect(output).toMatch(/\x1b\[90m/); // border color
     });
 
     it('uses custom colors from the colors map', () => {
-      const colors = new Map<string, string>([['title', '31'], ['border', '32']]);
+      const colors = new Map<string, string>([
+        ['title', '31'],
+        ['border', '32'],
+      ]);
       const output = Formatter.toTable(mockResult, 120, { colorize: true, colors });
-      expect(output).toMatch(/\x1b\[31m/);  // title red
-      expect(output).toMatch(/\x1b\[32m/);  // border green
-      expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
+      expect(output).toMatch(/\x1b\[31m/); // title red
+      expect(output).toMatch(/\x1b\[32m/); // border green
+      expect(output).not.toMatch(/\x1b\[01;34m/); // default title not used
     });
 
     it('uses table element colors (header/separator/cell) when provided', () => {
       const colors = new Map<string, string>([
-        ['header', '35'], ['separator', '33'], ['cell', '36']
+        ['header', '35'],
+        ['separator', '33'],
+        ['cell', '36'],
       ]);
       const output = Formatter.toTable(mockResult, 120, { colorize: true, colors });
-      expect(output).toMatch(/\x1b\[35m/);  // header magenta
-      expect(output).toMatch(/\x1b\[33m/);  // separator yellow
-      expect(output).toMatch(/\x1b\[36m/);  // cell cyan
-      expect(output).not.toMatch(/\x1b\[01;34m/);  // default title not used
+      expect(output).toMatch(/\x1b\[35m/); // header magenta
+      expect(output).toMatch(/\x1b\[33m/); // separator yellow
+      expect(output).toMatch(/\x1b\[36m/); // cell cyan
+      expect(output).not.toMatch(/\x1b\[01;34m/); // default title not used
     });
 
     it('header color falls back to title color when header key is absent', () => {
@@ -241,7 +322,7 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [{ title: 'a|b\nc', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(result, 120);
       expect(output).toContain('a b c');
@@ -252,7 +333,7 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [{ title: 'a|b\nc', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(result, 120, { trim: false });
       expect(output).toContain('a|b');
@@ -261,8 +342,18 @@ describe('Formatter', () => {
     it('trim array applies per column; unspecified columns default to trim', () => {
       const result: QueryResult = {
         type: 'select',
-        data: [{ title: 'a|b', note: 'c|d', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        data: [
+          {
+            title: 'a|b',
+            note: 'c|d',
+            filename: '',
+            path: '',
+            abspath: '',
+            filepath: '',
+            content: '',
+          },
+        ],
+        count: 1,
       };
       // Column 0 (title) not trimmed, column 1 (note) trimmed
       const output = Formatter.toTable(result, 120, { trim: [false, true] });
@@ -293,8 +384,10 @@ describe('Formatter', () => {
     it('titleFormat normalizes separators by default (hyphens → word boundaries)', () => {
       const result: QueryResult = {
         type: 'select',
-        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        data: [
+          { 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' },
+        ],
+        count: 1,
       };
       const output = Formatter.toTable(result, 120, { titleFormat: 'capitalize' });
       expect(output).toContain('Some Text');
@@ -304,10 +397,15 @@ describe('Formatter', () => {
     it('normalize: false keeps separators in formatted headers', () => {
       const result: QueryResult = {
         type: 'select',
-        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        data: [
+          { 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' },
+        ],
+        count: 1,
       };
-      const output = Formatter.toTable(result, 120, { titleFormat: 'capitalize', normalize: false });
+      const output = Formatter.toTable(result, 120, {
+        titleFormat: 'capitalize',
+        normalize: false,
+      });
       expect(output).toContain('Some-text');
       expect(output).not.toContain('Some Text');
     });
@@ -315,8 +413,10 @@ describe('Formatter', () => {
     it('titleFormat: none keeps headers raw regardless of normalize', () => {
       const result: QueryResult = {
         type: 'select',
-        data: [{ 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' }],
-        count: 1
+        data: [
+          { 'some-text': 'x', filename: '', path: '', abspath: '', filepath: '', content: '' },
+        ],
+        count: 1,
       };
       const output = Formatter.toTable(result, 120, { titleFormat: 'none', normalize: true });
       expect(output).toContain('some-text');
@@ -338,11 +438,11 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [{ id: '1', title: 'x'.repeat(300) }],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(result, 120, { maxLinesPerRecord: 1 });
       // data row is a single line (no wrapped continuation lines)
-      const dataLines = output.split('\n').filter(l => l.includes('x'));
+      const dataLines = output.split('\n').filter((l) => l.includes('x'));
       expect(dataLines).toHaveLength(1);
       expect(output).toContain('…');
     });
@@ -351,10 +451,10 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [{ id: '1', title: 'x'.repeat(300) }],
-        count: 1
+        count: 1,
       };
       const output = Formatter.toTable(result, 120, { maxLinesPerRecord: 2 });
-      const dataLines = output.split('\n').filter(l => l.includes('x'));
+      const dataLines = output.split('\n').filter((l) => l.includes('x'));
       expect(dataLines).toHaveLength(2);
       expect(output).toContain('…');
     });
@@ -364,12 +464,16 @@ describe('Formatter', () => {
         type: 'select',
         data: [
           { id: '1', title: 'Alpha', description: 'short' },
-          { id: '2', title: 'Beta', description: 'a much longer description here' }
+          { id: '2', title: 'Beta', description: 'a much longer description here' },
         ],
-        count: 2
+        count: 2,
       };
       const output = Formatter.toTable(result, 80, {
-        columnWidths: [{ kind: 'chars', value: 20 }, { kind: 'auto' }, { kind: 'chars', value: 10 }]
+        columnWidths: [
+          { kind: 'chars', value: 20 },
+          { kind: 'auto' },
+          { kind: 'chars', value: 10 },
+        ],
       });
       // Fixed widths honored: title column is 20 chars wide
       const headerLine = output.split('\n')[1];
@@ -382,13 +486,14 @@ describe('Formatter', () => {
     it('columnWidths resolves percentages against the usable width', () => {
       const result: QueryResult = {
         type: 'select',
-        data: [
-          { id: '1', title: 'Alpha', description: 'short' }
-        ],
-        count: 1
+        data: [{ id: '1', title: 'Alpha', description: 'short' }],
+        count: 1,
       };
       const output = Formatter.toTable(result, 100, {
-        columnWidths: [{ kind: 'pct', value: 25 }, { kind: 'pct', value: 75 }]
+        columnWidths: [
+          { kind: 'pct', value: 25 },
+          { kind: 'pct', value: 75 },
+        ],
       });
       // 25% of usable (100 - 7 = 93) = 23 chars for title
       const headerLine = output.split('\n')[1];
@@ -411,9 +516,9 @@ describe('Formatter', () => {
         type: 'select',
         data: [
           { title: 'a,b', note: 'line1\nline2' },
-          { title: 'plain', note: 'has "quotes"' }
+          { title: 'plain', note: 'has "quotes"' },
         ],
-        count: 2
+        count: 2,
       };
       const output = Formatter.format(result, 'csv');
       expect(output).toContain('"a,b"');
@@ -425,7 +530,7 @@ describe('Formatter', () => {
       const result: QueryResult = {
         type: 'select',
         data: [{ title: '=SUM(A1:A2)' }],
-        count: 1
+        count: 1,
       };
       const output = Formatter.format(result, 'csv');
       expect(output).toContain("'=SUM(A1:A2)");

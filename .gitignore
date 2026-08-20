@@ -3,3 +3,15 @@ dist/
 *.js.map
 bin/mdquery
 .tmp/
+
+# never-commit files
+AGENTS.md
+CHANGES.md
+ROADMAP.md
+test-data/
+test.md
+.opencode/opencode.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+biome.json
+knip.json

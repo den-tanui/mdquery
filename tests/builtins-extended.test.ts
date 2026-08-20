@@ -1,5 +1,5 @@
 // tests/builtins-extended.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Builtins } from '../src/builtins';
 
 describe('Builtins - Extended', () => {

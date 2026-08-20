@@ -23,10 +23,10 @@ export interface TableBorderChars {
 }
 
 export interface RenderTableOptions {
-  headers: string[];    // styled header text (may contain SGR codes)
-  rows: string[][];     // pre-wrapped cell text (may contain \n)
-  colWidths: number[];  // content width per column (excludes padding)
-  paddingLeft: number;  // 1 normal, 0 compact
+  headers: string[]; // styled header text (may contain SGR codes)
+  rows: string[][]; // pre-wrapped cell text (may contain \n)
+  colWidths: number[]; // content width per column (excludes padding)
+  paddingLeft: number; // 1 normal, 0 compact
   paddingRight: number; // 1
   chars: TableBorderChars;
 }
@@ -58,7 +58,10 @@ export function truncateToWidth(text: string, width: number): string {
 // unbroken words (paths, URLs) so nothing is truncated
 export function wrapText(text: string, width: number): string {
   if (width <= 0) return text;
-  return text.split('\n').map(line => wrapLine(line, width)).join('\n');
+  return text
+    .split('\n')
+    .map((line) => wrapLine(line, width))
+    .join('\n');
 }
 
 function wrapLine(line: string, width: number): string {
@@ -123,7 +126,17 @@ export function renderTable(opts: RenderTableOptions): string {
 
   const lines: string[] = [];
 
-  lines.push(borderLine(chars.topLeft, chars.top, chars.topMid, chars.topRight, colWidths, paddingLeft, paddingRight));
+  lines.push(
+    borderLine(
+      chars.topLeft,
+      chars.top,
+      chars.topMid,
+      chars.topRight,
+      colWidths,
+      paddingLeft,
+      paddingRight,
+    ),
+  );
   pushRow(lines, headers, colWidths, paddingLeft, paddingRight, chars);
   pushSeparator(lines, chars, colWidths, paddingLeft, paddingRight);
 
@@ -134,12 +147,30 @@ export function renderTable(opts: RenderTableOptions): string {
     }
   });
 
-  lines.push(borderLine(chars.bottomLeft, chars.bottom, chars.bottomMid, chars.bottomRight, colWidths, paddingLeft, paddingRight));
+  lines.push(
+    borderLine(
+      chars.bottomLeft,
+      chars.bottom,
+      chars.bottomMid,
+      chars.bottomRight,
+      colWidths,
+      paddingLeft,
+      paddingRight,
+    ),
+  );
 
   return lines.join('\n');
 }
 
-function borderLine(left: string, horiz: string, mid: string, right: string, colWidths: number[], padL: number, padR: number): string {
+function borderLine(
+  left: string,
+  horiz: string,
+  mid: string,
+  right: string,
+  colWidths: number[],
+  padL: number,
+  padR: number,
+): string {
   const parts: string[] = [left];
   colWidths.forEach((w, i) => {
     parts.push(horiz.repeat(w + padL + padR));
@@ -148,14 +179,35 @@ function borderLine(left: string, horiz: string, mid: string, right: string, col
   return parts.join('');
 }
 
-function pushSeparator(lines: string[], chars: TableBorderChars, colWidths: number[], padL: number, padR: number): void {
-  const sep = borderLine(chars.leftMid, chars.mid, chars.midMid, chars.rightMid, colWidths, padL, padR);
+function pushSeparator(
+  lines: string[],
+  chars: TableBorderChars,
+  colWidths: number[],
+  padL: number,
+  padR: number,
+): void {
+  const sep = borderLine(
+    chars.leftMid,
+    chars.mid,
+    chars.midMid,
+    chars.rightMid,
+    colWidths,
+    padL,
+    padR,
+  );
   if (sep.length) lines.push(sep);
 }
 
-function pushRow(lines: string[], cells: string[], colWidths: number[], padL: number, padR: number, chars: TableBorderChars): void {
-  const cellLines = cells.map(cell => cell.split('\n'));
-  const height = Math.max(1, ...cellLines.map(cl => cl.length));
+function pushRow(
+  lines: string[],
+  cells: string[],
+  colWidths: number[],
+  padL: number,
+  padR: number,
+  chars: TableBorderChars,
+): void {
+  const cellLines = cells.map((cell) => cell.split('\n'));
+  const height = Math.max(1, ...cellLines.map((cl) => cl.length));
   for (let lineNum = 0; lineNum < height; lineNum++) {
     const parts: string[] = [];
     cells.forEach((_, i) => {

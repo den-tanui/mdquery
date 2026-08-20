@@ -1,11 +1,13 @@
 // tests/parser-trigger.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Parser } from '../src/parser';
 
 describe('Parser - Triggers', () => {
   describe('BEFORE/AFTER triggers', () => {
     it('parses before create trigger with deny', () => {
-      const ast = new Parser('before create where status = "done" deny "Cannot create done task"').parse();
+      const ast = new Parser(
+        'before create where status = "done" deny "Cannot create done task"',
+      ).parse();
       expect(ast).toEqual({
         type: 'trigger',
         event: 'before',
@@ -14,9 +16,9 @@ describe('Parser - Triggers', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'status' },
           op: '=',
-          right: { type: 'string', value: 'done' }
+          right: { type: 'string', value: 'done' },
         },
-        action: { type: 'deny', message: 'Cannot create done task' }
+        action: { type: 'deny', message: 'Cannot create done task' },
       });
     });
 
@@ -30,9 +32,9 @@ describe('Parser - Triggers', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'projectId' },
           op: '!=',
-          right: { type: 'number', value: 1 }
+          right: { type: 'number', value: 1 },
         },
-        action: { type: 'deny', message: 'Wrong project' }
+        action: { type: 'deny', message: 'Wrong project' },
       });
     });
 
@@ -42,7 +44,7 @@ describe('Parser - Triggers', () => {
         type: 'trigger',
         event: 'after',
         operation: 'create',
-        action: { type: 'update', set: { completed: { value: { type: 'boolean', value: true } } } }
+        action: { type: 'update', set: { completed: { value: { type: 'boolean', value: true } } } },
       });
     });
 
@@ -52,7 +54,7 @@ describe('Parser - Triggers', () => {
         type: 'trigger',
         event: 'after',
         operation: 'update',
-        action: { type: 'run', command: 'echo done' }
+        action: { type: 'run', command: 'echo done' },
       });
     });
   });

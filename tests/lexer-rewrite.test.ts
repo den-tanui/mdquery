@@ -1,12 +1,12 @@
 // tests/lexer-rewrite.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Lexer } from '../src/lexer';
 
 describe('Lexer Rewrite - TDD', () => {
   // Helper to get tokens without EOF
   const tokenize = (input: string) => {
     const tokens = new Lexer(input).tokenize();
-    return tokens.filter(t => t.type !== 'EOF');
+    return tokens.filter((t) => t.type !== 'EOF');
   };
 
   // Helper to verify token is valid JSON object
@@ -34,7 +34,7 @@ describe('Lexer Rewrite - TDD', () => {
         position: 0,
         line: 1,
         column: 1,
-        offset: 0
+        offset: 0,
       });
     });
 
@@ -75,7 +75,7 @@ describe('Lexer Rewrite - TDD', () => {
         position: 0,
         line: 1,
         column: 1,
-        offset: 0
+        offset: 0,
       });
     });
 
@@ -111,7 +111,7 @@ describe('Lexer Rewrite - TDD', () => {
         position: 0,
         line: 1,
         column: 1,
-        offset: 0
+        offset: 0,
       });
     });
 
@@ -152,18 +152,14 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes comparison operators', () => {
       const tokens = tokenize('= != < > <= >=');
       expect(tokens).toHaveLength(6);
-      expect(tokens.map(t => t.type)).toEqual([
-        'EQUALS', 'NOT_EQUALS', 'LT', 'GT', 'LTE', 'GTE'
-      ]);
+      expect(tokens.map((t) => t.type)).toEqual(['EQUALS', 'NOT_EQUALS', 'LT', 'GT', 'LTE', 'GTE']);
       tokens.forEach(isValidToken);
     });
 
     it('tokenizes arithmetic operators', () => {
       const tokens = tokenize('+ - * / %');
       expect(tokens).toHaveLength(5);
-      expect(tokens.map(t => t.type)).toEqual([
-        'PLUS', 'MINUS', 'STAR', 'SLASH', 'PERCENT'
-      ]);
+      expect(tokens.map((t) => t.type)).toEqual(['PLUS', 'MINUS', 'STAR', 'SLASH', 'PERCENT']);
     });
 
     it('tokenizes caret for exponentiation', () => {
@@ -177,7 +173,7 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes logical keywords', () => {
       const tokens = tokenize('and or not');
       expect(tokens).toHaveLength(3);
-      expect(tokens.map(t => t.type)).toEqual(['AND', 'OR', 'NOT']);
+      expect(tokens.map((t) => t.type)).toEqual(['AND', 'OR', 'NOT']);
     });
 
     it('tokenizes IN keyword', () => {
@@ -213,8 +209,15 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes JOIN keywords', () => {
       const tokens = tokenize('left join right join inner join cross join');
       expect(tokens).toHaveLength(8);
-      expect(tokens.map(t => t.type)).toEqual([
-        'LEFT', 'JOIN', 'RIGHT', 'JOIN', 'INNER', 'JOIN', 'CROSS', 'JOIN'
+      expect(tokens.map((t) => t.type)).toEqual([
+        'LEFT',
+        'JOIN',
+        'RIGHT',
+        'JOIN',
+        'INNER',
+        'JOIN',
+        'CROSS',
+        'JOIN',
       ]);
     });
 
@@ -227,7 +230,7 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes UNION keyword', () => {
       const tokens = tokenize('union all');
       expect(tokens).toHaveLength(2);
-      expect(tokens.map(t => t.type)).toEqual(['UNION', 'ALL']);
+      expect(tokens.map((t) => t.type)).toEqual(['UNION', 'ALL']);
     });
   });
 
@@ -242,7 +245,7 @@ describe('Lexer Rewrite - TDD', () => {
         position: 0,
         line: 1,
         column: 1,
-        offset: 0
+        offset: 0,
       });
     });
 
@@ -263,8 +266,12 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes dotted identifier', () => {
       const tokens = tokenize('a.b.c');
       expect(tokens).toHaveLength(5);
-      expect(tokens.map(t => t.type)).toEqual([
-        'IDENTIFIER', 'DOT', 'IDENTIFIER', 'DOT', 'IDENTIFIER'
+      expect(tokens.map((t) => t.type)).toEqual([
+        'IDENTIFIER',
+        'DOT',
+        'IDENTIFIER',
+        'DOT',
+        'IDENTIFIER',
       ]);
     });
   });
@@ -307,9 +314,7 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes builtin with property accessor', () => {
       const tokens = tokenize("links('text')");
       expect(tokens).toHaveLength(4);
-      expect(tokens.map(t => t.type)).toEqual([
-        'IDENTIFIER', 'LPAREN', 'STRING', 'RPAREN'
-      ]);
+      expect(tokens.map((t) => t.type)).toEqual(['IDENTIFIER', 'LPAREN', 'STRING', 'RPAREN']);
       expect(tokens[0].value).toBe('links');
       expect(tokens[2].value).toBe('text');
     });
@@ -354,16 +359,27 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes array index', () => {
       const tokens = tokenize('toc()[0]');
       expect(tokens).toHaveLength(6);
-      expect(tokens.map(t => t.type)).toEqual([
-        'IDENTIFIER', 'LPAREN', 'RPAREN', 'LBRACKET', 'NUMBER', 'RBRACKET'
+      expect(tokens.map((t) => t.type)).toEqual([
+        'IDENTIFIER',
+        'LPAREN',
+        'RPAREN',
+        'LBRACKET',
+        'NUMBER',
+        'RBRACKET',
       ]);
     });
 
     it('tokenizes negative array index', () => {
       const tokens = tokenize('links()[-1]');
       expect(tokens).toHaveLength(7);
-      expect(tokens.map(t => t.type)).toEqual([
-        'IDENTIFIER', 'LPAREN', 'RPAREN', 'LBRACKET', 'MINUS', 'NUMBER', 'RBRACKET'
+      expect(tokens.map((t) => t.type)).toEqual([
+        'IDENTIFIER',
+        'LPAREN',
+        'RPAREN',
+        'LBRACKET',
+        'MINUS',
+        'NUMBER',
+        'RBRACKET',
       ]);
       expect(tokens[5].value).toBe('1');
     });
@@ -371,8 +387,15 @@ describe('Lexer Rewrite - TDD', () => {
     it('tokenizes nested array index', () => {
       const tokens = tokenize('links()[0].text');
       expect(tokens).toHaveLength(8);
-      expect(tokens.map(t => t.type)).toEqual([
-        'IDENTIFIER', 'LPAREN', 'RPAREN', 'LBRACKET', 'NUMBER', 'RBRACKET', 'DOT', 'IDENTIFIER'
+      expect(tokens.map((t) => t.type)).toEqual([
+        'IDENTIFIER',
+        'LPAREN',
+        'RPAREN',
+        'LBRACKET',
+        'NUMBER',
+        'RBRACKET',
+        'DOT',
+        'IDENTIFIER',
       ]);
     });
   });
@@ -403,7 +426,7 @@ describe('Lexer Rewrite - TDD', () => {
 
     it('tokenizes flatten method', () => {
       const tokens = tokenize('section().map("hierarchy").flatten()');
-      const values = tokens.map(t => t.value);
+      const values = tokens.map((t) => t.value);
       expect(values).toContain('flatten');
     });
 
@@ -429,7 +452,7 @@ describe('Lexer Rewrite - TDD', () => {
 
     it('tokenizes chained methods', () => {
       const tokens = tokenize("links().filter(section = 'Setup').map('url').sort('line')");
-      const values = tokens.map(t => t.value);
+      const values = tokens.map((t) => t.value);
       expect(values).toContain('filter');
       expect(values).toContain('map');
       expect(values).toContain('sort');
@@ -656,23 +679,25 @@ describe('Lexer Rewrite - TDD', () => {
     });
 
     it('tokenizes query with subquery', () => {
-      const tokens = tokenize("select title where title IN (SELECT title FROM other)");
+      const tokens = tokenize('select title where title IN (SELECT title FROM other)');
       expect(tokens.length).toBeGreaterThan(10);
-      const types = tokens.map(t => t.type);
+      const types = tokens.map((t) => t.type);
       expect(types).toContain('IN');
       expect(types).toContain('SELECT');
       expect(types).toContain('FROM');
     });
 
     it('tokenizes query with JOIN', () => {
-      const tokens = tokenize("select a.title, b.content FROM files a LEFT JOIN sections b ON a.id = b.file_id");
+      const tokens = tokenize(
+        'select a.title, b.content FROM files a LEFT JOIN sections b ON a.id = b.file_id',
+      );
       expect(tokens.length).toBeGreaterThan(15);
     });
 
     it('tokenizes query with UNION', () => {
-      const tokens = tokenize("select title FROM tasks UNION ALL select title FROM notes");
+      const tokens = tokenize('select title FROM tasks UNION ALL select title FROM notes');
       expect(tokens.length).toBeGreaterThan(9);
-      const types = tokens.map(t => t.type);
+      const types = tokens.map((t) => t.type);
       expect(types).toContain('UNION');
       expect(types).toContain('ALL');
       expect(types).toContain('FROM');
@@ -688,7 +713,7 @@ describe('Lexer Rewrite - TDD', () => {
         'content(1, 10)',
         'toc()[0]',
         'WHERE title IN (SELECT title FROM files)',
-        'LEFT JOIN sections ON a.id = b.id'
+        'LEFT JOIN sections ON a.id = b.id',
       ];
 
       for (const query of queries) {

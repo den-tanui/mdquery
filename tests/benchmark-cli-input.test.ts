@@ -4,12 +4,13 @@
 //   find | -f -           external discovery, paths piped via stdin
 //   fd | -f -             external discovery (if fd is installed)
 //   -f - (pre-gen paths)  stdin ingestion only, no discovery cost
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { execFileSync } from 'child_process';
-import { mkdtempSync, writeFileSync, rmSync, existsSync, statSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
+import { join } from 'path';
 import { performance } from 'perf_hooks';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const cliPath = join(__dirname, '..', 'bin', 'mdquery');
 const srcCliPath = join(__dirname, '..', 'src', 'cli.ts');
@@ -24,8 +25,8 @@ function generateTask(id: number): string {
     `id: ${id}`,
     `title: "Task ${id}"`,
     `status: ${id % 3 === 0 ? 'todo' : id % 3 === 1 ? 'doing' : 'done'}`,
-    `priority: ${id % 5 + 1}`,
-    `createdAt: 2026-01-${String(id % 28 + 1).padStart(2, '0')}T10:00:00Z`
+    `priority: ${(id % 5) + 1}`,
+    `createdAt: 2026-01-${String((id % 28) + 1).padStart(2, '0')}T10:00:00Z`,
   ].join('\n');
   const body = `# Task ${id}\n\n## Section 1\n\nSome content mentioning BUG-${id}.\n\n## Section 2\n\nMore lines.\n`;
   return `---\n${frontmatter}\n---\n\n${body}`;
@@ -75,19 +76,29 @@ describe('Benchmark: CLI input modes (--dir vs piped paths)', () => {
         it(`${q.name} query: --dir vs find/fd piped paths`, { timeout: 120000 }, () => {
           // 1. --dir: mdquery discovers files itself (fdir)
           const dirTime = timeSync(() => {
-            execFileSync(cliPath, ['--dir', dir, q.query], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+            execFileSync(cliPath, ['--dir', dir, q.query], {
+              encoding: 'utf-8',
+              stdio: ['ignore', 'pipe', 'pipe'],
+            });
           });
 
           // 2. find | mdquery -f -: external discovery + pipe
           const findTime = timeSync(() => {
-            execFileSync('sh', ['-c', `find "${dir}" -name '*.md' | "${cliPath}" -f - "${q.query}"`], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+            execFileSync(
+              'sh',
+              ['-c', `find "${dir}" -name '*.md' | "${cliPath}" -f - "${q.query}"`],
+              { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] },
+            );
           });
 
           // 3. fd | mdquery -f -: external discovery + pipe (if installed)
           let fdTime: number | null = null;
           try {
             fdTime = timeSync(() => {
-              execFileSync('sh', ['-c', `fd -e md . "${dir}" | "${cliPath}" -f - "${q.query}"`], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] });
+              execFileSync('sh', ['-c', `fd -e md . "${dir}" | "${cliPath}" -f - "${q.query}"`], {
+                encoding: 'utf-8',
+                stdio: ['ignore', 'pipe', 'pipe'],
+              });
             });
           } catch {
             fdTime = null; // fd not installed — skip
@@ -95,7 +106,11 @@ describe('Benchmark: CLI input modes (--dir vs piped paths)', () => {
 
           // 4. -f - with pre-generated paths: stdin ingestion only (no discovery)
           const stdinTime = timeSync(() => {
-            execFileSync(cliPath, ['-f', '-', q.query], { encoding: 'utf-8', input: paths, stdio: ['pipe', 'pipe', 'pipe'] });
+            execFileSync(cliPath, ['-f', '-', q.query], {
+              encoding: 'utf-8',
+              input: paths,
+              stdio: ['pipe', 'pipe', 'pipe'],
+            });
           });
 
           console.log(`\n[${scale.name}] ${scale.count} files, ${q.name} query: ${q.query}`);

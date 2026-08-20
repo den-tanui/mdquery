@@ -68,14 +68,14 @@ export class Builtins {
   // First letter of each word up, rest down: "setup guide" → "Setup Guide"
   static capitalize(value: string): string {
     requireString(value, 'capitalize');
-    return value.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+    return value.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
   }
 
   // Strip separators, camelCase: "setup guide" → "setupGuide"
   static camelCase(value: string): string {
     requireString(value, 'camel_case');
     return splitWords(value)
-      .map((w, i) => i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1))
+      .map((w, i) => (i === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)))
       .join('');
   }
 
@@ -83,7 +83,7 @@ export class Builtins {
   static pascalCase(value: string): string {
     requireString(value, 'pascal_case');
     return splitWords(value)
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join('');
   }
 
@@ -189,7 +189,7 @@ export class Builtins {
     // Parse recurrence string and return next date
     // Simple implementation: assumes recurrence is in format "daily", "weekly", "monthly"
     const now = new Date();
-    
+
     switch (recurrence.toLowerCase()) {
       case 'daily':
         now.setDate(now.getDate() + 1);
@@ -203,31 +203,38 @@ export class Builtins {
       case 'yearly':
         now.setFullYear(now.getFullYear() + 1);
         break;
-      default:
+      default: {
         // Try to parse as days
         const days = parseInt(recurrence);
         if (isNaN(days)) {
-          throw new TypeError(`next_date() requires a valid recurrence string (daily, weekly, monthly, yearly, or N days), got "${recurrence}"`);
+          throw new TypeError(
+            `next_date() requires a valid recurrence string (daily, weekly, monthly, yearly, or N days), got "${recurrence}"`,
+          );
         }
         now.setDate(now.getDate() + days);
+      }
     }
-    
+
     return now.toISOString().split('T')[0];
   }
 
-  static fields(context?: Record<string, any>, includeValues?: boolean, pattern?: string): string[] | Record<string, any> {
+  static fields(
+    context?: Record<string, any>,
+    includeValues?: boolean,
+    pattern?: string,
+  ): string[] | Record<string, any> {
     if (!context) return includeValues ? {} : [];
-    
+
     // Filter out internal fields
     const internalFields = ['filename', 'path', 'abspath', 'filepath', 'content', 'sections'];
-    let fields = Object.keys(context).filter(key => !internalFields.includes(key));
-    
+    let fields = Object.keys(context).filter((key) => !internalFields.includes(key));
+
     // Wildcard pattern: fields("*or*") → keys containing "or"
     if (pattern) {
-      const matches = this.wildcardMatch(pattern);
-      fields = fields.filter(k => matches(k));
+      const matches = Builtins.wildcardMatch(pattern);
+      fields = fields.filter((k) => matches(k));
     }
-    
+
     if (includeValues) {
       const result: Record<string, any> = {};
       for (const key of fields) {
@@ -235,7 +242,7 @@ export class Builtins {
       }
       return result;
     }
-    
+
     return fields;
   }
 
@@ -247,44 +254,42 @@ export class Builtins {
     const trailing = pattern.endsWith('*');
     if (leading && trailing) {
       const mid = pattern.slice(1, -1);
-      return v => v.includes(mid);
+      return (v) => v.includes(mid);
     }
     if (trailing) {
       const prefix = pattern.slice(0, -1);
-      return v => v.startsWith(prefix);
+      return (v) => v.startsWith(prefix);
     }
     if (leading) {
       const suffix = pattern.slice(1);
-      return v => v.endsWith(suffix);
+      return (v) => v.endsWith(suffix);
     }
-    return v => v === pattern;
+    return (v) => v === pattern;
   }
 
   static toc(context?: Record<string, any>, ...levels: any[]): { level: number; title: string }[] {
     if (!context?.sections) return [];
-    
+
     const sections: Section[] = Array.from(context.sections.values());
-    
+
     // Normalize levels to array
-    const levelArray = levels
-      .flat()
-      .filter((l): l is number => typeof l === 'number');
-    
+    const levelArray = levels.flat().filter((l): l is number => typeof l === 'number');
+
     // Filter by levels if specified
-    const filtered = levelArray.length > 0
-      ? sections.filter(s => levelArray.includes(s.level))
-      : sections;
-    
+    const filtered =
+      levelArray.length > 0 ? sections.filter((s) => levelArray.includes(s.level)) : sections;
+
     // Structured entries: {level, title}
-    return filtered.map(s => ({ level: s.level, title: s.title }));
+    return filtered.map((s) => ({ level: s.level, title: s.title }));
   }
 
   // outline(depth?) — box-drawing heading tree as a scalar string.
   static outline(context?: Record<string, any>, maxDepth: number = 6): string {
     if (!context?.sections) return '';
 
-    const sections: Section[] = Array.from((context.sections as Map<string, Section>).values())
-      .filter(s => s.level <= maxDepth);
+    const sections: Section[] = Array.from(
+      (context.sections as Map<string, Section>).values(),
+    ).filter((s) => s.level <= maxDepth);
 
     if (sections.length === 0) return '';
 
@@ -298,7 +303,10 @@ export class Builtins {
       // lower-level heading.
       let hasNext = false;
       for (let j = i + 1; j < sections.length; j++) {
-        if (sections[j].level === depth) { hasNext = true; break; }
+        if (sections[j].level === depth) {
+          hasNext = true;
+          break;
+        }
         if (sections[j].level < depth) break;
       }
 
@@ -315,9 +323,12 @@ export class Builtins {
     return lines.join('\n');
   }
 
-  static section(context?: Record<string, any>, name?: string): string | Record<string, string> | null {
+  static section(
+    context?: Record<string, any>,
+    name?: string,
+  ): string | Record<string, string> | null {
     if (!context?.sections) return null;
-    
+
     // If no name provided, return all sections as a map
     if (!name) {
       const result: Record<string, string> = {};
@@ -326,7 +337,7 @@ export class Builtins {
       }
       return result;
     }
-    
+
     // Return specific section content
     return context.sections.get(name)?.content || null;
   }
@@ -411,14 +422,14 @@ export class Builtins {
   static dateFormat(date: any, format: string): string {
     const d = date instanceof Date ? date : new Date(date);
     if (isNaN(d.getTime())) return '';
-    
+
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     const hours = String(d.getHours()).padStart(2, '0');
     const minutes = String(d.getMinutes()).padStart(2, '0');
     const seconds = String(d.getSeconds()).padStart(2, '0');
-    
+
     return format
       .replace('YYYY', String(year))
       .replace('MM', month)
@@ -442,31 +453,37 @@ export class Builtins {
     return d;
   }
 
-  static call(name: string, args: any[], context?: Record<string, any>, enumValues?: string[], hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any }): any {
+  static call(
+    name: string,
+    args: any[],
+    context?: Record<string, any>,
+    enumValues?: string[],
+    hooks?: { onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any },
+  ): any {
     // Try camelCase version first, then snake_case
-    let builtin = (this as any)[name];
+    let builtin = (Builtins as any)[name];
     let normalizedName = name;
-    
+
     if (!builtin && name.includes('_')) {
       // Convert snake_case to camelCase
       normalizedName = name.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      builtin = (this as any)[normalizedName];
+      builtin = (Builtins as any)[normalizedName];
     }
-    
+
     // Try built-in methods first
     if (builtin) {
       if (normalizedName === 'id' || normalizedName === 'user') {
         return builtin(context);
       }
-      
+
       if (normalizedName === 'nextEnum' || normalizedName === 'prevEnum') {
         return builtin(args[0], enumValues || args[1] || []);
       }
-      
+
       if (normalizedName === 'nextDate') {
         return builtin(args[0]);
       }
-      
+
       if (normalizedName === 'fields') {
         return builtin(context, args[0], args[1]);
       }
@@ -482,15 +499,15 @@ export class Builtins {
       if (normalizedName === 'outline') {
         return builtin(context, args[0]);
       }
-      
+
       return builtin(...args);
     }
-    
+
     // Try hook for custom builtins (e.g., project(), sprint() in projext)
     if (hooks?.onBuiltinCall) {
       return hooks.onBuiltinCall(name, args, context);
     }
-    
+
     throw new Error(`Unknown builtin: ${name}`);
   }
 }

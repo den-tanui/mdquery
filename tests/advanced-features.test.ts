@@ -1,17 +1,20 @@
 // tests/advanced-features.test.ts
-import { describe, it, expect } from 'vitest';
+
+import { randomUUID } from 'crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { describe, expect, it } from 'vitest';
 import { Executor } from '../src/executor';
 import { Parser } from '../src/parser';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { randomUUID } from 'crypto';
 
 function createFixtures(): string {
   const dir = join(tmpdir(), `mdquery-test-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
 
-  writeFileSync(join(dir, 'task-001.md'), `---
+  writeFileSync(
+    join(dir, 'task-001.md'),
+    `---
 id: 1
 title: Test Task
 status: todo
@@ -23,9 +26,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is a test task.
-`);
+`,
+  );
 
-  writeFileSync(join(dir, 'task-002.md'), `---
+  writeFileSync(
+    join(dir, 'task-002.md'),
+    `---
 id: 2
 title: Another Task
 status: done
@@ -37,9 +43,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is another test task.
-`);
+`,
+  );
 
-  writeFileSync(join(dir, 'task-003.md'), `---
+  writeFileSync(
+    join(dir, 'task-003.md'),
+    `---
 id: 3
 title: Third Task
 status: doing
@@ -51,7 +60,8 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is the third test task.
-`);
+`,
+  );
 
   return dir;
 }
@@ -98,7 +108,9 @@ describe('HAVING clause', () => {
     const dir = createFixtures();
     try {
       const executor = new Executor(dir);
-      const result = await executor.execute('select projectId, count(*) group by projectId having count(*) > 1');
+      const result = await executor.execute(
+        'select projectId, count(*) group by projectId having count(*) > 1',
+      );
       expect(result.data).toHaveLength(1);
       expect(result.data?.[0].projectId).toBe(1);
     } finally {
@@ -119,11 +131,11 @@ describe('Pipe syntax', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'id' },
           op: '=',
-          right: { type: 'number', value: 1 }
-        }
+          right: { type: 'number', value: 1 },
+        },
       },
       fn: 'clipboard',
-      args: []
+      args: [],
     });
   });
 });

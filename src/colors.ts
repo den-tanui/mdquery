@@ -2,10 +2,10 @@
 
 // Default SGR codes for mdquery elements
 export const DEFAULT_COLORS: Record<string, string> = {
-  title: '01;34',   // bold blue
-  border: '90',     // bright black
-  error: '31',      // red
-  warning: '33',    // yellow
+  title: '01;34', // bold blue
+  border: '90', // bright black
+  error: '31', // red
+  warning: '33', // yellow
 };
 
 // Parse LS_COLORS-style env var: "title=01;34:border=90" → Map
@@ -28,7 +28,7 @@ export function resolveColor(
   element: string,
   mdColors: Map<string, string>,
   lsColors: Map<string, string>,
-  configColors?: Map<string, string>
+  configColors?: Map<string, string>,
 ): string {
   const fromMd = mdColors.get(element);
   if (fromMd) return fromMd;

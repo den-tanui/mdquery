@@ -1,17 +1,17 @@
 #!/usr/bin/env node
+import chalk from 'chalk';
+import { program } from 'commander';
+import { existsSync } from 'fs';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { homedir } from 'os';
+import { dirname, extname, resolve } from 'path';
+import { mergeDirContinuations } from './argv';
+import { parseColorEnv, resolveColor, sgr } from './colors';
+import { Config, loadConfig, TitleFormat } from './config';
 // src/cli.ts
 import { Executor } from './executor';
-import { Formatter, OutputFormat, ColumnWidthSpec } from './formatter';
+import { ColumnWidthSpec, Formatter, OutputFormat } from './formatter';
 import { VERSION } from './version';
-import { program } from 'commander';
-import chalk from 'chalk';
-import { parseColorEnv, resolveColor, sgr } from './colors';
-import { loadConfig, Config, TitleFormat } from './config';
-import { mergeDirContinuations } from './argv';
-import { writeFile, mkdir, readFile } from 'fs/promises';
-import { dirname, extname, resolve } from 'path';
-import { existsSync } from 'fs';
-import { homedir } from 'os';
 
 /**
  * Expand a directory argument into an absolute path.
@@ -70,8 +70,8 @@ async function main() {
     if (config.color === 'always') colorFlag = true;
     if (config.color === 'never') colorFlag = false;
   }
-  if (colorFlag === true) chalk.level = 3;   // force color even when piped
-  if (colorFlag === false) chalk.level = 0;  // disable color entirely
+  if (colorFlag === true) chalk.level = 3; // force color even when piped
+  if (colorFlag === false) chalk.level = 0; // disable color entirely
 
   // --no-ignore is a negated flag: Commander defaults opts.ignore to true, so
   // pre-scan argv to distinguish "not passed" (config applies) from "--no-ignore".
@@ -104,8 +104,8 @@ async function main() {
   }
   // --no-color disables all coloring; otherwise error/warning messages are colored
   const colorEnabled = colorFlag !== false;
-  const err = (msg: string) => colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg;
-  const warn = (msg: string) => colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg;
+  const err = (msg: string) => (colorEnabled ? sgr(msg, colors.get('error') ?? '31') : msg);
+  const warn = (msg: string) => (colorEnabled ? sgr(msg, colors.get('warning') ?? '33') : msg);
 
   // Command name style: bold mild orange (shared by the usage line and examples)
   const commandStyle = chalk.bold.hex('#ff9e64');
@@ -125,32 +125,79 @@ async function main() {
     .name('mdquery')
     .version(VERSION, '-v, --version')
     .description('Query YAML frontmatter of markdown files with a SQL-like language')
-    .argument('[query]', 'SQL-like query string (or pipe from stdin); keywords are case-insensitive')
-    .option('--dir <dir>', 'Directories to query (default: .); repeatable or comma-separated', collect)
-    .option('-f, --file <file>', 'Specific file(s) to query; repeatable or comma-separated. Use -f - to read file paths from stdin', collect)
+    .argument(
+      '[query]',
+      'SQL-like query string (or pipe from stdin); keywords are case-insensitive',
+    )
+    .option(
+      '--dir <dir>',
+      'Directories to query (default: .); repeatable or comma-separated',
+      collect,
+    )
+    .option(
+      '-f, --file <file>',
+      'Specific file(s) to query; repeatable or comma-separated. Use -f - to read file paths from stdin',
+      collect,
+    )
     .option('-d, --depth <n>', 'Directory depth (0 = recursive)')
     .option('-H, --hidden', 'Include hidden files/dirs')
     .option('--no-ignore', 'Do not respect .gitignore')
     .option('-y, --yes', 'Skip confirmation prompts')
-    .option('--format <format>', 'Output format: json | table | csv', (val: string) => {
-      format = val as OutputFormat;
+    .option(
+      '--format <format>',
+      'Output format: json | table | csv',
+      (val: string) => {
+        format = val as OutputFormat;
+        formatExplicit = true;
+        return val;
+      },
+      'json',
+    )
+    .option('--json', 'Shortcut for --format=json', () => {
+      format = 'json';
       formatExplicit = true;
-      return val;
-    }, 'json')
-    .option('--json', 'Shortcut for --format=json', () => { format = 'json'; formatExplicit = true; return true; })
-    .option('--csv', 'Shortcut for --format=csv', () => { format = 'csv'; formatExplicit = true; return true; })
-    .option('--table', 'Shortcut for --format=table', () => { format = 'table'; formatExplicit = true; return true; })
+      return true;
+    })
+    .option('--csv', 'Shortcut for --format=csv', () => {
+      format = 'csv';
+      formatExplicit = true;
+      return true;
+    })
+    .option('--table', 'Shortcut for --format=table', () => {
+      format = 'table';
+      formatExplicit = true;
+      return true;
+    })
     .option('--color', 'Force colored output (default: auto)')
     .option('--no-color', 'Disable colored output')
     .option('-o, --out <file>', 'Write output to file (default: stdout)')
     .option('--compact', 'Compact table view (no row separators, tighter padding)')
-    .option('--rows <n>', 'Max terminal lines per record in table output (LIMIT controls result count)', parseInt)
-    .option('--columns <spec>', 'Table column widths: comma-separated chars, percentages (10%), or * for auto (e.g. 20,*,40)')
-    .option('--trim <spec>', 'Trim table cell values: * for all columns, or positional 1/0 per column (e.g. 1,0,1); unspecified columns default to trim')
+    .option(
+      '--rows <n>',
+      'Max terminal lines per record in table output (LIMIT controls result count)',
+      parseInt,
+    )
+    .option(
+      '--columns <spec>',
+      'Table column widths: comma-separated chars, percentages (10%), or * for auto (e.g. 20,*,40)',
+    )
+    .option(
+      '--trim <spec>',
+      'Trim table cell values: * for all columns, or positional 1/0 per column (e.g. 1,0,1); unspecified columns default to trim',
+    )
     .option('--no-trim', 'Disable trimming of table cell values')
-    .option('--title-format <format>', 'Table header case: none | upper | capitalize | camel-case | pascal-case')
-    .option('--normalize', 'Replace non-alphanumeric separators in table headers before case formatting (default)')
-    .option('--no-normalize', 'Do not replace non-alphanumeric separators in table headers before case formatting')
+    .option(
+      '--title-format <format>',
+      'Table header case: none | upper | capitalize | camel-case | pascal-case',
+    )
+    .option(
+      '--normalize',
+      'Replace non-alphanumeric separators in table headers before case formatting (default)',
+    )
+    .option(
+      '--no-normalize',
+      'Do not replace non-alphanumeric separators in table headers before case formatting',
+    )
     .configureOutput({
       // Commander formats errors as "error: unknown option '--card'"; keep the
       // legacy "Error: Unknown option: --card" wording and colorize like the
@@ -165,9 +212,17 @@ async function main() {
       // that follow --color/--no-color (pre-scanned above) instead of relying
       // on TTY detection alone, so --color forces styled help even when piped.
       getOutHasColors: () =>
-        colorFlag === true ? true : colorFlag === false ? false : (process.stdout.isTTY && process.stdout.hasColors?.()),
+        colorFlag === true
+          ? true
+          : colorFlag === false
+            ? false
+            : process.stdout.isTTY && process.stdout.hasColors?.(),
       getErrHasColors: () =>
-        colorFlag === true ? true : colorFlag === false ? false : (process.stderr.isTTY && process.stderr.hasColors?.()),
+        colorFlag === true
+          ? true
+          : colorFlag === false
+            ? false
+            : process.stderr.isTTY && process.stderr.hasColors?.(),
     })
     .configureHelp({
       // Commander v15 ships plain style hooks; fill them with chalk so help
@@ -176,15 +231,17 @@ async function main() {
       // help renders during parse, before opts are available. Option flags and
       // arguments stay plain; only section headers, command names, and
       // explanations are styled.
-      styleTitle: (str: string) => chalk.bold.cyan(str),       // section headers
-      styleOptionText: (str: string) => str,                   // option flags: plain
+      styleTitle: (str: string) => chalk.bold.cyan(str), // section headers
+      styleOptionText: (str: string) => str, // option flags: plain
       styleOptionDescription: (str: string) => chalk.dim(str), // option explanations: muted
-      styleCommandText: (str: string) => commandStyle(str),    // command names: mild orange
-      styleArgumentText: (str: string) => str,                 // arguments: plain
-      styleDescriptionText: (str: string) => chalk.dim(str),   // other descriptions
+      styleCommandText: (str: string) => commandStyle(str), // command names: mild orange
+      styleArgumentText: (str: string) => str, // arguments: plain
+      styleDescriptionText: (str: string) => chalk.dim(str), // other descriptions
     })
     .showHelpAfterError('Try "mdquery --help" for more information.')
-    .addHelpText('after', `
+    .addHelpText(
+      'after',
+      `
 ${chalk.bold.cyan('Examples:')}
   ${commandStyle('mdquery')} "SELECT WHERE status = 'done'"
   ${commandStyle('mdquery')} --dir tasks/ "SELECT ORDER BY priority"
@@ -200,7 +257,8 @@ ${chalk.bold.cyan('Configuration:')}
   and table (trim, title-formatting, colors, normalize).
   Flags always override config values.
 
-${chalk.bold.cyan('Version:')} ${VERSION}`);
+${chalk.bold.cyan('Version:')} ${VERSION}`,
+    );
 
   // No arguments at all: print help and exit 0 (legacy behavior)
   if (process.argv.slice(2).length === 0) {
@@ -218,7 +276,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   let query = program.args[0] || '';
 
   // Resolve dirs: split comma-separated values, expand each. Defaults to the
-// current directory when no --dir flag is given.
+  // current directory when no --dir flag is given.
   const rawDirs: string[] = opts.dir?.length > 0 ? opts.dir : ['.'];
   const dirs: string[] = rawDirs
     .flatMap((d: string) => d.split(','))
@@ -227,7 +285,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     .map(resolveDir);
 
   // Validate dirs exist: single dir fails fast, multi-dir warns + continues
-  const missingDirs = dirs.filter(d => !existsSync(d));
+  const missingDirs = dirs.filter((d) => !existsSync(d));
   if (missingDirs.length > 0) {
     if (dirs.length === 1) {
       console.error(err(`Error: directory ${missingDirs[0]} does not exist`));
@@ -237,7 +295,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
       console.error(warn(`warning: directory ${d} does not exist`));
     }
   }
-  const validDirs = dirs.filter(d => existsSync(d));
+  const validDirs = dirs.filter((d) => existsSync(d));
 
   // Handle file options: split comma-separated values. Commander passes the
   // value of the short `-f=...` form with a leading '='; strip it to match the
@@ -258,7 +316,12 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
 
     if (stdinFiles) {
       files.splice(files.indexOf('-'), 1);
-      files.push(...input.split('\n').map(line => line.trim()).filter(Boolean));
+      files.push(
+        ...input
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+      );
     } else {
       query = input;
     }
@@ -294,15 +357,13 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   // Cast: TS narrows resolvedFormat to 'json' | 'csv' after extension inference,
   // but the declared type is OutputFormat — 'table' is reachable via --format/--table.
   const toTerminal = !outPath || outPath === '-';
-  const colorize = (resolvedFormat as OutputFormat) === 'table' && (
-    colorFlag === true ||
-    (colorFlag !== false && toTerminal && !!process.stdout.isTTY)
-  );
+  const colorize =
+    (resolvedFormat as OutputFormat) === 'table' &&
+    (colorFlag === true || (colorFlag !== false && toTerminal && !!process.stdout.isTTY));
 
   // Commander passes the value of the short `-d=...` form with a leading '='
-  const depth = opts.depth !== undefined
-    ? Number(String(opts.depth).replace(/^=/, ''))
-    : (config?.depth ?? 0);
+  const depth =
+    opts.depth !== undefined ? Number(String(opts.depth).replace(/^=/, '')) : (config?.depth ?? 0);
   if (!Number.isFinite(depth)) {
     console.error(err(`Error: Invalid depth: ${opts.depth}`));
     process.exit(1);
@@ -340,9 +401,14 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
   }
 
   // Resolve title-formatting: --title-format flag > config.table.title-formatting > capitalize
-  const titleFormatValue: TitleFormat = opts.titleFormat ?? config?.table?.['title-formatting'] ?? 'capitalize';
+  const titleFormatValue: TitleFormat =
+    opts.titleFormat ?? config?.table?.['title-formatting'] ?? 'capitalize';
   if (!['none', 'upper', 'capitalize', 'camel-case', 'pascal-case'].includes(titleFormatValue)) {
-    console.error(err(`Error: Invalid title-format: ${titleFormatValue} (expected none, upper, capitalize, camel-case, or pascal-case)`));
+    console.error(
+      err(
+        `Error: Invalid title-format: ${titleFormatValue} (expected none, upper, capitalize, camel-case, or pascal-case)`,
+      ),
+    );
     process.exit(1);
   }
 
@@ -363,7 +429,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     const { createInterface } = await import('readline');
     const rl = createInterface({ input: process.stdin, output: process.stderr });
     const prompt = colorEnabled ? sgr(`${op} (y/N) `, '01;36') : `${op} (y/N) `;
-    const answer = await new Promise<string>(resolve => {
+    const answer = await new Promise<string>((resolve) => {
       rl.question(prompt, resolve);
     });
     rl.close();
@@ -378,7 +444,7 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     hidden: opts.hidden ?? config?.hidden ?? false,
     ignore: ignoreFlag ?? config?.ignore ?? true,
     files: files.length > 0 ? files : undefined,
-    format: resolvedFormat
+    format: resolvedFormat,
   });
 
   try {
@@ -394,7 +460,9 @@ ${chalk.bold.cyan('Version:')} ${VERSION}`);
     const result = await executor.execute(query);
 
     if (result.meta?.errors?.length) {
-      console.error(warn(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`));
+      console.error(
+        warn(`warning: skipped ${result.meta.errors.length} file(s) (see meta.errors)`),
+      );
     }
 
     const output = Formatter.format(result, resolvedFormat, {
@@ -430,9 +498,10 @@ if (import.meta.main) {
 // trim flag: 1/true/on/yes/* → trim, 0/false/off/no → no trim. Unspecified
 // columns default to trim (true) at render time.
 function parseTrimSpec(spec: string): boolean[] {
-  return spec.split(',').map(part => {
+  return spec.split(',').map((part) => {
     const p = part.trim().toLowerCase();
-    if (p === '' || p === '1' || p === 'true' || p === 'on' || p === 'yes' || p === '*') return true;
+    if (p === '' || p === '1' || p === 'true' || p === 'on' || p === 'yes' || p === '*')
+      return true;
     if (p === '0' || p === 'false' || p === 'off' || p === 'no') return false;
     throw new Error(`expected 1/0, true/false, on/off, or *`);
   });
@@ -441,7 +510,7 @@ function parseTrimSpec(spec: string): boolean[] {
 // Parse a --columns spec like "20,*,40%" into width specs. Each entry is a
 // fixed char count, a percentage of the usable width, or * / auto.
 function parseColumnWidths(spec: string): ColumnWidthSpec[] {
-  return spec.split(',').map(part => {
+  return spec.split(',').map((part) => {
     const p = part.trim();
     if (p === '' || p === '*' || p === 'auto') return { kind: 'auto' };
     if (p.endsWith('%')) {

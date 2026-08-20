@@ -1,11 +1,10 @@
 // src/content-extractor.ts
 
-import { unified } from 'unified';
+import { Code, Heading, Image, Link, Node, Parent, Root, Text } from 'mdast';
 import remarkParse from 'remark-parse';
-import { visit, SKIP } from 'unist-util-visit';
+import { unified } from 'unified';
+import { SKIP, visit } from 'unist-util-visit';
 import { visitParents } from 'unist-util-visit-parents';
-import { Node, Parent, Link, Image, Code, Heading, Text } from 'mdast';
-import { Root } from 'mdast';
 
 interface LinkData {
   text: string;
@@ -67,108 +66,112 @@ export class ContentExtractor {
 
   // Parse markdown into AST
   parse(): Root {
-    return unified()
-      .use(remarkParse)
-      .parse(this.content) as Root;
+    return unified().use(remarkParse).parse(this.content) as Root;
   }
 
   // Extract all links with context
   extractLinks(): LinkData[] {
     const links: LinkData[] = [];
-    
+
     this.walkWithSections((node, ancestors, section) => {
       if (node.type !== 'link') return;
       const link = node as Link;
-      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
-      
+      const paragraph = [...ancestors].reverse().find((a) => a.type === 'paragraph') as
+        | Parent
+        | undefined;
+
       links.push({
         text: this.extractText(link),
         url: link.url,
         position: link.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
         sentence: paragraph ? this.sentenceInParagraph(paragraph, link) : undefined,
-        section: section
+        section: section,
       });
     });
-    
+
     return links;
   }
 
   // Extract all images with context
   extractImages(): ImageData[] {
     const images: ImageData[] = [];
-    
+
     this.walkWithSections((node, ancestors, section) => {
       if (node.type !== 'image') return;
       const image = node as Image;
-      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
-      
+      const paragraph = [...ancestors].reverse().find((a) => a.type === 'paragraph') as
+        | Parent
+        | undefined;
+
       images.push({
         alt: image.alt || '',
         url: image.url,
         position: image.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
         sentence: paragraph ? this.sentenceInParagraph(paragraph, image) : undefined,
-        section: section
+        section: section,
       });
     });
-    
+
     return images;
   }
 
   // Extract all codeblocks with context
   extractCodeblocks(): CodeBlockData[] {
     const codeblocks: CodeBlockData[] = [];
-    
+
     this.walkWithSections((node, ancestors, section) => {
       if (node.type !== 'code') return;
       const code = node as Code;
-      const paragraph = [...ancestors].reverse().find(a => a.type === 'paragraph') as Parent | undefined;
-      
+      const paragraph = [...ancestors].reverse().find((a) => a.type === 'paragraph') as
+        | Parent
+        | undefined;
+
       codeblocks.push({
         lang: code.lang || undefined,
         content: code.value,
         position: code.position,
         paragraph: paragraph ? this.extractText(paragraph) : undefined,
-        section: section
+        section: section,
       });
     });
-    
+
     return codeblocks;
   }
 
   // Extract section hierarchy
   extractSections(): SectionData[] {
     const sections: SectionData[] = [];
-    
+
     this.walkWithSections((node, _ancestors, section) => {
       if (node.type !== 'heading') return;
       const heading = node as Heading;
-      
+
       sections.push({
         title: this.extractText(heading),
         level: heading.depth,
         position: heading.position,
         hierarchy: section,
-        content: this.extractSectionContent(heading)
+        content: this.extractSectionContent(heading),
       });
     });
-    
+
     return sections;
   }
 
   // Extract table of contents
   extractToc(): TocEntry[] {
     const toc: TocEntry[] = [];
-    
+
     visit(this.ast, 'heading', (node: Heading) => {
       toc.push({
         level: node.depth,
         title: this.extractText(node),
-        position: node.position
+        position: node.position,
       });
     });
-    
+
     return toc;
   }
 
@@ -187,7 +190,7 @@ export class ContentExtractor {
       for (const match of value.matchAll(regex)) {
         const matchIndex = match.index;
         const { line, column } = this.positionAt(textNode, matchIndex);
-        const paragraphNode = [...ancestors].reverse().find(a => a.type === 'paragraph');
+        const paragraphNode = [...ancestors].reverse().find((a) => a.type === 'paragraph');
 
         matches.push({
           line,
@@ -197,11 +200,11 @@ export class ContentExtractor {
           section: section,
           sentence: this.sentenceAt(value, matchIndex),
           paragraph: paragraphNode ? this.extractText(paragraphNode) : undefined,
-          ancestors: ancestors.map(a => {
+          ancestors: ancestors.map((a) => {
             const entry: { type: string; text?: string } = { type: a.type };
             if (a.type === 'heading') entry.text = this.extractText(a);
             return entry;
-          })
+          }),
         });
       }
     });
@@ -229,7 +232,7 @@ export class ContentExtractor {
 
     return {
       line: start.line + newlines,
-      column: start.column - 1 + columnOffset
+      column: start.column - 1 + columnOffset,
     };
   }
 
@@ -253,7 +256,7 @@ export class ContentExtractor {
   // Return the sentence containing the given character index, trimmed.
   private sentenceAt(value: string, index: number): string | undefined {
     const containing = this.splitSentences(value).find(
-      s => index >= s.start && index < s.start + s.text.length
+      (s) => index >= s.start && index < s.start + s.text.length,
     );
     return containing ? containing.text.trim() : undefined;
   }
@@ -263,7 +266,7 @@ export class ContentExtractor {
       return node.value as string;
     }
     if ('children' in node) {
-      return node.children.map(child => this.extractText(child)).join('');
+      return node.children.map((child) => this.extractText(child)).join('');
     }
     return '';
   }
@@ -274,14 +277,18 @@ export class ContentExtractor {
   // a heading of equal-or-lesser depth appears, push after visiting (so a
   // heading's own hierarchy excludes its own title, matching extractSections).
   private walkWithSections(
-    visitor: (node: Node, ancestors: Node[], section: string[]) => void
+    visitor: (node: Node, ancestors: Node[], section: string[]) => void,
   ): void {
     const headingStack: Heading[] = [];
 
     visitParents(this.ast, (node, ancestors) => {
       if (node.type === 'heading') {
         const heading = node as Heading;
-        visitor(heading, ancestors, headingStack.map(h => this.extractText(h)));
+        visitor(
+          heading,
+          ancestors,
+          headingStack.map((h) => this.extractText(h)),
+        );
         while (
           headingStack.length > 0 &&
           headingStack[headingStack.length - 1].depth >= heading.depth
@@ -291,7 +298,11 @@ export class ContentExtractor {
         headingStack.push(heading);
         return;
       }
-      visitor(node, ancestors, headingStack.map(h => this.extractText(h)));
+      visitor(
+        node,
+        ancestors,
+        headingStack.map((h) => this.extractText(h)),
+      );
     });
   }
 

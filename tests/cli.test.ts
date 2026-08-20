@@ -1,10 +1,19 @@
 // tests/cli.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import { execFileSync, execSync } from 'child_process';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, statSync, existsSync, readFileSync } from 'fs';
-import { join, resolve } from 'path';
-import { tmpdir, homedir } from 'os';
 import { randomUUID } from 'crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
+import { homedir, tmpdir } from 'os';
+import { join, resolve } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resolveDir } from '../src/cli';
 
 const cliPath = join(__dirname, '..', 'bin', 'mdquery');
@@ -18,27 +27,33 @@ function binaryIsFresh(): boolean {
 function createFixtureDir(): string {
   const dir = join(tmpdir(), `mdquery-cli-test-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'task-001.md'), `---
+  writeFileSync(
+    join(dir, 'task-001.md'),
+    `---
 id: 1
 title: Test Task
 status: todo
 ---
-`);
+`,
+  );
   return dir;
 }
 
-function runCli(args: string[], env?: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
+function runCli(
+  args: string[],
+  env?: NodeJS.ProcessEnv,
+): { stdout: string; stderr: string; status: number } {
   try {
     const stdout = execFileSync(cliPath, args, {
       encoding: 'utf-8',
-      env: env ? { ...process.env, ...env } : process.env
+      env: env ? { ...process.env, ...env } : process.env,
     });
     return { stdout, stderr: '', status: 0 };
   } catch (err: any) {
     return {
       stdout: err.stdout?.toString() || '',
       stderr: err.stderr?.toString() || err.message,
-      status: (err as any).status ?? 1
+      status: (err as any).status ?? 1,
     };
   }
 }
@@ -169,7 +184,9 @@ describe('mdquery CLI', () => {
 
   it('reads file paths from stdin with -f -', () => {
     const f1 = join(fixtureDir, 'task-001.md');
-    const output = execSync(`echo "${f1}" | ${cliPath} -f - "select filename"`, { encoding: 'utf-8' });
+    const output = execSync(`echo "${f1}" | ${cliPath} -f - "select filename"`, {
+      encoding: 'utf-8',
+    });
     expect(output).toContain('task-001');
   });
 
@@ -181,7 +198,12 @@ describe('mdquery CLI', () => {
   });
 
   it('last flag wins when --format and shortcut conflict', () => {
-    const { stdout, status } = runCli(['--format=json', '--csv', `--dir=${fixtureDir}`, 'select title']);
+    const { stdout, status } = runCli([
+      '--format=json',
+      '--csv',
+      `--dir=${fixtureDir}`,
+      'select title',
+    ]);
     expect(status).toBe(0);
     expect(stdout).toContain('title'); // CSV header, not JSON
     expect(stdout).not.toContain('"type"');
@@ -194,7 +216,14 @@ describe('mdquery CLI', () => {
   });
 
   it('--rows accepts a positive integer', () => {
-    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--rows', '2', 'SELECT title']);
+    const { stdout, status } = runCli([
+      '--dir',
+      fixtureDir,
+      '--table',
+      '--rows',
+      '2',
+      'SELECT title',
+    ]);
     expect(status).toBe(0);
     expect(stdout).toContain('┌');
   });
@@ -209,7 +238,14 @@ describe('mdquery CLI', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-trim-'));
     writeFileSync(join(dir, 'a.md'), '---\ntitle: "a|b"\nnote: "c\\nd"\n---\n');
     try {
-      const { stdout, status } = runCli(['--dir', dir, '--table', '--trim', '*', 'select title, note']);
+      const { stdout, status } = runCli([
+        '--dir',
+        dir,
+        '--table',
+        '--trim',
+        '*',
+        'select title, note',
+      ]);
       expect(status).toBe(0);
       expect(stdout).toContain('a b');
       expect(stdout).not.toContain('a|b');
@@ -223,9 +259,16 @@ describe('mdquery CLI', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-trim0-'));
     writeFileSync(join(dir, 'a.md'), '---\ntitle: "a|b"\nnote: "c|d"\n---\n');
     try {
-      const { stdout, status } = runCli(['--dir', dir, '--table', '--trim', '0', 'select title, note']);
+      const { stdout, status } = runCli([
+        '--dir',
+        dir,
+        '--table',
+        '--trim',
+        '0',
+        'select title, note',
+      ]);
       expect(status).toBe(0);
-      expect(stdout).toContain('a|b');   // col 1 (title) not trimmed
+      expect(stdout).toContain('a|b'); // col 1 (title) not trimmed
       expect(stdout).not.toContain('c|d'); // col 2 (note) trimmed
       expect(stdout).toContain('c d');
     } finally {
@@ -252,20 +295,40 @@ describe('mdquery CLI', () => {
   });
 
   it('--title-format upper uppercases headers', () => {
-    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--title-format', 'upper', 'select title']);
+    const { stdout, status } = runCli([
+      '--dir',
+      fixtureDir,
+      '--table',
+      '--title-format',
+      'upper',
+      'select title',
+    ]);
     expect(status).toBe(0);
     expect(stdout).toContain('TITLE');
   });
 
   it('--title-format none keeps headers as-is', () => {
-    const { stdout, status } = runCli(['--dir', fixtureDir, '--table', '--title-format', 'none', 'select title']);
+    const { stdout, status } = runCli([
+      '--dir',
+      fixtureDir,
+      '--table',
+      '--title-format',
+      'none',
+      'select title',
+    ]);
     expect(status).toBe(0);
     expect(stdout).toContain('title');
     expect(stdout).not.toContain('Title');
   });
 
   it('invalid --title-format errors', () => {
-    const { stderr, status } = runCli(['--dir', fixtureDir, '--title-format', 'title', 'select title']);
+    const { stderr, status } = runCli([
+      '--dir',
+      fixtureDir,
+      '--title-format',
+      'title',
+      'select title',
+    ]);
     expect(status).not.toBe(0);
     expect(stderr).toContain('Invalid title-format');
   });
@@ -278,10 +341,11 @@ describe('CLI --dir', () => {
     writeFileSync(join(dirA, 'a.md'), '---\ntitle: Alpha\n---\n');
     writeFileSync(join(dirB, 'b.md'), '---\ntitle: Beta\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', `${dirA},${dirB}`,
-        'select filename, source_dir'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', `${dirA},${dirB}`, 'select filename, source_dir'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const json = JSON.parse(out);
       expect(json.data).toHaveLength(2);
       const sources = json.data.map((r: any) => r.source_dir).sort();
@@ -300,9 +364,10 @@ describe('CLI --dir', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: Tilde\n---\n');
     try {
       const rel = dir.replace(home, '~');
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', rel, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync('bun', ['run', 'src/cli.ts', '--dir', rel, 'select filename'], {
+        encoding: 'utf-8',
+        cwd: join(__dirname, '..'),
+      });
       const json = JSON.parse(out);
       expect(json.data).toHaveLength(1);
       expect(json.data[0].filename).toBe('a');
@@ -315,9 +380,10 @@ describe('CLI --dir', () => {
     const missingDir = join(tmpdir(), 'cli-missing-' + Date.now());
     let threw = false;
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', missingDir, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync('bun', ['run', 'src/cli.ts', '--dir', missingDir, 'select filename'], {
+        encoding: 'utf-8',
+        cwd: join(__dirname, '..'),
+      });
     } catch (e: any) {
       threw = true;
       expect(e.status).toBe(1);
@@ -331,10 +397,11 @@ describe('CLI --dir', () => {
     const missingDir = join(tmpdir(), 'cli-warn-missing-' + Date.now());
     writeFileSync(join(dirA, 'a.md'), '---\ntitle: Alpha\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', `${dirA},${missingDir}`,
-        'select filename, source_dir'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', `${dirA},${missingDir}`, 'select filename, source_dir'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const json = JSON.parse(out);
       expect(json.data).toHaveLength(1);
       expect(json.data[0].source_dir).toBe(dirA);
@@ -350,10 +417,11 @@ describe('CLI --out', () => {
     const outFile = join(dir, 'results.json');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outFile, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--out', outFile, 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const content = readFileSync(outFile, 'utf-8');
       const json = JSON.parse(content);
       expect(json.data).toHaveLength(1);
@@ -367,10 +435,11 @@ describe('CLI --out', () => {
     const outFile = join(dir, 'results.csv');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outFile, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--out', outFile, 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const content = readFileSync(outFile, 'utf-8');
       expect(content).toContain('filename');
       expect(content).toContain('f');
@@ -383,10 +452,11 @@ describe('CLI --out', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-out-stdout-'));
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', '-', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--out', '-', 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const json = JSON.parse(out);
       expect(json.data).toHaveLength(1);
     } finally {
@@ -399,10 +469,21 @@ describe('CLI --out', () => {
     const outFile = join(dir, 'results.json');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outFile, '--format', 'csv', 'select filename, title'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        [
+          'run',
+          'src/cli.ts',
+          '--dir',
+          dir,
+          '--out',
+          outFile,
+          '--format',
+          'csv',
+          'select filename, title',
+        ],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const content = readFileSync(outFile, 'utf-8');
       // CSV format: header + data rows (two columns => commas present)
       expect(content).toContain('filename');
@@ -418,10 +499,11 @@ describe('CLI --out', () => {
     const outBase = join(dir, 'results');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outBase, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--out', outBase, 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const content = readFileSync(outBase + '.json', 'utf-8');
       const json = JSON.parse(content);
       expect(json.data).toHaveLength(1);
@@ -435,10 +517,21 @@ describe('CLI --out', () => {
     const outFile = join(dir, 'results.csv');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outFile, '--format', 'json', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        [
+          'run',
+          'src/cli.ts',
+          '--dir',
+          dir,
+          '--out',
+          outFile,
+          '--format',
+          'json',
+          'select filename',
+        ],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       // File still written to results.csv (user extension kept)
       const content = readFileSync(outFile, 'utf-8');
       const json = JSON.parse(content); // JSON content despite .csv extension
@@ -453,10 +546,11 @@ describe('CLI --out', () => {
     const outFile = join(dir, 'sub', 'dir', 'results.json');
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir,
-        '--out', outFile, 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--out', outFile, 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       const content = readFileSync(outFile, 'utf-8');
       const json = JSON.parse(content); // valid JSON
       expect(json.data).toHaveLength(1);
@@ -471,9 +565,11 @@ describe('color flags', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-color-nc-'));
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--no-color', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--format=table', '--no-color', 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       expect(out).not.toMatch(/\x1b\[/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -484,9 +580,11 @@ describe('color flags', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-color-c-'));
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       expect(out).toMatch(/\x1b\[/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -497,9 +595,11 @@ describe('color flags', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-color-def-'));
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir, '--format=table', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--format=table', 'select filename'],
+        { encoding: 'utf-8', cwd: join(__dirname, '..') },
+      );
       expect(out).not.toMatch(/\x1b\[/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -510,9 +610,15 @@ describe('color flags', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-color-env-'));
     writeFileSync(join(dir, 'f.md'), '---\ntitle: Test\n---\n');
     try {
-      const out = execFileSync('bun', [
-        'run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..'), env: { ...process.env, MDQUERY_COLORS: 'title=31' } });
+      const out = execFileSync(
+        'bun',
+        ['run', 'src/cli.ts', '--dir', dir, '--format=table', '--color', 'select filename'],
+        {
+          encoding: 'utf-8',
+          cwd: join(__dirname, '..'),
+          env: { ...process.env, MDQUERY_COLORS: 'title=31' },
+        },
+      );
       expect(out).toMatch(/\x1b\[31m/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -520,9 +626,10 @@ describe('color flags', () => {
   });
 
   it('--color forces ANSI codes in help output', () => {
-    const out = execFileSync('bun', [
-      'run', 'src/cli.ts', '--color', '--help'
-    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    const out = execFileSync('bun', ['run', 'src/cli.ts', '--color', '--help'], {
+      encoding: 'utf-8',
+      cwd: join(__dirname, '..'),
+    });
     expect(out).toMatch(/\x1b\[/);
     // Section headers are bold cyan
     expect(out).toMatch(/\x1b\[1m\x1b\[36mUsage:/);
@@ -546,9 +653,10 @@ describe('color flags', () => {
   it('--color colorizes commander errors', () => {
     let threw = false;
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--color', '--card'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync('bun', ['run', 'src/cli.ts', '--color', '--card'], {
+        encoding: 'utf-8',
+        cwd: join(__dirname, '..'),
+      });
     } catch (e: any) {
       threw = true;
       expect(e.stderr.toString()).toMatch(/\x1b\[31mError: Unknown option: --card/);
@@ -559,9 +667,10 @@ describe('color flags', () => {
   it('--no-color keeps commander errors clean', () => {
     let threw = false;
     try {
-      execFileSync('bun', [
-        'run', 'src/cli.ts', '--no-color', '--card'
-      ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+      execFileSync('bun', ['run', 'src/cli.ts', '--no-color', '--card'], {
+        encoding: 'utf-8',
+        cwd: join(__dirname, '..'),
+      });
     } catch (e: any) {
       threw = true;
       expect(e.stderr.toString()).not.toMatch(/\x1b\[/);
@@ -570,16 +679,18 @@ describe('color flags', () => {
   });
 
   it('--no-color keeps help output clean even with --color', () => {
-    const out = execFileSync('bun', [
-      'run', 'src/cli.ts', '--color', '--no-color', '--help'
-    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    const out = execFileSync('bun', ['run', 'src/cli.ts', '--color', '--no-color', '--help'], {
+      encoding: 'utf-8',
+      cwd: join(__dirname, '..'),
+    });
     expect(out).not.toMatch(/\x1b\[/);
   });
 
   it('piped help output is clean by default', () => {
-    const out = execFileSync('bun', [
-      'run', 'src/cli.ts', '--help'
-    ], { encoding: 'utf-8', cwd: join(__dirname, '..') });
+    const out = execFileSync('bun', ['run', 'src/cli.ts', '--help'], {
+      encoding: 'utf-8',
+      cwd: join(__dirname, '..'),
+    });
     expect(out).not.toMatch(/\x1b\[/);
   });
 });
@@ -594,7 +705,10 @@ describe('config file', () => {
     writeFileSync(join(dir, 'config.yaml'), yaml);
   }
 
-  function runWithConfig(args: string[], env?: NodeJS.ProcessEnv): { stdout: string; stderr: string; status: number } {
+  function runWithConfig(
+    args: string[],
+    env?: NodeJS.ProcessEnv,
+  ): { stdout: string; stderr: string; status: number } {
     return runCli(args, { XDG_CONFIG_HOME: configHome, ...env });
   }
 
@@ -618,7 +732,11 @@ describe('config file', () => {
 
   it('--format flag overrides config format', () => {
     writeConfig('format: table\n');
-    const { stdout, status } = runWithConfig([`--dir=${fixtureDir}`, '--format=json', 'select title']);
+    const { stdout, status } = runWithConfig([
+      `--dir=${fixtureDir}`,
+      '--format=json',
+      'select title',
+    ]);
     expect(status).toBe(0);
     const json = JSON.parse(stdout);
     expect(json.data).toHaveLength(1);
@@ -649,10 +767,10 @@ describe('config file', () => {
 
   it('MDQUERY_COLORS overrides config colors', () => {
     writeConfig('format: table\ncolors:\n  title: "31"\n');
-    const { stdout, status } = runCli(
-      [`--dir=${fixtureDir}`, '--color', 'select title'],
-      { XDG_CONFIG_HOME: configHome, MDQUERY_COLORS: 'title=32' }
-    );
+    const { stdout, status } = runCli([`--dir=${fixtureDir}`, '--color', 'select title'], {
+      XDG_CONFIG_HOME: configHome,
+      MDQUERY_COLORS: 'title=32',
+    });
     expect(status).toBe(0);
     expect(stdout).toMatch(/\x1b\[32m/);
     expect(stdout).not.toMatch(/\x1b\[31m/);
@@ -728,7 +846,9 @@ describe('config file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cli-no-normalize-'));
     writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
     try {
-      const { stdout, status } = runCli(['--dir', dir, '--table', '--no-normalize', 'select *'], { COLUMNS: '200' });
+      const { stdout, status } = runCli(['--dir', dir, '--table', '--no-normalize', 'select *'], {
+        COLUMNS: '200',
+      });
       expect(status).toBe(0);
       expect(stdout).toContain('Some-text');
       expect(stdout).not.toContain('Some Text');
@@ -742,7 +862,9 @@ describe('config file', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: x\nsome-text: y\n---\n');
     try {
       writeConfig('format: table\ntable:\n  normalize: false\n');
-      const { stdout, status } = runWithConfig([`--dir=${dir}`, '--normalize', 'select *'], { COLUMNS: '200' });
+      const { stdout, status } = runWithConfig([`--dir=${dir}`, '--normalize', 'select *'], {
+        COLUMNS: '200',
+      });
       expect(status).toBe(0);
       expect(stdout).toContain('Some Text');
       expect(stdout).not.toContain('Some-text');

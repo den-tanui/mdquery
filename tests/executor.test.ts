@@ -1,18 +1,21 @@
 // tests/executor.test.ts
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { Executor } from '../src/executor';
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs';
+
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Executor } from '../src/executor';
 
 const FIXTURES_DIR = join(__dirname, 'fixtures', 'executor');
 
 describe('Executor', () => {
   beforeAll(() => {
     mkdirSync(FIXTURES_DIR, { recursive: true });
-    
+
     // Create test task files
-    writeFileSync(join(FIXTURES_DIR, 'task-001.md'), `---
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-001.md'),
+      `---
 id: 1
 title: Test Task
 status: todo
@@ -24,9 +27,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is a test task.
-`);
-    
-    writeFileSync(join(FIXTURES_DIR, 'task-002.md'), `---
+`,
+    );
+
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-002.md'),
+      `---
 id: 2
 title: Another Task
 status: done
@@ -38,9 +44,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is another test task.
-`);
-    
-    writeFileSync(join(FIXTURES_DIR, 'task-003.md'), `---
+`,
+    );
+
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-003.md'),
+      `---
 id: 3
 title: Third Task
 status: doing
@@ -52,7 +61,8 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is the third test task.
-`);
+`,
+    );
   });
 
   afterAll(() => {
@@ -107,11 +117,11 @@ This is the third test task.
       const executor = new Executor(FIXTURES_DIR);
       const result = await executor.execute('update where id = 1 set status = "doing"');
       expect(result.updated).toBe(1);
-      
+
       // Verify update
       const selectResult = await executor.execute('select where id = 1');
       expect(selectResult.data?.[0].status).toBe('doing');
-      
+
       // Reset
       await executor.execute('update where id = 1 set status = "todo"');
     });
@@ -120,20 +130,24 @@ This is the third test task.
   describe('CREATE', () => {
     it('creates a new task', async () => {
       const executor = new Executor(FIXTURES_DIR);
-      const result = await executor.execute('create title = "New Task" status = "todo" projectId = 1 file = "new-task"');
+      const result = await executor.execute(
+        'create title = "New Task" status = "todo" projectId = 1 file = "new-task"',
+      );
       expect(result.created).toBe(1);
-      
+
       // Verify creation
       const selectResult = await executor.execute('select where title = "New Task"');
       expect(selectResult.data).toHaveLength(1);
-      
+
       // Clean up
       await executor.execute('delete where title = "New Task"');
     });
 
     it('create without a target errors', async () => {
       const executor = new Executor(FIXTURES_DIR);
-      await expect(executor.execute('create title = "No Target"')).rejects.toThrow('create requires path to file');
+      await expect(executor.execute('create title = "No Target"')).rejects.toThrow(
+        'create requires path to file',
+      );
     });
   });
 
@@ -142,13 +156,15 @@ This is the third test task.
       const executor = new Executor(FIXTURES_DIR);
       const result = await executor.execute('delete where id = 3');
       expect(result.deleted).toBe(1);
-      
+
       // Verify deletion
       const selectResult = await executor.execute('select');
       expect(selectResult.data).toHaveLength(2);
-      
+
       // Recreate for other tests
-      await executor.execute('create id = 3 title = "Third Task" status = "doing" projectId = 2 priority = 1 file = "task-003"');
+      await executor.execute(
+        'create id = 3 title = "Third Task" status = "doing" projectId = 2 priority = 1 file = "task-003"',
+      );
     });
   });
 });
@@ -160,7 +176,10 @@ describe('Executor error handling + meta', () => {
     dir = mkdtempSync(join(tmpdir(), 'mdquery-err-'));
     writeFileSync(join(dir, 'good.md'), '---\ntitle: Good\n---\nBody\n');
     // Malformed frontmatter: gray-matter throws YAMLException
-    writeFileSync(join(dir, 'bad.md'), '---\nname: "broken\ndescription: this yaml is invalid\n---\n');
+    writeFileSync(
+      join(dir, 'bad.md'),
+      '---\nname: "broken\ndescription: this yaml is invalid\n---\n',
+    );
   });
 
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -198,7 +217,7 @@ describe('Executor error handling + meta', () => {
     // read-phase error is recorded too, so assert `some` evaluate error and
     // that the offending file is excluded from data.
     const result = await executor.execute('select title.filter(x)');
-    expect(result.meta!.errors.some(e => e.phase === 'evaluate')).toBe(true);
+    expect(result.meta!.errors.some((e) => e.phase === 'evaluate')).toBe(true);
     expect(result.data).toHaveLength(0);
   });
 
@@ -268,7 +287,10 @@ describe('Array method eager-arg fixes', () => {
     // toc() returns [{level, title}] per section; the frontmatter `title: A`
     // guards the _-fallback: bare `title` in a filter predicate must resolve
     // to the item's title, not the file's frontmatter title.
-    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n');
+    writeFileSync(
+      join(dir, 'a.md'),
+      '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n',
+    );
   });
 
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -293,7 +315,7 @@ describe('Array method eager-arg fixes', () => {
 
   it('filter with an expression predicate works', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
-    const result = await executor.execute("select toc().filter(_.level = 2).count()");
+    const result = await executor.execute('select toc().filter(_.level = 2).count()');
     expect(result.data![0]['toc().filter(_.level_=_2).count()']).toBe(2);
   });
 });
@@ -303,7 +325,10 @@ describe('sections()/section() redesign', () => {
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'mdquery-sec-'));
-    writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n');
+    writeFileSync(
+      join(dir, 'a.md'),
+      '---\ntitle: A\n---\n## Setup\nDo it now.\n\n## Teardown\nOther stuff.\n',
+    );
   });
 
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -321,7 +346,10 @@ describe('sections()/section() redesign', () => {
   it('section("name") returns the first exact match or null', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
     const result = await executor.execute('select section("Setup")');
-    expect(result.data![0]['section("Setup")']).toMatchObject({ title: 'Setup', content: 'Do it now.' });
+    expect(result.data![0]['section("Setup")']).toMatchObject({
+      title: 'Setup',
+      content: 'Do it now.',
+    });
     const missing = await executor.execute('select section("Nope")');
     expect(missing.data![0]['section("Nope")']).toBeNull();
   });
@@ -353,7 +381,9 @@ describe('Scalar enforcement (table/csv)', () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
     await expect(executor.execute('select sections()')).rejects.toThrow(/sections\(\)/);
     await expect(executor.execute('select sections()')).rejects.toThrow(/array of maps/);
-    await expect(executor.execute('select sections()')).rejects.toThrow(/sections\(\)\.map\('title'\)/);
+    await expect(executor.execute('select sections()')).rejects.toThrow(
+      /sections\(\)\.map\('title'\)/,
+    );
   });
 
   it('throws for section("name") in csv format with a shape-aware message', async () => {
@@ -362,7 +392,9 @@ describe('Scalar enforcement (table/csv)', () => {
     // The suggestion templates are static (`section("name").title`), so the
     // shape-aware message names the offending expression AND suggests the
     // scalar property-access alternative.
-    await expect(executor.execute('select section("Setup")')).rejects.toThrow(/section\("name"\)\.title/);
+    await expect(executor.execute('select section("Setup")')).rejects.toThrow(
+      /section\("name"\)\.title/,
+    );
   });
 
   it('allows scalar property access in table format', async () => {
@@ -373,8 +405,8 @@ describe('Scalar enforcement (table/csv)', () => {
 
   it('allows arrays of scalars in table format', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true, format: 'table' });
-    const result = await executor.execute('select sections().map(\'title\')');
-    expect(result.data![0]["sections().map(\"title\")"]).toEqual(['Setup']);
+    const result = await executor.execute("select sections().map('title')");
+    expect(result.data![0]['sections().map("title")']).toEqual(['Setup']);
   });
 
   it('does not enforce in json format', async () => {
@@ -441,7 +473,7 @@ describe('Executor multi-dir', () => {
     const executor = new Executor([dirA, dirB]);
     const result = await executor.execute('select filename, source_dir');
     expect(result.data).toHaveLength(2);
-    const filenames = result.data!.map(r => r.filename).sort();
+    const filenames = result.data!.map((r) => r.filename).sort();
     expect(filenames).toEqual(['a', 'b']);
     // source_dir is set on each row
     for (const row of result.data!) {
@@ -460,7 +492,7 @@ describe('Executor multi-dir', () => {
   it('path is relative to source_dir', async () => {
     const executor = new Executor([dirA, dirB]);
     const result = await executor.execute('select filename, path, source_dir');
-    const byName = Object.fromEntries(result.data!.map(r => [r.filename, r]));
+    const byName = Object.fromEntries(result.data!.map((r) => [r.filename, r]));
     expect(byName['a'].path).toBe('a.md');
     expect(byName['a'].source_dir).toBe(dirA);
     expect(byName['b'].path).toBe('b.md');
@@ -482,7 +514,7 @@ describe('Executor multi-dir', () => {
     expect(result.data![0].source_dir).toBe(dirA);
     // missing dir recorded in meta.errors with phase read
     expect(result.meta?.errors?.length).toBeGreaterThan(0);
-    const err = result.meta!.errors.find(e => e.path === missingDir);
+    const err = result.meta!.errors.find((e) => e.path === missingDir);
     expect(err).toBeDefined();
     expect(err!.phase).toBe('read');
   });
@@ -494,23 +526,32 @@ describe('SELECT strips all-null rows', () => {
   beforeAll(() => {
     mkdirSync(STRIP_DIR, { recursive: true });
     // has title + status
-    writeFileSync(join(STRIP_DIR, 'task.md'), `---
+    writeFileSync(
+      join(STRIP_DIR, 'task.md'),
+      `---
 title: Has Title
 status: todo
 ---
 
 Body.
-`);
+`,
+    );
     // has status only, no title
-    writeFileSync(join(STRIP_DIR, 'note.md'), `---
+    writeFileSync(
+      join(STRIP_DIR, 'note.md'),
+      `---
 status: doing
 ---
 
 Body.
-`);
+`,
+    );
     // no frontmatter at all
-    writeFileSync(join(STRIP_DIR, 'plain.md'), `Just a body.
-`);
+    writeFileSync(
+      join(STRIP_DIR, 'plain.md'),
+      `Just a body.
+`,
+    );
   });
 
   afterAll(() => {
@@ -534,7 +575,7 @@ Body.
     const executor = new Executor(STRIP_DIR);
     const result = await executor.execute('select title, status');
     expect(result.data).toHaveLength(2);
-    const statuses = result.data!.map(r => r.status).sort();
+    const statuses = result.data!.map((r) => r.status).sort();
     expect(statuses).toEqual(['doing', 'todo']);
   });
 
@@ -557,32 +598,44 @@ describe('SELECT LIMIT/OFFSET count result rows', () => {
   beforeAll(() => {
     mkdirSync(LIMIT_DIR, { recursive: true });
     // first two files (by seq) have NO title — LIMIT must skip them to fill N rows
-    writeFileSync(join(LIMIT_DIR, 'f1.md'), `---
+    writeFileSync(
+      join(LIMIT_DIR, 'f1.md'),
+      `---
 seq: 1
 ---
 
 Body.
-`);
-    writeFileSync(join(LIMIT_DIR, 'f2.md'), `---
+`,
+    );
+    writeFileSync(
+      join(LIMIT_DIR, 'f2.md'),
+      `---
 seq: 2
 ---
 
 Body.
-`);
-    writeFileSync(join(LIMIT_DIR, 'f3.md'), `---
+`,
+    );
+    writeFileSync(
+      join(LIMIT_DIR, 'f3.md'),
+      `---
 seq: 3
 title: Third
 ---
 
 Body.
-`);
-    writeFileSync(join(LIMIT_DIR, 'f4.md'), `---
+`,
+    );
+    writeFileSync(
+      join(LIMIT_DIR, 'f4.md'),
+      `---
 seq: 4
 title: Fourth
 ---
 
 Body.
-`);
+`,
+    );
   });
 
   afterAll(() => {
@@ -593,7 +646,7 @@ Body.
     const executor = new Executor(LIMIT_DIR);
     const result = await executor.execute('select title order by seq limit 2');
     expect(result.data).toHaveLength(2);
-    expect(result.data!.map(r => r.title)).toEqual(['Third', 'Fourth']);
+    expect(result.data!.map((r) => r.title)).toEqual(['Third', 'Fourth']);
   });
 
   it('limit 1 returns the first non-empty row', async () => {

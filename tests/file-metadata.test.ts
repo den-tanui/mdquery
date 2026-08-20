@@ -1,13 +1,14 @@
 // tests/file-metadata.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync, utimesSync } from 'fs';
+
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
-import { buildFileMetadata, FileOps } from '../src/files';
-import { FastFileOps } from '../src/file-io';
-import { QueryAnalyzer } from '../src/query-analyzer';
-import { Parser } from '../src/parser';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Executor } from '../src/executor';
+import { FastFileOps } from '../src/file-io';
+import { buildFileMetadata, FileOps } from '../src/files';
+import { Parser } from '../src/parser';
+import { QueryAnalyzer } from '../src/query-analyzer';
 import type { SelectStatement } from '../src/types';
 
 describe('buildFileMetadata', () => {
@@ -50,11 +51,15 @@ describe('read paths load metadata lazily', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n');
     const paths = await FastFileOps.listFiles(dir);
     const withMeta = await FastFileOps.readFiles(dir, paths, {
-      requiresContent: false, bodyPredicates: [], requiresMetadata: true
+      requiresContent: false,
+      bodyPredicates: [],
+      requiresMetadata: true,
     });
     expect(withMeta[0].metadata).toBeDefined();
     const withoutMeta = await FastFileOps.readFiles(dir, paths, {
-      requiresContent: false, bodyPredicates: [], requiresMetadata: false
+      requiresContent: false,
+      bodyPredicates: [],
+      requiresMetadata: false,
     });
     expect(withoutMeta[0].metadata).toBeUndefined();
     rmSync(dir, { recursive: true, force: true });
@@ -85,14 +90,16 @@ describe('QueryAnalyzer requiresMetadata detection', () => {
     const ast: SelectStatement = {
       type: 'select',
       fields: [{ type: 'field', name: 'filename' }],
-      orderBy: [{
-        field: {
-          type: 'map_index',
-          object: { type: 'function_call', name: 'file', args: [] },
-          key: { type: 'string', value: 'mtime' }
+      orderBy: [
+        {
+          field: {
+            type: 'map_index',
+            object: { type: 'function_call', name: 'file', args: [] },
+            key: { type: 'string', value: 'mtime' },
+          },
+          direction: 'asc',
         },
-        direction: 'asc'
-      }]
+      ],
     };
     const plan = new QueryAnalyzer(ast).analyze();
     expect(plan.lazyLoading.requiresMetadata).toBe(true);
@@ -134,7 +141,7 @@ describe('file() evaluation', () => {
     expect(meta).toMatchObject({
       abspath: join(dir, 'a.md'),
       size: expect.any(Number),
-      mode: expect.stringMatching(/^[rwx-]{9}$/)
+      mode: expect.stringMatching(/^[rwx-]{9}$/),
     });
     expect(meta.mtime).toBeInstanceOf(Date);
   });
@@ -154,9 +161,18 @@ describe('file() evaluation', () => {
 
   it('lazy-loads metadata only when the query uses file()', async () => {
     const seen: any[] = [];
-    const executor = new Executor(dir, undefined, undefined, { fast: true }, {
-      onAfterRead: (f: any) => { seen.push(f); return f; }
-    });
+    const executor = new Executor(
+      dir,
+      undefined,
+      undefined,
+      { fast: true },
+      {
+        onAfterRead: (f: any) => {
+          seen.push(f);
+          return f;
+        },
+      },
+    );
     await executor.execute('select filename');
     expect(seen[0].metadata).toBeUndefined();
     seen.length = 0;
@@ -167,9 +183,18 @@ describe('file() evaluation', () => {
 
   it('legacy (non-fast) path also lazy-loads metadata', async () => {
     const seen: any[] = [];
-    const executor = new Executor(dir, undefined, undefined, {}, {
-      onAfterRead: (f: any) => { seen.push(f); return f; }
-    });
+    const executor = new Executor(
+      dir,
+      undefined,
+      undefined,
+      {},
+      {
+        onAfterRead: (f: any) => {
+          seen.push(f);
+          return f;
+        },
+      },
+    );
     await executor.execute('select filename');
     expect(seen[0].metadata).toBeUndefined();
     seen.length = 0;
@@ -181,7 +206,7 @@ describe('file() evaluation', () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
     const result = await executor.execute('select file(mtime)');
     expect(result.data).toEqual([]);
-    expect(result.meta!.errors.some(e => /takes no arguments/.test(e.error))).toBe(true);
+    expect(result.meta!.errors.some((e) => /takes no arguments/.test(e.error))).toBe(true);
   });
 });
 
@@ -198,9 +223,9 @@ describe('order by file().mtime', () => {
 
     const executor = new Executor(dir, undefined, undefined, { fast: true });
     const asc = await executor.execute('select filename order by file().mtime');
-    expect(asc.data!.map(r => r.filename)).toEqual(['a', 'b']);
+    expect(asc.data!.map((r) => r.filename)).toEqual(['a', 'b']);
     const desc = await executor.execute('select filename order by file().mtime desc');
-    expect(desc.data!.map(r => r.filename)).toEqual(['b', 'a']);
+    expect(desc.data!.map((r) => r.filename)).toEqual(['b', 'a']);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -209,7 +234,7 @@ describe('order by file().mtime', () => {
     expect(ast).toEqual({
       type: 'select',
       fields: [{ type: 'wildcard' }],
-      orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }]
+      orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }],
     });
   });
 });
@@ -249,6 +274,8 @@ describe('file().mtime() rejection', () => {
 
   it('rejects calling a property accessor — maps are not callable', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
-    await expect(executor.execute('select file().mtime()')).rejects.toThrow(/only functions are callable/);
+    await expect(executor.execute('select file().mtime()')).rejects.toThrow(
+      /only functions are callable/,
+    );
   });
 });

@@ -1,11 +1,12 @@
 // tests/benchmark-fileio.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import * as os from 'os';
+import * as path from 'path';
 import { performance } from 'perf_hooks';
-import { FileOps } from '../src/files';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FastFileOps } from '../src/file-io';
+import { FileOps } from '../src/files';
 import { LegacyFileOps } from './fixtures/legacy-files';
 
 function generateTask(id: number): string {
@@ -13,8 +14,8 @@ function generateTask(id: number): string {
     `id: ${id}`,
     `title: "Task ${id}"`,
     `status: ${id % 3 === 0 ? 'todo' : id % 3 === 1 ? 'doing' : 'done'}`,
-    `priority: ${id % 5 + 1}`,
-    `createdAt: 2026-01-${String(id % 28 + 1).padStart(2, '0')}T10:00:00Z`
+    `priority: ${(id % 5) + 1}`,
+    `createdAt: 2026-01-${String((id % 28) + 1).padStart(2, '0')}T10:00:00Z`,
   ].join('\n');
   const body = `# Task ${id}\n\n## Section 1\n\nSome content mentioning BUG-${id}.\n\n## Section 2\n\nMore lines.\n`;
   return `---\n${frontmatter}\n---\n\n${body}`;
@@ -30,7 +31,7 @@ describe('Benchmark: File I/O (legacy vs current vs fdir/grepts)', () => {
   const scales = [
     { name: 'Small', count: 10 },
     { name: 'Medium', count: 100 },
-    { name: 'Large', count: 1000 }
+    { name: 'Large', count: 1000 },
   ];
 
   for (const scale of scales) {
@@ -64,7 +65,10 @@ describe('Benchmark: File I/O (legacy vs current vs fdir/grepts)', () => {
 
       it('reads files (frontmatter only)', { timeout: 60000 }, async () => {
         const paths = await FastFileOps.listFiles(dir);
-        const analysis = { requiresContent: false, bodyPredicates: [] as { field: string; op: string; value: string }[] };
+        const analysis = {
+          requiresContent: false,
+          bodyPredicates: [] as { field: string; op: string; value: string }[],
+        };
 
         const legacy = await time(() => LegacyFileOps.readFiles(dir));
         const current = await time(() => FileOps.readFiles(dir));

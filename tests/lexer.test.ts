@@ -1,26 +1,54 @@
 // tests/lexer.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Lexer } from '../src/lexer';
 
 describe('Lexer', () => {
   it('tokenizes SELECT', () => {
     const tokens = new Lexer('select').tokenize();
-    expect(tokens[0]).toEqual({ type: 'SELECT', value: 'select', position: 0, line: 1, column: 1, offset: 0 });
+    expect(tokens[0]).toEqual({
+      type: 'SELECT',
+      value: 'select',
+      position: 0,
+      line: 1,
+      column: 1,
+      offset: 0,
+    });
   });
 
   it('tokenizes WHERE', () => {
     const tokens = new Lexer('where').tokenize();
-    expect(tokens[0]).toEqual({ type: 'WHERE', value: 'where', position: 0, line: 1, column: 1, offset: 0 });
+    expect(tokens[0]).toEqual({
+      type: 'WHERE',
+      value: 'where',
+      position: 0,
+      line: 1,
+      column: 1,
+      offset: 0,
+    });
   });
 
   it('tokenizes string value', () => {
     const tokens = new Lexer('"done"').tokenize();
-    expect(tokens[0]).toEqual({ type: 'STRING', value: 'done', position: 0, line: 1, column: 1, offset: 0 });
+    expect(tokens[0]).toEqual({
+      type: 'STRING',
+      value: 'done',
+      position: 0,
+      line: 1,
+      column: 1,
+      offset: 0,
+    });
   });
 
   it('tokenizes number value', () => {
     const tokens = new Lexer('42').tokenize();
-    expect(tokens[0]).toEqual({ type: 'NUMBER', value: '42', position: 0, line: 1, column: 1, offset: 0 });
+    expect(tokens[0]).toEqual({
+      type: 'NUMBER',
+      value: '42',
+      position: 0,
+      line: 1,
+      column: 1,
+      offset: 0,
+    });
   });
 
   it('tokenizes operators', () => {
@@ -44,15 +72,22 @@ describe('Lexer', () => {
 
   it('tokenizes full select query', () => {
     const tokens = new Lexer('select where status = "done" order by priority').tokenize();
-    expect(tokens.map(t => t.type)).toEqual([
-      'SELECT', 'WHERE', 'IDENTIFIER', 'EQUALS', 'STRING',
-      'ORDER', 'BY', 'IDENTIFIER', 'EOF'
+    expect(tokens.map((t) => t.type)).toEqual([
+      'SELECT',
+      'WHERE',
+      'IDENTIFIER',
+      'EQUALS',
+      'STRING',
+      'ORDER',
+      'BY',
+      'IDENTIFIER',
+      'EOF',
     ]);
   });
 
   it('handles whitespace', () => {
     const tokens = new Lexer('  select   where  ').tokenize();
-    expect(tokens.filter(t => t.type !== 'EOF')).toHaveLength(2);
+    expect(tokens.filter((t) => t.type !== 'EOF')).toHaveLength(2);
   });
 
   it('throws on invalid character', () => {

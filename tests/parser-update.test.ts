@@ -1,5 +1,5 @@
 // tests/parser-update.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Parser } from '../src/parser';
 
 describe('Parser - UPDATE/CREATE/DELETE', () => {
@@ -12,9 +12,9 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'status' },
           op: '=',
-          right: { type: 'string', value: 'todo' }
+          right: { type: 'string', value: 'todo' },
         },
-        set: { status: { value: { type: 'string', value: 'doing' } } }
+        set: { status: { value: { type: 'string', value: 'doing' } } },
       });
     });
 
@@ -26,12 +26,12 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'id' },
           op: '=',
-          right: { type: 'number', value: 1 }
+          right: { type: 'number', value: 1 },
         },
         set: {
           status: { value: { type: 'string', value: 'done' } },
-          assignee: { value: { type: 'string', value: 'jane' } }
-        }
+          assignee: { value: { type: 'string', value: 'jane' } },
+        },
       });
     });
 
@@ -43,9 +43,9 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'id' },
           op: '=',
-          right: { type: 'number', value: 1 }
+          right: { type: 'number', value: 1 },
         },
-        set: { priority: { value: { type: 'number', value: 5 } } }
+        set: { priority: { value: { type: 'number', value: 5 } } },
       });
     });
 
@@ -57,9 +57,9 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'id' },
           op: '=',
-          right: { type: 'number', value: 1 }
+          right: { type: 'number', value: 1 },
         },
-        set: { completed: { value: { type: 'boolean', value: true } } }
+        set: { completed: { value: { type: 'boolean', value: true } } },
       });
     });
 
@@ -71,9 +71,9 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'id' },
           op: '=',
-          right: { type: 'number', value: 1 }
+          right: { type: 'number', value: 1 },
         },
-        set: { status: { value: { type: 'string', value: 'doing' }, type: 'str' } }
+        set: { status: { value: { type: 'string', value: 'doing' }, type: 'str' } },
       });
     });
   });
@@ -85,8 +85,8 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
         type: 'create',
         fields: {
           title: { value: { type: 'string', value: 'My Task' } },
-          status: { value: { type: 'string', value: 'todo' } }
-        }
+          status: { value: { type: 'string', value: 'todo' } },
+        },
       });
     });
 
@@ -97,20 +97,22 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
         fields: {
           title: { value: { type: 'string', value: 'Task' } },
           priority: { value: { type: 'number', value: 3 } },
-          completed: { value: { type: 'boolean', value: false } }
-        }
+          completed: { value: { type: 'boolean', value: false } },
+        },
       });
     });
 
     it('parses create with type annotations', () => {
-      const ast = new Parser('create title:str = "Task" priority:int = 5 status:str = "todo"').parse();
+      const ast = new Parser(
+        'create title:str = "Task" priority:int = 5 status:str = "todo"',
+      ).parse();
       expect(ast).toEqual({
         type: 'create',
         fields: {
           title: { value: { type: 'string', value: 'Task' }, type: 'str' },
           priority: { value: { type: 'number', value: 5 }, type: 'int' },
-          status: { value: { type: 'string', value: 'todo' }, type: 'str' }
-        }
+          status: { value: { type: 'string', value: 'todo' }, type: 'str' },
+        },
       });
     });
   });
@@ -124,8 +126,8 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'status' },
           op: '=',
-          right: { type: 'string', value: 'done' }
-        }
+          right: { type: 'string', value: 'done' },
+        },
       });
     });
 
@@ -139,16 +141,16 @@ describe('Parser - UPDATE/CREATE/DELETE', () => {
             type: 'binary_op',
             left: { type: 'field', name: 'projectId' },
             op: '=',
-            right: { type: 'number', value: 1 }
+            right: { type: 'number', value: 1 },
           },
           op: 'AND',
           right: {
             type: 'binary_op',
             left: { type: 'field', name: 'status' },
             op: '=',
-            right: { type: 'string', value: 'done' }
-          }
-        }
+            right: { type: 'string', value: 'done' },
+          },
+        },
       });
     });
   });

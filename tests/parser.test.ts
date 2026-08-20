@@ -1,5 +1,5 @@
 // tests/parser.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Parser } from '../src/parser';
 
 describe('Parser', () => {
@@ -13,7 +13,11 @@ describe('Parser', () => {
       const ast = new Parser('select id, title, status').parse();
       expect(ast).toEqual({
         type: 'select',
-        fields: [{ type: 'field', name: 'id' }, { type: 'field', name: 'title' }, { type: 'field', name: 'status' }]
+        fields: [
+          { type: 'field', name: 'id' },
+          { type: 'field', name: 'title' },
+          { type: 'field', name: 'status' },
+        ],
       });
     });
 
@@ -26,8 +30,8 @@ describe('Parser', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'status' },
           op: '=',
-          right: { type: 'string', value: 'done' }
-        }
+          right: { type: 'string', value: 'done' },
+        },
       });
     });
 
@@ -42,16 +46,16 @@ describe('Parser', () => {
             type: 'binary_op',
             left: { type: 'field', name: 'status' },
             op: '=',
-            right: { type: 'string', value: 'done' }
+            right: { type: 'string', value: 'done' },
           },
           op: 'AND',
           right: {
             type: 'binary_op',
             left: { type: 'field', name: 'assignee' },
             op: '=',
-            right: { type: 'string', value: 'jane' }
-          }
-        }
+            right: { type: 'string', value: 'jane' },
+          },
+        },
       });
     });
 
@@ -60,7 +64,7 @@ describe('Parser', () => {
       expect(ast).toEqual({
         type: 'select',
         fields: [{ type: 'wildcard' }],
-        orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }]
+        orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'desc' }],
       });
     });
 
@@ -70,7 +74,7 @@ describe('Parser', () => {
         type: 'select',
         fields: [{ type: 'wildcard' }],
         orderBy: [{ field: { type: 'field', name: 'priority' }, direction: 'asc' }],
-        limit: 10
+        limit: 10,
       });
     });
 
@@ -80,9 +84,9 @@ describe('Parser', () => {
         type: 'select',
         fields: [
           { type: 'field', name: 'status' },
-          { type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] }
+          { type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] },
         ],
-        groupBy: ['status']
+        groupBy: ['status'],
       });
     });
 
@@ -95,8 +99,8 @@ describe('Parser', () => {
           type: 'binary_op',
           left: { type: 'field', name: 'projectId' },
           op: '=',
-          right: { type: 'number', value: 1 }
-        }
+          right: { type: 'number', value: 1 },
+        },
       });
     });
   });

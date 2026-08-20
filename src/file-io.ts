@@ -1,11 +1,11 @@
 // src/file-io.ts
 import { fdir } from 'fdir';
-import { join, relative, isAbsolute, basename } from 'path';
 import { readFileSync } from 'fs';
 import matter from 'gray-matter';
-import ignore from 'ignore';
-import { FileData, ReadOptions, parseDates, parseSections, buildFileMetadata } from './files';
 import type { SearchOptions } from 'grepts';
+import ignore from 'ignore';
+import { basename, isAbsolute, join, relative } from 'path';
+import { buildFileMetadata, FileData, parseDates, parseSections, ReadOptions } from './files';
 import type { ContentPrefilterNode } from './query-analyzer';
 
 export interface FileIOAnalysis {
@@ -31,7 +31,7 @@ const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files' | 'onError' | 'format'
   hidden: false,
   ignore: true,
   fast: false,
-  metadata: false
+  metadata: false,
 };
 
 export class FastFileOps {
@@ -63,7 +63,7 @@ export class FastFileOps {
 
     // fdir does not respect .gitignore — apply it here
     if (opts.ignore) {
-      files = this.applyGitignore(dir, files);
+      files = FastFileOps.applyGitignore(dir, files);
     }
 
     return files;
@@ -73,7 +73,7 @@ export class FastFileOps {
     dir: string,
     paths: string[],
     analysis: FileIOAnalysis,
-    onError?: (error: { path: string; error: string; phase: 'read' }) => void
+    onError?: (error: { path: string; error: string; phase: 'read' }) => void,
   ): Promise<FileData[]> {
     const files: FileData[] = [];
     for (const fp of paths) {
@@ -100,7 +100,7 @@ export class FastFileOps {
           content: raw,
           body: analysis.requiresContent ? body : undefined,
           sections: analysis.requiresContent ? parseSections(body) : undefined,
-          metadata: analysis.requiresMetadata ? buildFileMetadata(fp) : undefined
+          metadata: analysis.requiresMetadata ? buildFileMetadata(fp) : undefined,
         };
         files.push(file);
       } catch (e: any) {
@@ -114,7 +114,7 @@ export class FastFileOps {
     dir: string,
     files: string[],
     pattern: string,
-    negate = false
+    negate = false,
   ): Promise<string[]> {
     const { searchAsync } = await import('grepts');
     const results = await searchAsync({
@@ -123,10 +123,10 @@ export class FastFileOps {
       glob: '*.md',
       hidden: true,
       respectGitignore: false,
-      invertMatch: negate
+      invertMatch: negate,
     } as SearchOptions);
-    const matchSet = new Set(results.map(r => r.filePath));
-    return files.filter(f => matchSet.has(f));
+    const matchSet = new Set(results.map((r) => r.filePath));
+    return files.filter((f) => matchSet.has(f));
   }
 
   private static applyGitignore(root: string, files: string[]): string[] {
@@ -137,7 +137,7 @@ export class FastFileOps {
     } catch {
       return files; // no .gitignore
     }
-    return files.filter(f => {
+    return files.filter((f) => {
       const rel = relative(root, f);
       if (rel.startsWith('..') || isAbsolute(rel)) return true;
       return !ig!.ignores(rel);
@@ -156,7 +156,7 @@ export type PrefilterSieve = (op: string, pattern: string) => Promise<string[]>;
 export async function applyContentPrefilter(
   paths: string[],
   tree: ContentPrefilterNode,
-  sieve: PrefilterSieve
+  sieve: PrefilterSieve,
 ): Promise<string[]> {
   const cache = new Map<string, Promise<string[]>>();
 
@@ -190,7 +190,7 @@ export async function applyContentPrefilter(
 
 function intersectPaths(a: string[], b: string[]): string[] {
   const bSet = new Set(b);
-  return a.filter(p => bSet.has(p));
+  return a.filter((p) => bSet.has(p));
 }
 
 function unionPaths(a: string[], b: string[]): string[] {

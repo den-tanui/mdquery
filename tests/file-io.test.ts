@@ -1,13 +1,14 @@
 // tests/file-io.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { FastFileOps, applyContentPrefilter, type PrefilterSieve } from '../src/file-io';
+
+import { randomUUID } from 'crypto';
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Executor } from '../src/executor';
+import { applyContentPrefilter, FastFileOps, type PrefilterSieve } from '../src/file-io';
 import { Parser } from '../src/parser';
 import { buildContentPrefilterTree, type ContentPrefilterNode } from '../src/query-analyzer';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { randomUUID } from 'crypto';
 
 function makeTree(): string {
   const root = join(tmpdir(), `mdquery-fio-${randomUUID()}`);
@@ -35,32 +36,36 @@ function makeGitignoreTree(): string {
 
 describe('FastFileOps.listFiles', () => {
   let dir: string;
-  beforeAll(() => { dir = makeTree(); });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeAll(() => {
+    dir = makeTree();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('lists only .md files recursively by default', async () => {
     const files = await FastFileOps.listFiles(dir);
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['sub/deep/deep.md', 'sub/mid.md', 'top.md']);
   });
 
   it('respects depth 1 (top level only)', async () => {
     const files = await FastFileOps.listFiles(dir, { depth: 1 });
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['top.md']);
   });
 
   it('respects depth 2 (one subdirectory level)', async () => {
     const files = await FastFileOps.listFiles(dir, { depth: 2 });
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['sub/mid.md', 'top.md']);
   });
 
   it('skips hidden files by default, includes with hidden: true', async () => {
     const without = await FastFileOps.listFiles(dir);
-    expect(without.some(f => f.includes('secret'))).toBe(false);
+    expect(without.some((f) => f.includes('secret'))).toBe(false);
     const withHidden = await FastFileOps.listFiles(dir, { hidden: true });
-    expect(withHidden.some(f => f.includes('secret'))).toBe(true);
+    expect(withHidden.some((f) => f.includes('secret'))).toBe(true);
   });
 
   it('returns absolute paths', async () => {
@@ -71,44 +76,58 @@ describe('FastFileOps.listFiles', () => {
 
 describe('FastFileOps.listFiles gitignore + .git handling', () => {
   let dir: string;
-  beforeAll(() => { dir = makeGitignoreTree(); });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeAll(() => {
+    dir = makeGitignoreTree();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('respects .gitignore (excludes sub/)', async () => {
     const files = await FastFileOps.listFiles(dir);
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['top.md']);
   });
 
   it('includes gitignored files when ignore: false', async () => {
     const files = await FastFileOps.listFiles(dir, { ignore: false });
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['sub/mid.md', 'top.md']);
   });
 
   it('always skips .git even with hidden: true', async () => {
     const files = await FastFileOps.listFiles(dir, { hidden: true });
-    expect(files.some(f => f.includes('.git'))).toBe(false);
-    const rel = files.map(f => f.replace(dir + '/', '')).sort();
+    expect(files.some((f) => f.includes('.git'))).toBe(false);
+    const rel = files.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['top.md']);
   });
 });
 
 describe('FastFileOps.readFiles', () => {
   let dir: string;
-  beforeAll(() => { dir = makeTree(); });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeAll(() => {
+    dir = makeTree();
+  });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('loads frontmatter always, body only when requiresContent', async () => {
     const paths = await FastFileOps.listFiles(dir, { depth: 1 });
 
-    const noBody = await FastFileOps.readFiles(dir, paths, { requiresContent: false, bodyPredicates: [] });
+    const noBody = await FastFileOps.readFiles(dir, paths, {
+      requiresContent: false,
+      bodyPredicates: [],
+    });
     expect(noBody[0].title).toBe('Top');
     expect(noBody[0].body).toBeUndefined();
     expect(noBody[0].sections).toBeUndefined();
     expect(noBody[0].content).toBeDefined();
 
-    const withBody = await FastFileOps.readFiles(dir, paths, { requiresContent: true, bodyPredicates: [] });
+    const withBody = await FastFileOps.readFiles(dir, paths, {
+      requiresContent: true,
+      bodyPredicates: [],
+    });
     // top.md's body is empty (frontmatter only), so assert it is defined rather
     // than containing a specific string.
     expect(withBody[0].body).toBeDefined();
@@ -117,8 +136,11 @@ describe('FastFileOps.readFiles', () => {
 
   it('exposes filename, path, abspath, frontmatter', async () => {
     const paths = await FastFileOps.listFiles(dir, { depth: 1 });
-    const files = await FastFileOps.readFiles(dir, paths, { requiresContent: false, bodyPredicates: [] });
-    const top = files.find(f => f.filename === 'top')!;
+    const files = await FastFileOps.readFiles(dir, paths, {
+      requiresContent: false,
+      bodyPredicates: [],
+    });
+    const top = files.find((f) => f.filename === 'top')!;
     expect(top.path).toBe('top.md');
     expect(top.abspath).toBe(join(dir, 'top.md'));
     expect(top.frontmatter.title).toBe('Top');
@@ -133,7 +155,9 @@ describe('FastFileOps.preFilterByContent', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n\nThis file mentions BUG-123.\n');
     writeFileSync(join(dir, 'b.md'), '---\ntitle: B\n---\n\nNo bug here.\n');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('returns only files whose content matches the pattern', async () => {
     const all = await FastFileOps.listFiles(dir);
@@ -157,7 +181,9 @@ describe('Executor fast file I/O', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: A\nstatus: todo\n---\n\nHas BUG-123.\n');
     writeFileSync(join(dir, 'b.md'), '---\ntitle: B\nstatus: done\n---\n\nClean.\n');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('select with fast:true returns correct results', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
@@ -180,7 +206,9 @@ describe('Executor fast path body field references', () => {
     writeFileSync(join(dir, 'a.md'), '---\ntitle: A\n---\n\nHas BUG-123 in body.\n');
     writeFileSync(join(dir, 'b.md'), '---\ntitle: B\n---\n\nClean body.\n');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('body contains works in fast mode (body loaded when referenced)', async () => {
     const executor = new Executor(dir, undefined, undefined, { fast: true });
@@ -193,7 +221,9 @@ describe('Executor fast path body field references', () => {
     const fast = new Executor(dir, undefined, undefined, { fast: true });
     const legacyResult = await legacy.execute('select title where body contains "BUG-123"');
     const fastResult = await fast.execute('select title where body contains "BUG-123"');
-    expect(fastResult.data!.map((f: any) => f.title)).toEqual(legacyResult.data!.map((f: any) => f.title));
+    expect(fastResult.data!.map((f: any) => f.title)).toEqual(
+      legacyResult.data!.map((f: any) => f.title),
+    );
   });
 
   it('select body in fast mode returns the body content', async () => {
@@ -222,12 +252,14 @@ describe('FastFileOps.preFilterByContent negate', () => {
     // that does not match, which grepts' line-based invertMatch would keep.
     writeFileSync(join(dir, 'c.md'), 'BUG-123\nBUG-123');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('returns files with at least one non-matching line when negate is true', async () => {
     const all = await FastFileOps.listFiles(dir);
     const matches = await FastFileOps.preFilterByContent(dir, all, 'BUG-123', true);
-    const rel = matches.map(f => f.replace(dir + '/', '')).sort();
+    const rel = matches.map((f) => f.replace(dir + '/', '')).sort();
     // a.md and b.md have non-matching lines; c.md's every line matches → dropped.
     expect(rel).toEqual(['a.md', 'b.md']);
   });
@@ -235,7 +267,7 @@ describe('FastFileOps.preFilterByContent negate', () => {
   it('defaults to positive matching when negate is omitted', async () => {
     const all = await FastFileOps.listFiles(dir);
     const matches = await FastFileOps.preFilterByContent(dir, all, 'BUG-123');
-    const rel = matches.map(f => f.replace(dir + '/', '')).sort();
+    const rel = matches.map((f) => f.replace(dir + '/', '')).sort();
     expect(rel).toEqual(['a.md', 'c.md']);
   });
 });
@@ -249,7 +281,9 @@ describe('Executor fast path negated content predicates', () => {
     writeFileSync(join(dir, 'b.md'), 'Beta is clean');
     writeFileSync(join(dir, 'c.md'), 'BUG-123\nBUG-123\n');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   async function filenamesFor(query: string, fast: boolean): Promise<string[]> {
     const executor = new Executor(dir, undefined, undefined, { fast });
@@ -258,14 +292,20 @@ describe('Executor fast path negated content predicates', () => {
   }
 
   it('content NOT CONTAINS returns same results in fast and legacy mode', async () => {
-    const legacy = await filenamesFor('select filename where content NOT CONTAINS "BUG-123"', false);
+    const legacy = await filenamesFor(
+      'select filename where content NOT CONTAINS "BUG-123"',
+      false,
+    );
     const fast = await filenamesFor('select filename where content NOT CONTAINS "BUG-123"', true);
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['b']);
   });
 
   it('content NOT STARTS_WITH returns same results in fast and legacy mode', async () => {
-    const legacy = await filenamesFor('select filename where content NOT STARTS_WITH "Alpha"', false);
+    const legacy = await filenamesFor(
+      'select filename where content NOT STARTS_WITH "Alpha"',
+      false,
+    );
     const fast = await filenamesFor('select filename where content NOT STARTS_WITH "Alpha"', true);
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['b', 'c']);
@@ -296,35 +336,43 @@ describe('buildContentPrefilterTree', () => {
     expect(treeFor('select filename where content contains "a" OR content contains "b"')).toEqual({
       type: 'or',
       left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
-      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' },
     });
   });
 
   it('preserves AND structure with a negated leaf', () => {
-    expect(treeFor('select filename where content contains "a" AND content NOT CONTAINS "b"')).toEqual({
+    expect(
+      treeFor('select filename where content contains "a" AND content NOT CONTAINS "b"'),
+    ).toEqual({
       type: 'and',
       left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
-      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
+      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' },
     });
   });
 
   it('pushes NOT down to the leaf (De Morgan)', () => {
     expect(treeFor('select filename where NOT (content contains "a")')).toEqual({
-      type: 'leaf', op: 'NOT CONTAINS', pattern: 'a'
+      type: 'leaf',
+      op: 'NOT CONTAINS',
+      pattern: 'a',
     });
   });
 
   it('pushes NOT over OR down to AND of negated leaves', () => {
-    expect(treeFor('select filename where NOT (content contains "a" OR content contains "b")')).toEqual({
+    expect(
+      treeFor('select filename where NOT (content contains "a" OR content contains "b")'),
+    ).toEqual({
       type: 'and',
       left: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'a' },
-      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
+      right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' },
     });
   });
 
   it('treats a non-content AND branch as identity', () => {
     expect(treeFor('select filename where status = "todo" AND content contains "a"')).toEqual({
-      type: 'leaf', op: 'CONTAINS', pattern: 'a'
+      type: 'leaf',
+      op: 'CONTAINS',
+      pattern: 'a',
     });
   });
 
@@ -341,7 +389,7 @@ describe('buildContentPrefilterTree', () => {
     expect(treeFor('select filename where content IN ("a", "b")')).toEqual({
       type: 'or',
       left: { type: 'leaf', op: '=', pattern: 'a' },
-      right: { type: 'leaf', op: '=', pattern: 'b' }
+      right: { type: 'leaf', op: '=', pattern: 'b' },
     });
   });
 
@@ -349,7 +397,7 @@ describe('buildContentPrefilterTree', () => {
     expect(treeFor('select filename where content NOT IN ("a", "b")')).toEqual({
       type: 'and',
       left: { type: 'leaf', op: '!=', pattern: 'a' },
-      right: { type: 'leaf', op: '!=', pattern: 'b' }
+      right: { type: 'leaf', op: '!=', pattern: 'b' },
     });
   });
 });
@@ -361,7 +409,7 @@ describe('applyContentPrefilter', () => {
     const calls: string[] = [];
     const sieve: PrefilterSieve = async (op, pattern) => {
       calls.push(`${op}:${pattern}`);
-      return paths.filter(p => p.includes(pattern));
+      return paths.filter((p) => p.includes(pattern));
     };
     const tree: ContentPrefilterNode = {
       type: 'or',
@@ -369,8 +417,8 @@ describe('applyContentPrefilter', () => {
       right: {
         type: 'and',
         left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
-        right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' }
-      }
+        right: { type: 'leaf', op: 'NOT CONTAINS', pattern: 'b' },
+      },
     };
     const result = await applyContentPrefilter(paths, tree, sieve);
     // 'a' appears twice (positive) → one call; 'b' once (negated) → one call
@@ -388,16 +436,20 @@ describe('applyContentPrefilter', () => {
     const andTree: ContentPrefilterNode = {
       type: 'and',
       left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
-      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' },
     };
     expect((await applyContentPrefilter(paths, andTree, sieve)).sort()).toEqual(['/x/c.md']);
 
     const orTree: ContentPrefilterNode = {
       type: 'or',
       left: { type: 'leaf', op: 'CONTAINS', pattern: 'a' },
-      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' }
+      right: { type: 'leaf', op: 'CONTAINS', pattern: 'b' },
     };
-    expect((await applyContentPrefilter(paths, orTree, sieve)).sort()).toEqual(['/x/a.md', '/x/b.md', '/x/c.md']);
+    expect((await applyContentPrefilter(paths, orTree, sieve)).sort()).toEqual([
+      '/x/a.md',
+      '/x/b.md',
+      '/x/c.md',
+    ]);
   });
 });
 
@@ -408,10 +460,15 @@ describe('Executor fast path AND/OR/NOT content prefilter', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'a.md'), '---\ntitle: A\nstatus: todo\n---\n\nAlpha has BUG-123.\n');
     writeFileSync(join(dir, 'b.md'), '---\ntitle: B\nstatus: done\n---\n\nBeta has OTHER-456.\n');
-    writeFileSync(join(dir, 'c.md'), '---\ntitle: C\nstatus: todo\n---\n\nGamma has BUG-123 and OTHER-456.\n');
+    writeFileSync(
+      join(dir, 'c.md'),
+      '---\ntitle: C\nstatus: todo\n---\n\nGamma has BUG-123 and OTHER-456.\n',
+    );
     writeFileSync(join(dir, 'd.md'), '---\ntitle: D\nstatus: done\n---\n\nDelta is clean.\n');
   });
-  afterAll(() => { rmSync(dir, { recursive: true, force: true }); });
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   async function filenamesFor(query: string, fast: boolean): Promise<string[]> {
     const executor = new Executor(dir, undefined, undefined, { fast });
@@ -420,43 +477,76 @@ describe('Executor fast path AND/OR/NOT content prefilter', () => {
   }
 
   it('OR returns the union in fast mode', async () => {
-    const legacy = await filenamesFor('select filename where content contains "BUG-123" OR content contains "OTHER-456"', false);
-    const fast = await filenamesFor('select filename where content contains "BUG-123" OR content contains "OTHER-456"', true);
+    const legacy = await filenamesFor(
+      'select filename where content contains "BUG-123" OR content contains "OTHER-456"',
+      false,
+    );
+    const fast = await filenamesFor(
+      'select filename where content contains "BUG-123" OR content contains "OTHER-456"',
+      true,
+    );
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['a', 'b', 'c']);
   });
 
   it('AND intersects in fast mode', async () => {
-    const legacy = await filenamesFor('select filename where content contains "BUG-123" AND content contains "OTHER-456"', false);
-    const fast = await filenamesFor('select filename where content contains "BUG-123" AND content contains "OTHER-456"', true);
+    const legacy = await filenamesFor(
+      'select filename where content contains "BUG-123" AND content contains "OTHER-456"',
+      false,
+    );
+    const fast = await filenamesFor(
+      'select filename where content contains "BUG-123" AND content contains "OTHER-456"',
+      true,
+    );
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['c']);
   });
 
   it('NOT complements in fast mode', async () => {
-    const legacy = await filenamesFor('select filename where NOT (content contains "BUG-123")', false);
+    const legacy = await filenamesFor(
+      'select filename where NOT (content contains "BUG-123")',
+      false,
+    );
     const fast = await filenamesFor('select filename where NOT (content contains "BUG-123")', true);
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['b', 'd']);
   });
 
   it('NOT over OR complements the union in fast mode', async () => {
-    const legacy = await filenamesFor('select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")', false);
-    const fast = await filenamesFor('select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")', true);
+    const legacy = await filenamesFor(
+      'select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")',
+      false,
+    );
+    const fast = await filenamesFor(
+      'select filename where NOT (content contains "BUG-123" OR content contains "OTHER-456")',
+      true,
+    );
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['d']);
   });
 
   it('mixed frontmatter AND content predicate matches legacy', async () => {
-    const legacy = await filenamesFor('select filename where status = "todo" AND content contains "BUG-123"', false);
-    const fast = await filenamesFor('select filename where status = "todo" AND content contains "BUG-123"', true);
+    const legacy = await filenamesFor(
+      'select filename where status = "todo" AND content contains "BUG-123"',
+      false,
+    );
+    const fast = await filenamesFor(
+      'select filename where status = "todo" AND content contains "BUG-123"',
+      true,
+    );
     expect(fast).toEqual(legacy);
     expect(fast).toEqual(['a', 'c']);
   });
 
   it('content IN prefilter stays a superset and matches legacy', async () => {
-    const legacy = await filenamesFor('select filename where content IN ("BUG-123", "OTHER-456")', false);
-    const fast = await filenamesFor('select filename where content IN ("BUG-123", "OTHER-456")', true);
+    const legacy = await filenamesFor(
+      'select filename where content IN ("BUG-123", "OTHER-456")',
+      false,
+    );
+    const fast = await filenamesFor(
+      'select filename where content IN ("BUG-123", "OTHER-456")',
+      true,
+    );
     expect(fast).toEqual(legacy);
   });
 });

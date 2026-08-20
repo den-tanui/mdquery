@@ -1,11 +1,27 @@
 // tests/parser-rewrite.test.ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Parser } from '../src/parser';
 import {
-  ASTNode, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
-  Expression, BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode,
-  ArrayIndexNode, MapIndexNode, FieldNode, ValueNode, ParenNode, WildcardNode,
-  SubqueryNode, JoinNode, FromClause, OrderByNode
+  ArrayIndexNode,
+  ASTNode,
+  BinaryOpNode,
+  CreateStatement,
+  DeleteStatement,
+  Expression,
+  FieldNode,
+  FromClause,
+  FunctionCallNode,
+  JoinNode,
+  MapIndexNode,
+  MethodCallNode,
+  OrderByNode,
+  ParenNode,
+  SelectStatement,
+  SubqueryNode,
+  UnaryOpNode,
+  UpdateStatement,
+  ValueNode,
+  WildcardNode,
 } from '../src/types';
 
 // Helper to cast AST node to specific type
@@ -20,12 +36,12 @@ export const isValidASTNode = (node: any) => {
   expect(typeof node).toBe('object');
   expect(node).not.toBeNull();
   expect(node).not.toEqual({});
-  
+
   // FromClause doesn't have a type property
   if (node.table && !node.type) return;
-  
+
   expect(typeof node.type).toBe('string');
-  
+
   // Verify it can be serialized/deserialized
   const serialized = JSON.stringify(node);
   const deserialized = JSON.parse(serialized);
@@ -39,7 +55,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       isValidASTNode(ast);
       expect(ast).toEqual({
         type: 'select',
-        fields: [{ type: 'wildcard' }]
+        fields: [{ type: 'wildcard' }],
       });
     });
 
@@ -73,22 +89,18 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.fields).toEqual([
         { type: 'field', name: 'id' },
         { type: 'field', name: 'title' },
-        { type: 'field', name: 'status' }
+        { type: 'field', name: 'status' },
       ]);
     });
 
     it('parses field with AS alias', () => {
       const ast = new Parser('select title as TaskName').parse() as SelectStatement;
-      expect(ast.fields).toEqual([
-        { type: 'field', name: 'title', alias: 'TaskName' }
-      ]);
+      expect(ast.fields).toEqual([{ type: 'field', name: 'title', alias: 'TaskName' }]);
     });
 
     it('parses builtin function', () => {
       const ast = new Parser('select toc()').parse() as SelectStatement;
-      expect(ast.fields).toEqual([
-        { type: 'function_call', name: 'toc', args: [] }
-      ]);
+      expect(ast.fields).toEqual([{ type: 'function_call', name: 'toc', args: [] }]);
     });
 
     it('parses builtin with property accessor', () => {
@@ -97,15 +109,15 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         {
           type: 'function_call',
           name: 'links',
-          args: [{ type: 'string', value: 'url' }]
-        }
+          args: [{ type: 'string', value: 'url' }],
+        },
       ]);
     });
 
     it('parses aggregate function', () => {
       const ast = new Parser('select count(*)').parse() as SelectStatement;
       expect(ast.fields).toEqual([
-        { type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] }
+        { type: 'function_call', name: 'count', args: [{ type: 'wildcard' }] },
       ]);
     });
   });
@@ -117,27 +129,29 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         type: 'binary_op',
         left: { type: 'field', name: 'status' },
         op: '=',
-        right: { type: 'string', value: 'done' }
+        right: { type: 'string', value: 'done' },
       });
     });
 
     it('parses AND condition', () => {
-      const ast = new Parser('select where status = "done" and assignee = "jane"').parse() as SelectStatement;
+      const ast = new Parser(
+        'select where status = "done" and assignee = "jane"',
+      ).parse() as SelectStatement;
       expect(ast.where).toEqual({
         type: 'binary_op',
         left: {
           type: 'binary_op',
           left: { type: 'field', name: 'status' },
           op: '=',
-          right: { type: 'string', value: 'done' }
+          right: { type: 'string', value: 'done' },
         },
         op: 'AND',
         right: {
           type: 'binary_op',
           left: { type: 'field', name: 'assignee' },
           op: '=',
-          right: { type: 'string', value: 'jane' }
-        }
+          right: { type: 'string', value: 'jane' },
+        },
       });
     });
 
@@ -150,7 +164,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
     });
 
     it('respects operator precedence (AND > OR)', () => {
-      const ast = asSelect(new Parser('select where status = "done" or priority > 3 and assignee = "jane"').parse());
+      const ast = asSelect(
+        new Parser('select where status = "done" or priority > 3 and assignee = "jane"').parse(),
+      );
       expect(ast.where).toBeDefined();
       if (ast.where?.type === 'binary_op') {
         // Should be: status = "done" OR (priority > 3 AND assignee = "jane")
@@ -168,10 +184,10 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         left: {
           type: 'unary_op',
           op: 'NOT',
-          operand: { type: 'field', name: 'status' }
+          operand: { type: 'field', name: 'status' },
         },
         op: '=',
-        right: { type: 'string', value: 'done' }
+        right: { type: 'string', value: 'done' },
       });
     });
 
@@ -185,9 +201,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
           type: 'array',
           items: [
             { type: 'string', value: 'todo' },
-            { type: 'string', value: 'doing' }
-          ]
-        }
+            { type: 'string', value: 'doing' },
+          ],
+        },
       });
     });
 
@@ -196,7 +212,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.where).toEqual({
         type: 'function_call',
         name: 'has',
-        args: [{ type: 'field', name: 'section' }]
+        args: [{ type: 'field', name: 'section' }],
       });
     });
 
@@ -205,7 +221,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.where).toEqual({
         type: 'function_call',
         name: 'has_section',
-        args: [{ type: 'string', value: 'Setup' }]
+        args: [{ type: 'string', value: 'Setup' }],
       });
     });
 
@@ -218,8 +234,8 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         right: {
           type: 'function_call',
           name: 'toc',
-          args: []
-        }
+          args: [],
+        },
       });
     });
   });
@@ -299,7 +315,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.fields[0]).toEqual({
         type: 'function_call',
         name: 'links',
-        args: [{ type: 'string', value: 'url' }]
+        args: [{ type: 'string', value: 'url' }],
       });
     });
 
@@ -308,7 +324,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.fields[0]).toEqual({
         type: 'function_call',
         name: 'section',
-        args: [{ type: 'string', value: 'title' }]
+        args: [{ type: 'string', value: 'title' }],
       });
     });
   });
@@ -321,9 +337,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         object: {
           type: 'function_call',
           name: 'toc',
-          args: []
+          args: [],
         },
-        index: { type: 'number', value: 0 }
+        index: { type: 'number', value: 0 },
       });
     });
 
@@ -357,15 +373,17 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         object: {
           type: 'function_call',
           name: 'links',
-          args: []
+          args: [],
         },
         method: 'filter',
-        args: [{
-          type: 'binary_op',
-          left: { type: 'field', name: 'section' },
-          op: '=',
-          right: { type: 'string', value: 'Setup' }
-        }]
+        args: [
+          {
+            type: 'binary_op',
+            left: { type: 'field', name: 'section' },
+            op: '=',
+            right: { type: 'string', value: 'Setup' },
+          },
+        ],
       });
     });
 
@@ -388,7 +406,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
     });
 
     it('parses chained methods', () => {
-      const ast = new Parser("select links().filter(section = 'Setup').map('url').sort('line')").parse();
+      const ast = new Parser(
+        "select links().filter(section = 'Setup').map('url').sort('line')",
+      ).parse();
       const field = ast.fields[0];
       expect(field.method).toBe('sort');
       expect(field.object.method).toBe('map');
@@ -411,7 +431,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.where).toEqual({
         type: 'function_call',
         name: 'grep',
-        args: [{ type: 'regex', value: '/TODO/g' }]
+        args: [{ type: 'regex', value: '/TODO/g' }],
       });
     });
 
@@ -428,7 +448,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.fields[0]).toEqual({
         type: 'function_call',
         name: 'content',
-        args: [{ type: 'number', value: 10 }]
+        args: [{ type: 'number', value: 10 }],
       });
     });
 
@@ -436,7 +456,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       const ast = new Parser('select content(1, 45)').parse();
       expect(ast.fields[0].args).toEqual([
         { type: 'number', value: 1 },
-        { type: 'number', value: 45 }
+        { type: 'number', value: 45 },
       ]);
     });
 
@@ -445,7 +465,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
       expect(ast.fields[0].args[0]).toEqual({
         type: 'unary_op',
         op: '-',
-        operand: { type: 'number', value: 10 }
+        operand: { type: 'number', value: 10 },
       });
     });
   });
@@ -471,21 +491,27 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
 
   describe('JOIN Syntax', () => {
     it('parses LEFT JOIN', () => {
-      const ast = new Parser('select from files a left join sections b on a.id = b.file_id').parse();
+      const ast = new Parser(
+        'select from files a left join sections b on a.id = b.file_id',
+      ).parse();
       if (ast.type === 'select' && ast.join) {
         expect(ast.join.joinType).toBe('left');
       }
     });
 
     it('parses RIGHT JOIN', () => {
-      const ast = new Parser('select from files a right join sections b on a.id = b.file_id').parse();
+      const ast = new Parser(
+        'select from files a right join sections b on a.id = b.file_id',
+      ).parse();
       if (ast.type === 'select' && ast.join) {
         expect(ast.join.joinType).toBe('right');
       }
     });
 
     it('parses INNER JOIN', () => {
-      const ast = new Parser('select from files a inner join sections b on a.id = b.file_id').parse();
+      const ast = new Parser(
+        'select from files a inner join sections b on a.id = b.file_id',
+      ).parse();
       if (ast.type === 'select' && ast.join) {
         expect(ast.join.joinType).toBe('inner');
       }
@@ -549,7 +575,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
 
   describe('Complex Queries', () => {
     it('parses full SELECT query', () => {
-      const ast = new Parser('select title, status where status = "done" order by priority desc limit 10').parse();
+      const ast = new Parser(
+        'select title, status where status = "done" order by priority desc limit 10',
+      ).parse();
       expect(ast.type).toBe('select');
       expect(ast.fields.length).toBe(2);
       expect(ast.where).toBeDefined();
@@ -569,7 +597,9 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
     });
 
     it('parses query with method chaining', () => {
-      const ast = new Parser("select title where links().filter(section = 'Setup').count() > 0").parse();
+      const ast = new Parser(
+        "select title where links().filter(section = 'Setup').count() > 0",
+      ).parse();
       expect(ast.where.left.type).toBe('method_call');
     });
 
@@ -579,12 +609,14 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
     });
 
     it('parses query with subquery', () => {
-      const ast = new Parser("select title where title in (select title from other)").parse();
+      const ast = new Parser('select title where title in (select title from other)').parse();
       expect(ast.where.right.type).toBe('subquery');
     });
 
     it('parses query with JOIN', () => {
-      const ast = new Parser("select a.title, b.content from files a left join sections b on a.id = b.file_id").parse();
+      const ast = new Parser(
+        'select a.title, b.content from files a left join sections b on a.id = b.file_id',
+      ).parse();
       expect(ast.join).toBeDefined();
     });
   });
@@ -598,18 +630,18 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         'select content(1, 10)',
         'select toc()[0]',
         'select where title in (select title from files)',
-        'select from files a left join sections b on a.id = b.id'
+        'select from files a left join sections b on a.id = b.id',
       ];
 
       for (const query of queries) {
         const ast = new Parser(query).parse();
         isValidASTNode(ast);
-        
+
         // Recursively check all nodes
         const checkNode = (node: any) => {
           if (!node) return;
           isValidASTNode(node);
-          
+
           for (const key in node) {
             if (Array.isArray(node[key])) {
               node[key].forEach(checkNode);
@@ -618,7 +650,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
             }
           }
         };
-        
+
         checkNode(ast);
       }
     });
@@ -629,7 +661,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
         if (!node) return;
         expect(JSON.stringify(node)).not.toBe('{}');
         expect(Object.keys(node).length).toBeGreaterThan(0);
-        
+
         for (const key in node) {
           if (Array.isArray(node[key])) {
             node[key].forEach(checkNode);
@@ -638,7 +670,7 @@ describe('Parser Rewrite - TDD (Pratt Parser)', () => {
           }
         }
       };
-      
+
       checkNode(ast);
     });
   });

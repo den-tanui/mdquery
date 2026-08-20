@@ -1,19 +1,22 @@
 // tests/ruki-semantics.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Executor } from '../src/executor';
-import { mkdir, writeFile, rm } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
+
 import { randomUUID } from 'crypto';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Executor } from '../src/executor';
 
 const FIXTURES_DIR = join(tmpdir(), `mdquery-ruki-test-${randomUUID()}`);
 
 describe('Ruki Semantics', () => {
   beforeAll(async () => {
     await mkdir(FIXTURES_DIR, { recursive: true });
-    
+
     // Create test files
-    await writeFile(join(FIXTURES_DIR, 'task-001.md'), `---
+    await writeFile(
+      join(FIXTURES_DIR, 'task-001.md'),
+      `---
 id: 1
 title: Test Task
 status: todo
@@ -24,9 +27,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is a test task.
-`);
+`,
+    );
 
-    await writeFile(join(FIXTURES_DIR, 'task-002.md'), `---
+    await writeFile(
+      join(FIXTURES_DIR, 'task-002.md'),
+      `---
 id: 2
 title: Another Task
 status: done
@@ -37,9 +43,12 @@ updatedAt: 2026-07-19T10:00:00Z
 ---
 
 This is another test task.
-`);
+`,
+    );
 
-    await writeFile(join(FIXTURES_DIR, 'task-003.md'), `---
+    await writeFile(
+      join(FIXTURES_DIR, 'task-003.md'),
+      `---
 id: 3
 title: Third Task
 status: todo
@@ -49,7 +58,8 @@ updatedAt: 2026-07-20T10:00:00Z
 ---
 
 Task without tags.
-`);
+`,
+    );
   });
 
   afterAll(async () => {

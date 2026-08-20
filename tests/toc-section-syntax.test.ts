@@ -1,8 +1,9 @@
 // tests/toc-section-syntax.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Executor } from '../src/executor';
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+
+import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Executor } from '../src/executor';
 
 const TEST_DIR = join(__dirname, 'fixtures', 'toc-section-syntax');
 
@@ -11,7 +12,9 @@ describe('TOC and Section Syntax', () => {
     rmSync(TEST_DIR, { recursive: true, force: true });
     mkdirSync(TEST_DIR, { recursive: true });
 
-    writeFileSync(join(TEST_DIR, 'doc1.md'), `---
+    writeFileSync(
+      join(TEST_DIR, 'doc1.md'),
+      `---
 title: Doc 1
 ---
 # Project
@@ -20,21 +23,28 @@ title: Doc 1
 
 ## DONE
 ### All done
-`);
-    writeFileSync(join(TEST_DIR, 'doc2.md'), `---
+`,
+    );
+    writeFileSync(
+      join(TEST_DIR, 'doc2.md'),
+      `---
 title: Doc 2
 ---
 # Project
 ## FIXME
 ## DONE
-`);
-    writeFileSync(join(TEST_DIR, 'doc3.md'), `---
+`,
+    );
+    writeFileSync(
+      join(TEST_DIR, 'doc3.md'),
+      `---
 title: Doc 3
 ---
 # Project
 ## TODO
 ## FIXME
-`);
+`,
+    );
   });
 
   afterAll(() => {

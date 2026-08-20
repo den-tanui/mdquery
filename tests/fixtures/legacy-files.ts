@@ -1,10 +1,10 @@
 // src/files.ts
 import { readdir, readFile, writeFile } from 'fs/promises';
-import { join, basename, dirname, relative, isAbsolute, resolve } from 'path';
 import matter from 'gray-matter';
 import ignore from 'ignore';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 
-export interface Section {
+interface Section {
   level: number;
   title: string;
   content: string;
@@ -37,7 +37,7 @@ interface IgnoreLayer {
 const DEFAULT_OPTIONS: Required<Omit<ReadOptions, 'files'>> = {
   depth: 0,
   hidden: false,
-  ignore: true
+  ignore: true,
 };
 
 export class LegacyFileOps {
@@ -48,7 +48,7 @@ export class LegacyFileOps {
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = await this.read(dir, f);
+        const file = await LegacyFileOps.read(dir, f);
         if (file) files.push(file);
       }
       return files;
@@ -56,7 +56,7 @@ export class LegacyFileOps {
 
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const files: FileData[] = [];
-    await this.walk(dir, dir, opts, [], files);
+    await LegacyFileOps.walk(dir, dir, opts, [], files);
     return files;
   }
 
@@ -64,7 +64,7 @@ export class LegacyFileOps {
     if (options.files && options.files.length > 0) {
       const files: FileData[] = [];
       for (const f of options.files) {
-        const file = this.readSync(dir, f);
+        const file = LegacyFileOps.readSync(dir, f);
         if (file) files.push(file);
       }
       return files;
@@ -72,7 +72,7 @@ export class LegacyFileOps {
 
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const files: FileData[] = [];
-    this.walkSync(dir, dir, opts, [], files);
+    LegacyFileOps.walkSync(dir, dir, opts, [], files);
     return files;
   }
 
@@ -81,7 +81,7 @@ export class LegacyFileOps {
     currentDir: string,
     opts: Required<Omit<ReadOptions, 'files'>>,
     parentIgnores: IgnoreLayer[],
-    out: FileData[]
+    out: FileData[],
   ): Promise<void> {
     let entries;
     try {
@@ -114,14 +114,14 @@ export class LegacyFileOps {
       if (!opts.hidden && name.startsWith('.')) continue;
 
       // Respect .gitignore (dirs and files)
-      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+      if (opts.ignore && LegacyFileOps.isIgnored(ignores, fullPath, entry.isDirectory())) {
         continue;
       }
 
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = await this.read(root, fullPath);
+        const file = await LegacyFileOps.read(root, fullPath);
         if (file) out.push(file);
       }
     }
@@ -132,7 +132,13 @@ export class LegacyFileOps {
     if (canRecurse) {
       const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
-        await this.walk(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+        await LegacyFileOps.walk(
+          root,
+          join(currentDir, dir.name),
+          { ...opts, depth: nextDepth },
+          ignores,
+          out,
+        );
       }
     }
   }
@@ -162,7 +168,7 @@ export class LegacyFileOps {
         abspath: filepath,
         filepath,
         content,
-        sections
+        sections,
       };
     } catch {
       return null;
@@ -185,7 +191,7 @@ export class LegacyFileOps {
         abspath: filepath,
         filepath,
         content,
-        sections
+        sections,
       };
     } catch {
       return null;
@@ -197,7 +203,7 @@ export class LegacyFileOps {
     currentDir: string,
     opts: Required<Omit<ReadOptions, 'files'>>,
     parentIgnores: IgnoreLayer[],
-    out: FileData[]
+    out: FileData[],
   ): void {
     const { readdirSync } = require('fs');
     let entries;
@@ -232,14 +238,14 @@ export class LegacyFileOps {
       if (!opts.hidden && name.startsWith('.')) continue;
 
       // Respect .gitignore (dirs and files)
-      if (opts.ignore && this.isIgnored(ignores, fullPath, entry.isDirectory())) {
+      if (opts.ignore && LegacyFileOps.isIgnored(ignores, fullPath, entry.isDirectory())) {
         continue;
       }
 
       if (entry.isDirectory()) {
         dirs.push(entry);
       } else if (entry.isFile() && name.endsWith('.md')) {
-        const file = this.readSync(root, fullPath);
+        const file = LegacyFileOps.readSync(root, fullPath);
         if (file) out.push(file);
       }
     }
@@ -250,7 +256,13 @@ export class LegacyFileOps {
     if (canRecurse) {
       const nextDepth = opts.depth === 0 ? 0 : opts.depth - 1;
       for (const dir of dirs) {
-        this.walkSync(root, join(currentDir, dir.name), { ...opts, depth: nextDepth }, ignores, out);
+        LegacyFileOps.walkSync(
+          root,
+          join(currentDir, dir.name),
+          { ...opts, depth: nextDepth },
+          ignores,
+          out,
+        );
       }
     }
   }
@@ -258,7 +270,7 @@ export class LegacyFileOps {
   static async writeFile(
     target: string,
     data: Record<string, any>,
-    content: string
+    content: string,
   ): Promise<string> {
     // target may be a directory (create with file/filename) or a full path
     let filepath: string;
@@ -274,7 +286,9 @@ export class LegacyFileOps {
 
     // Handle empty literal: empty string clears the field from frontmatter
     const frontmatter = Object.entries(data)
-      .filter(([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content'].includes(key))
+      .filter(
+        ([key]) => !['filename', 'path', 'abspath', 'filepath', 'file', 'content'].includes(key),
+      )
       .filter(([key, value]) => {
         // Skip empty string values (empty literal clears the field)
         if (value === '' || value === null || value === undefined) {
@@ -313,22 +327,22 @@ function stripFrontmatter(content: string): string {
   return content.slice(end + 4).replace(/^\n+/, '');
 }
 
-export function parseSections(content: string): Map<string, Section> {
+function parseSections(content: string): Map<string, Section> {
   const sections = new Map<string, Section>();
   const lines = content.split('\n');
   let currentSection: Section | null = null;
   let currentContent: string[] = [];
-  
+
   for (const line of lines) {
     const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
-    
+
     if (headerMatch) {
       // Save previous section
       if (currentSection) {
         currentSection.content = currentContent.join('\n').trim();
         sections.set(currentSection.title, currentSection);
       }
-      
+
       // Start new section
       const level = headerMatch[1].length;
       const title = headerMatch[2].trim();
@@ -338,21 +352,23 @@ export function parseSections(content: string): Map<string, Section> {
       currentContent.push(line);
     }
   }
-  
+
   // Save last section
   if (currentSection) {
     currentSection.content = currentContent.join('\n').trim();
     sections.set(currentSection.title, currentSection);
   }
-  
+
   return sections;
 }
 
-export function formatTocAsTree(sections: Section[] | string[] | { level: number; title: string }[]): string {
+function formatTocAsTree(
+  sections: Section[] | string[] | { level: number; title: string }[],
+): string {
   if (sections.length === 0) return '';
-  
+
   // Convert to uniform format with level and title
-  const parsed: { level: number; title: string }[] = sections.map(s => {
+  const parsed: { level: number; title: string }[] = sections.map((s) => {
     if (typeof s === 'string') {
       // Handle "level:title" format
       if (s.includes(':')) {
@@ -369,17 +385,19 @@ export function formatTocAsTree(sections: Section[] | string[] | { level: number
     // Already an object with level and title
     return { level: s.level, title: s.title };
   });
-  
+
   const lines: string[] = [];
   const stack: number[] = [];
-  
+
   for (let i = 0; i < parsed.length; i++) {
     const section = parsed[i];
     const isLast = i === parsed.length - 1;
-    const prefix = stack.map((_, idx) => idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   ').join('');
-    
+    const prefix = stack
+      .map((_, idx) => (idx === stack.length - 1 ? (isLast ? '└── ' : '├── ') : '│   '))
+      .join('');
+
     lines.push(`${prefix}${section.title}`);
-    
+
     // Update stack for next iteration
     if (i < parsed.length - 1) {
       const nextSection = parsed[i + 1];
@@ -392,10 +410,10 @@ export function formatTocAsTree(sections: Section[] | string[] | { level: number
       }
     }
   }
-  
+
   return lines.join('\n');
 }
 
-export function formatTocIndented(sections: Section[]): string {
-  return sections.map(s => '  '.repeat(s.level - 1) + s.title).join('\n');
+function formatTocIndented(sections: Section[]): string {
+  return sections.map((s) => '  '.repeat(s.level - 1) + s.title).join('\n');
 }

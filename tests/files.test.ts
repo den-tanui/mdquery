@@ -1,17 +1,20 @@
 // tests/files.test.ts
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { FileOps } from '../src/files';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { FileOps } from '../src/files';
 
 const FIXTURES_DIR = join(__dirname, 'fixtures', 'files-test');
 
 describe('FileOps', () => {
   beforeAll(() => {
     mkdirSync(FIXTURES_DIR, { recursive: true });
-    
+
     // Create test task files
-    writeFileSync(join(FIXTURES_DIR, 'task-001.md'), `---
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-001.md'),
+      `---
 id: 1
 title: Test Task
 status: todo
@@ -22,9 +25,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is a test task.
-`);
-    
-    writeFileSync(join(FIXTURES_DIR, 'task-002.md'), `---
+`,
+    );
+
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-002.md'),
+      `---
 id: 2
 title: Another Task
 status: done
@@ -35,9 +41,12 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is another test task.
-`);
-    
-    writeFileSync(join(FIXTURES_DIR, 'task-003.md'), `---
+`,
+    );
+
+    writeFileSync(
+      join(FIXTURES_DIR, 'task-003.md'),
+      `---
 id: 3
 title: Third Task
 status: doing
@@ -48,7 +57,8 @@ updatedAt: 2026-07-18T10:00:00Z
 ---
 
 This is the third test task.
-`);
+`,
+    );
   });
 
   afterAll(() => {
@@ -62,7 +72,7 @@ This is the third test task.
 
   it('parses frontmatter correctly', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.filename === 'task-001');
+    const task1 = files.find((f) => f.filename === 'task-001');
     expect(task1).toBeDefined();
     expect(task1?.title).toBe('Test Task');
     expect(task1?.status).toBe('todo');
@@ -71,13 +81,13 @@ This is the third test task.
 
   it('reads content correctly', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.filename === 'task-001');
+    const task1 = files.find((f) => f.filename === 'task-001');
     expect(task1?.content).toContain('This is a test task.');
   });
 
   it('returns correct file paths', async () => {
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const task1 = files.find(f => f.filename === 'task-001');
+    const task1 = files.find((f) => f.filename === 'task-001');
     expect(task1?.filepath).toContain('task-001.md');
     expect(task1?.path).toBe('task-001.md');
     expect(task1?.abspath).toContain('task-001.md');
@@ -99,16 +109,16 @@ This is the third test task.
       projectId: 1,
       priority: 2,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
-    
+
     await FileOps.writeFile(join(FIXTURES_DIR, 'task-004.md'), newTask, 'This is new content.');
-    
+
     const files = await FileOps.readFiles(FIXTURES_DIR);
-    const newFile = files.find(f => f.filename === 'task-004');
+    const newFile = files.find((f) => f.filename === 'task-004');
     expect(newFile).toBeDefined();
     expect(newFile?.title).toBe('New Task');
-    
+
     // Clean up
     rmSync(join(FIXTURES_DIR, 'task-004.md'), { force: true });
   });

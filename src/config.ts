@@ -1,9 +1,10 @@
 // src/config.ts
-import { readFile } from 'fs/promises';
+
 import { existsSync } from 'fs';
+import { readFile } from 'fs/promises';
+import { load as yamlLoad } from 'js-yaml';
 import { homedir } from 'os';
 import { join } from 'path';
-import { load as yamlLoad } from 'js-yaml';
 
 export type TitleFormat = 'none' | 'upper' | 'capitalize' | 'camel-case' | 'pascal-case';
 
@@ -139,7 +140,13 @@ function expectTableConfig(value: unknown, key: string): TableConfig {
         table.trim = expectBoolean(v, `${key}.trim`);
         break;
       case 'title-formatting':
-        table['title-formatting'] = expectEnum(v, `${key}.title-formatting`, ['none', 'upper', 'capitalize', 'camel-case', 'pascal-case'] as const);
+        table['title-formatting'] = expectEnum(v, `${key}.title-formatting`, [
+          'none',
+          'upper',
+          'capitalize',
+          'camel-case',
+          'pascal-case',
+        ] as const);
         break;
       case 'colors':
         table.colors = expectStringMap(v, `${key}.colors`);

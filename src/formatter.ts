@@ -1,11 +1,19 @@
 // src/formatter.ts
-import { QueryResult } from './types';
-import { formatTocAsTree, Section } from './files';
-import { Builtins } from './builtins';
-import { TitleFormat } from './config';
+
 import { stringify } from 'csv-stringify/sync';
-import { renderTable, truncateToWidth, wrapText, capLines, displayWidth, TableBorderChars } from './table-renderer';
+import { Builtins } from './builtins';
 import { DEFAULT_COLORS, sgr as sgrRaw } from './colors';
+import { TitleFormat } from './config';
+import { formatTocAsTree, Section } from './files';
+import {
+  capLines,
+  displayWidth,
+  renderTable,
+  TableBorderChars,
+  truncateToWidth,
+  wrapText,
+} from './table-renderer';
+import { QueryResult } from './types';
 
 export type OutputFormat = 'json' | 'table' | 'csv';
 
@@ -23,8 +31,8 @@ export interface TableOptions {
   maxLinesPerRecord?: number; // cap each record at N terminal lines (--rows)
   columnWidths?: ColumnWidthSpec[];
   trim?: boolean | boolean[]; // trimAll cell values; array = per-column (default true)
-  titleFormat?: TitleFormat;  // header case formatting (default 'capitalize')
-  normalize?: boolean;        // replace non-alphanumeric runs with spaces before title formatting (default true)
+  titleFormat?: TitleFormat; // header case formatting (default 'capitalize')
+  normalize?: boolean; // replace non-alphanumeric runs with spaces before title formatting (default true)
 }
 
 const MIN_COLUMN_WIDTH = 3;
@@ -34,11 +42,11 @@ export class Formatter {
   static format(result: QueryResult, format: OutputFormat, options?: TableOptions): string {
     switch (format) {
       case 'json':
-        return this.toJSON(result);
+        return Formatter.toJSON(result);
       case 'table':
-        return this.toTable(result, 0, options);
+        return Formatter.toTable(result, 0, options);
       case 'csv':
-        return this.toCSV(result);
+        return Formatter.toCSV(result);
       default:
         throw new Error(`Unknown format: ${format}`);
     }
@@ -50,30 +58,49 @@ export class Formatter {
     }
 
     const width = terminalWidth > 0 ? terminalWidth : defaultWidth();
-    const { colorize = false, colors, compact = false, maxLinesPerRecord, columnWidths, trim = true, titleFormat = 'capitalize', normalize = true } = options ?? {};
+    const {
+      colorize = false,
+      colors,
+      compact = false,
+      maxLinesPerRecord,
+      columnWidths,
+      trim = true,
+      titleFormat = 'capitalize',
+      normalize = true,
+    } = options ?? {};
 
     const data = result.data;
 
     const headers = Object.keys(data[0]);
-    const rows = data.map(row => headers.map((h, colIdx) => {
-      const value = (row as any)[h];
-      // Per-column trim: array entries apply positionally; unspecified
-      // positions default to trim (true), so `--trim 0` trims all but col 1
-      const shouldTrim = Array.isArray(trim) ? (trim[colIdx] ?? true) : trim;
-      // Format toc and section fields specially (tree structure preserved);
-      // when trimming, sanitize per line so box-drawing chars survive
-      if (h === 'toc' || h === 'toc()' || h.startsWith('toc(') || h === 'section' || h === 'section()' || h.startsWith('section(') || h.startsWith('section.')) {
-        const formatted = formatTocForTable(value);
-        return shouldTrim ? trimAllPerLine(formatted) : formatted;
-      }
-      const cell = String(value ?? '');
-      return shouldTrim ? Builtins.trimAll(cell) : cell;
-    }));
+    const rows = data.map((row) =>
+      headers.map((h, colIdx) => {
+        const value = (row as any)[h];
+        // Per-column trim: array entries apply positionally; unspecified
+        // positions default to trim (true), so `--trim 0` trims all but col 1
+        const shouldTrim = Array.isArray(trim) ? (trim[colIdx] ?? true) : trim;
+        // Format toc and section fields specially (tree structure preserved);
+        // when trimming, sanitize per line so box-drawing chars survive
+        if (
+          h === 'toc' ||
+          h === 'toc()' ||
+          h.startsWith('toc(') ||
+          h === 'section' ||
+          h === 'section()' ||
+          h.startsWith('section(') ||
+          h.startsWith('section.')
+        ) {
+          const formatted = formatTocForTable(value);
+          return shouldTrim ? trimAllPerLine(formatted) : formatted;
+        }
+        const cell = String(value ?? '');
+        return shouldTrim ? Builtins.trimAll(cell) : cell;
+      }),
+    );
 
     // Natural column widths: max line length per cell (multi-line cells don't
     // inflate the width of their column)
     const naturalWidths = headers.map((h, i) =>
-      Math.max(h.length, ...rows.map(r => maxLineLength(r[i])))
+      Math.max(h.length, ...rows.map((r) => maxLineLength(r[i]))),
     );
 
     // Each column costs 1 vertical border (left, right, and mid between columns)
@@ -81,45 +108,61 @@ export class Formatter {
     // The total non-content width = 1 (left) + 1 (right) + (headers.length - 1) (mids) = headers.length + 1
     // Total padding = headers.length * paddingPerCol
     const paddingPerCol = compact ? 1 : 2;
-    const nonContentCost = headers.length > 0 ? headers.length + 1 + headers.length * paddingPerCol : 0;
+    const nonContentCost =
+      headers.length > 0 ? headers.length + 1 + headers.length * paddingPerCol : 0;
     const usable = width - nonContentCost;
 
     let innerWidths: number[];
     if (columnWidths && columnWidths.length > 0) {
-      innerWidths = this.resolveColumnWidths(columnWidths, naturalWidths, usable);
+      innerWidths = Formatter.resolveColumnWidths(columnWidths, naturalWidths, usable);
     } else if (sum(naturalWidths) <= usable) {
       innerWidths = naturalWidths;
     } else {
-      innerWidths = this.allocateWidths(naturalWidths, usable);
+      innerWidths = Formatter.allocateWidths(naturalWidths, usable);
     }
 
     // Wrap long text to its column width (breaking long unbroken words); with
     // --rows, cap each record at maxLinesPerRecord terminal lines
-    const wrappedRows = rows.map(row =>
-      row.map((cell, i) => maxLinesPerRecord !== undefined ? capLines(cell, innerWidths[i], maxLinesPerRecord) : wrapText(cell, innerWidths[i]))
+    const wrappedRows = rows.map((row) =>
+      row.map((cell, i) =>
+        maxLinesPerRecord !== undefined
+          ? capLines(cell, innerWidths[i], maxLinesPerRecord)
+          : wrapText(cell, innerWidths[i]),
+      ),
     );
 
     // Colorize-gated wrapper around the canonical sgr from colors.ts
-    const sgr = (text: string, code: string) => colorize ? sgrRaw(text, code) : text;
+    const sgr = (text: string, code: string) => (colorize ? sgrRaw(text, code) : text);
 
     const titleColor = colors?.get('title') ?? DEFAULT_COLORS.title;
     const borderColor = colors?.get('border') ?? DEFAULT_COLORS.border;
 
     // Table element colors: header/separator/cell keys fall back to the base
     // title/border colors (empty string = no color for that element)
-    const headerColor = (colors?.get('header') || colors?.get('title')) || DEFAULT_COLORS.title;
-    const separatorColor = (colors?.get('separator') || colors?.get('border')) || DEFAULT_COLORS.border;
+    const headerColor = colors?.get('header') || colors?.get('title') || DEFAULT_COLORS.title;
+    const separatorColor =
+      colors?.get('separator') || colors?.get('border') || DEFAULT_COLORS.border;
     const cellColor = colors?.get('cell') || '';
 
     // Header formatting: case-formatted via the shared builtins, truncated to
     // its column width (like cli-table3), SGR-wrapped when colorized
-    const rawHeaders = headers.map((h, i) => truncateToWidth(formatHeader(h, titleFormat, normalize), innerWidths[i]));
-    const styledHeaders = rawHeaders.map(h => sgr(h, headerColor));
+    const rawHeaders = headers.map((h, i) =>
+      truncateToWidth(formatHeader(h, titleFormat, normalize), innerWidths[i]),
+    );
+    const styledHeaders = rawHeaders.map((h) => sgr(h, headerColor));
 
     // Cell color: applied per line after wrapping so displayWidth stays correct
-    const styledRows = colorize && cellColor
-      ? wrappedRows.map(row => row.map(cell => cell.split('\n').map(line => sgr(line, cellColor)).join('\n')))
-      : wrappedRows;
+    const styledRows =
+      colorize && cellColor
+        ? wrappedRows.map((row) =>
+            row.map((cell) =>
+              cell
+                .split('\n')
+                .map((line) => sgr(line, cellColor))
+                .join('\n'),
+            ),
+          )
+        : wrappedRows;
 
     const chars: TableBorderChars = {
       top: sgr('─', borderColor),
@@ -153,7 +196,11 @@ export class Formatter {
   // Resolve user-specified column widths against the usable width. Fixed specs
   // (chars/pct) are honored as-is; 'auto' columns share the remaining space via
   // the natural allocation. Missing specs default to 'auto'.
-  private static resolveColumnWidths(specs: ColumnWidthSpec[], naturalWidths: number[], usable: number): number[] {
+  private static resolveColumnWidths(
+    specs: ColumnWidthSpec[],
+    naturalWidths: number[],
+    usable: number,
+  ): number[] {
     const n = naturalWidths.length;
     const resolved: (number | 'auto')[] = [];
     let fixedSum = 0;
@@ -164,7 +211,10 @@ export class Formatter {
         resolved.push('auto');
         autoCount++;
       } else {
-        const w = Math.max(1, spec.kind === 'pct' ? Math.floor(usable * spec.value / 100) : spec.value);
+        const w = Math.max(
+          1,
+          spec.kind === 'pct' ? Math.floor((usable * spec.value) / 100) : spec.value,
+        );
         resolved.push(w);
         fixedSum += w;
       }
@@ -173,11 +223,10 @@ export class Formatter {
 
     const remaining = usable - fixedSum;
     const autoNatural = naturalWidths.filter((_, i) => resolved[i] === 'auto');
-    const autoWidths = remaining > 0
-      ? this.allocateWidths(autoNatural, remaining)
-      : autoNatural.map(() => 1);
+    const autoWidths =
+      remaining > 0 ? Formatter.allocateWidths(autoNatural, remaining) : autoNatural.map(() => 1);
     let ai = 0;
-    return resolved.map(w => w === 'auto' ? autoWidths[ai++] : w);
+    return resolved.map((w) => (w === 'auto' ? autoWidths[ai++] : w));
   }
 
   private static allocateWidths(rawWidths: number[], budget: number): number[] {
@@ -185,7 +234,7 @@ export class Formatter {
     if (n === 0) return [];
     if (budget <= 0) return rawWidths.map(() => 1);
 
-    const fallbackCap = Math.floor(budget / n * 1.5);
+    const fallbackCap = Math.floor((budget / n) * 1.5);
 
     // Compute floors: header widths if they fit, else MIN_COLUMN_WIDTH, else degenerate
     const headerWidths = rawWidths.map(() => MIN_COLUMN_WIDTH);
@@ -202,12 +251,12 @@ export class Formatter {
     if (remaining <= 0) return floors;
 
     // Weights: how much each column wants above its floor, capped by fallbackCap
-    const weights = rawWidths.map(w => Math.max(Math.min(w, fallbackCap) - MIN_COLUMN_WIDTH, 0));
+    const weights = rawWidths.map((w) => Math.max(Math.min(w, fallbackCap) - MIN_COLUMN_WIDTH, 0));
     const totalW = sum(weights);
 
     if (totalW === 0) return floors;
 
-    return floors.map((f, i) => f + Math.floor(remaining * weights[i] / totalW));
+    return floors.map((f, i) => f + Math.floor((remaining * weights[i]) / totalW));
   }
 
   private static toJSON(result: QueryResult): string {
@@ -223,13 +272,16 @@ export class Formatter {
 }
 
 function maxLineLength(value: string): number {
-  return Math.max(1, ...value.split('\n').map(l => displayWidth(l)));
+  return Math.max(1, ...value.split('\n').map((l) => displayWidth(l)));
 }
 
 // Apply trimAll per line so multi-line structured cells (toc trees, section
 // maps) keep their line structure while control chars and pipes are sanitized
 function trimAllPerLine(value: string): string {
-  return value.split('\n').map(line => Builtins.trimAll(line)).join('\n');
+  return value
+    .split('\n')
+    .map((line) => Builtins.trimAll(line))
+    .join('\n');
 }
 
 // Format a header using the shared case builtins (single source of truth with
@@ -241,26 +293,31 @@ function formatHeader(header: string, format: TitleFormat, normalize: boolean): 
   if (format === 'none') return header;
   const value = normalize ? header.replace(/[^\p{L}\p{N}]+/gu, ' ').trim() : header;
   switch (format) {
-    case 'upper': return Builtins.upper(value);
-    case 'capitalize': return Builtins.capitalize(value);
-    case 'camel-case': return Builtins.camelCase(value);
-    case 'pascal-case': return Builtins.pascalCase(value);
-    default: return header;
+    case 'upper':
+      return Builtins.upper(value);
+    case 'capitalize':
+      return Builtins.capitalize(value);
+    case 'camel-case':
+      return Builtins.camelCase(value);
+    case 'pascal-case':
+      return Builtins.pascalCase(value);
+    default:
+      return header;
   }
 }
 
 function formatTocForTable(value: any): string {
   if (value === null || value === undefined) return '';
-  
+
   // Handle section() map output
   if (typeof value === 'object' && !Array.isArray(value)) {
     return Object.entries(value)
       .map(([key, val]) => `${key}: ${String(val).split('\n')[0]}`)
       .join('\n');
   }
-  
+
   if (!Array.isArray(value)) return String(value);
-  
+
   // Parse "level:title" format and build tree
   const items = value.map((v: any) => {
     if (typeof v === 'string' && v.includes(':')) {
@@ -269,7 +326,7 @@ function formatTocForTable(value: any): string {
     }
     return { level: 1, title: String(v) };
   });
-  
+
   return formatTocAsTree(items);
 }
 
@@ -298,7 +355,7 @@ function detectColumns(): number {
   try {
     const { execFileSync } = require('node:child_process');
     const out = execFileSync('sh', ['-c', 'tput cols < /dev/tty'], {
-      stdio: ['ignore', 'pipe', 'ignore']
+      stdio: ['ignore', 'pipe', 'ignore'],
     })
       .toString()
       .trim();
