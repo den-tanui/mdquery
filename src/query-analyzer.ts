@@ -1,9 +1,18 @@
 // src/query-analyzer-minimal.ts
 
 import {
-  ASTNode, Expression, SelectStatement, BinaryOpNode, UnaryOpNode,
-  FunctionCallNode, FieldNode, ValueNode, MethodCallNode, ArrayIndexNode,
-  MapIndexNode, SubqueryNode
+  ArrayIndexNode,
+  ASTNode,
+  BinaryOpNode,
+  Expression,
+  FieldNode,
+  FunctionCallNode,
+  MapIndexNode,
+  MethodCallNode,
+  SelectStatement,
+  SubqueryNode,
+  UnaryOpNode,
+  ValueNode,
 } from './types';
 
 interface PushdownPredicate {
@@ -39,40 +48,223 @@ export type ScalarInference =
 
 const BUILTIN_SHAPES: Record<string, ScalarInference> = {
   content: { kind: 'scalar' },
-  fields: { kind: 'map', shape: '{field: value}', suggestions: ["fields().keys()", "fields().values()"] },
-  file: { kind: 'map', shape: '{abspath, mtime, atime, ctime, owner, group, size, mode}', suggestions: ["file().mtime", "file().abspath", "file().size"] },
-  links: { kind: 'array-of-maps', shape: '{text, url, position, paragraph?, section?}', suggestions: ["links().map('url')", "links().map('text')", "links().count()"] },
-  images: { kind: 'array-of-maps', shape: '{alt, url, position, paragraph?, section?}', suggestions: ["images().map('url')", "images().map('alt')"] },
-  codeblocks: { kind: 'array-of-maps', shape: '{content, lang?, position, paragraph?, section?}', suggestions: ["codeblocks().map('lang')", "codeblocks().map('content')"] },
-  section: { kind: 'map', shape: '{title, level, position, hierarchy, content}', suggestions: ['section("name").title', 'section("name").content'] },
-  sections: { kind: 'array-of-maps', shape: '{title, level, position, hierarchy, content}', suggestions: ["sections().map('title')", "sections().first().title", "sections().count()"] },
-  toc: { kind: 'array-of-maps', shape: '{level, title}', suggestions: ["toc().map('title')", "toc().map('level')"] },
-  grep: { kind: 'array-of-maps', shape: '{line, column, text, captures, section, sentence?, paragraph?, ancestors?}', suggestions: ["grep(/x/).count()", "grep(/x/).map('text')", "grep(/x/).first().line"] },
-  has_section: { kind: 'scalar' }
+  fields: {
+    kind: 'map',
+    shape: '{field: value}',
+    suggestions: ['fields().keys()', 'fields().values()'],
+  },
+  file: {
+    kind: 'map',
+    shape: '{abspath, mtime, atime, ctime, owner, group, size, mode}',
+    suggestions: ['file().mtime', 'file().abspath', 'file().size'],
+  },
+  links: {
+    kind: 'array-of-maps',
+    shape: '{text, url, position, paragraph?, section?}',
+    suggestions: ["links().map('url')", "links().map('text')", 'links().count()'],
+  },
+  images: {
+    kind: 'array-of-maps',
+    shape: '{alt, url, position, paragraph?, section?}',
+    suggestions: ["images().map('url')", "images().map('alt')"],
+  },
+  codeblocks: {
+    kind: 'array-of-maps',
+    shape: '{content, lang?, position, paragraph?, section?}',
+    suggestions: ["codeblocks().map('lang')", "codeblocks().map('content')"],
+  },
+  // New element functions (body-syntax design, 2026-08-17)
+  h1: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h1.map('title')", 'h1.count()', 'h1[0].title'],
+  },
+  h2: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h2.map('title')", 'h2.count()', 'h2[0].title'],
+  },
+  h3: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h3.map('title')", 'h3.count()', 'h3[0].title'],
+  },
+  h4: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h4.map('title')", 'h4.count()', 'h4[0].title'],
+  },
+  h5: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h5.map('title')", 'h5.count()', 'h5[0].title'],
+  },
+  h6: {
+    kind: 'array-of-maps',
+    shape: '{title, content, position}',
+    suggestions: ["h6.map('title')", 'h6.count()', 'h6[0].title'],
+  },
+  link: {
+    kind: 'array-of-maps',
+    shape: '{text, url, position}',
+    suggestions: ["link.map('url')", "link.map('text')", 'link.count()'],
+  },
+  linkRef: {
+    kind: 'array-of-maps',
+    shape: '{text, identifier, position}',
+    suggestions: ["linkRef.map('identifier')", "linkRef.map('text')", 'linkRef.count()'],
+  },
+  image: {
+    kind: 'array-of-maps',
+    shape: '{alt, url, position}',
+    suggestions: ["image.map('url')", "image.map('alt')", 'image.count()'],
+  },
+  imageRef: {
+    kind: 'array-of-maps',
+    shape: '{alt, identifier, position}',
+    suggestions: ["imageRef.map('identifier')", "imageRef.map('alt')", 'imageRef.count()'],
+  },
+  code: {
+    kind: 'array-of-maps',
+    shape: '{lang, content, position}',
+    suggestions: ["code.map('lang')", "code.map('content')", 'code.count()'],
+  },
+  inlineCode: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["inlineCode.map('content')", 'inlineCode.count()'],
+  },
+  table: {
+    kind: 'array-of-maps',
+    shape: '{headers, rows, position}',
+    suggestions: ['table.count()', 'table[0].headers', 'table[0].rows[0].cells[0].content'],
+  },
+  tableRow: {
+    kind: 'array-of-maps',
+    shape: '{cells, position}',
+    suggestions: ['tableRow.count()', 'tableRow[0].cells[0].content'],
+  },
+  tableCell: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["tableCell.map('content')", 'tableCell.count()'],
+  },
+  list: {
+    kind: 'array-of-maps',
+    shape: '{ordered, items, position}',
+    suggestions: ['list.count()', 'list[0].items[0].content'],
+  },
+  listItem: {
+    kind: 'array-of-maps',
+    shape: '{content, checked, children, position}',
+    suggestions: ["listItem.map('content')", 'listItem.count()', 'listItem[0].checked'],
+  },
+  blockquote: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["blockquote.map('content')", 'blockquote.count()'],
+  },
+  p: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["p.map('content')", 'p.count()'],
+  },
+  html: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["html.map('content')", 'html.count()'],
+  },
+  em: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["em.map('content')", 'em.count()'],
+  },
+  strong: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["strong.map('content')", 'strong.count()'],
+  },
+  del: {
+    kind: 'array-of-maps',
+    shape: '{content, position}',
+    suggestions: ["del.map('content')", 'del.count()'],
+  },
+  break: {
+    kind: 'array-of-maps',
+    shape: '{position}',
+    suggestions: ['break.count()'],
+  },
+  footnote: {
+    kind: 'array-of-maps',
+    shape: '{label, position}',
+    suggestions: ["footnote.map('label')", 'footnote.count()'],
+  },
+  def: {
+    kind: 'array-of-maps',
+    shape: '{identifier, url, title, position}',
+    suggestions: ["def.map('url')", "def.map('identifier')", 'def.count()'],
+  },
+  body: {
+    kind: 'map',
+    shape: 'BodyIndex',
+    suggestions: ['body.h1[0].title', 'body.code[0].lang'],
+  },
+  outline: { kind: 'scalar' },
+  section: {
+    kind: 'map',
+    shape: '{title, level, position, hierarchy, content}',
+    suggestions: ['section("name").title', 'section("name").content'],
+  },
+  sections: {
+    kind: 'array-of-maps',
+    shape: '{title, level, position, hierarchy, content}',
+    suggestions: ["sections().map('title')", 'sections().first().title', 'sections().count()'],
+  },
+  toc: {
+    kind: 'array-of-maps',
+    shape: '{level, title}',
+    suggestions: ["toc().map('title')", "toc().map('level')"],
+  },
+  grep: {
+    kind: 'array-of-maps',
+    shape: '{line, column, text, captures, section, sentence?, paragraph?, ancestors?}',
+    suggestions: ['grep(/x/).count()', "grep(/x/).map('text')", 'grep(/x/).first().line'],
+  },
+  has_section: { kind: 'scalar' },
 };
 
 export function inferScalarType(expr: Expression): ScalarInference {
   switch (expr.type) {
-    case 'field': return { kind: 'scalar' };
+    case 'field':
+      return { kind: 'scalar' };
     case 'function_call': {
       // fields('values') returns an array of scalars (legacy arg form)
-      if (expr.name === 'fields' && expr.args.length > 0 &&
-          expr.args[0].type === 'string' && expr.args[0].value === 'values') {
+      if (
+        expr.name === 'fields' &&
+        expr.args.length > 0 &&
+        expr.args[0].type === 'string' &&
+        expr.args[0].value === 'values'
+      ) {
         return { kind: 'array-of-scalars' };
       }
       return BUILTIN_SHAPES[expr.name] ?? { kind: 'scalar' };
     }
-    case 'method_call': return inferMethodType(expr);
-    case 'array_index': return inferScalarType(expr.object);
-    case 'map_index': return { kind: 'scalar' };
+    case 'method_call':
+      return inferMethodType(expr);
+    case 'array_index':
+      return inferScalarType(expr.object);
+    case 'map_index':
+      return { kind: 'scalar' };
     case 'binary_op':
     case 'unary_op':
     case 'wildcard':
     case 'subquery':
     case 'exists':
       return { kind: 'scalar' };
-    case 'paren': return inferScalarType(expr.expression);
-    default: return { kind: 'scalar' };
+    case 'paren':
+      return inferScalarType(expr.expression);
+    default:
+      return { kind: 'scalar' };
   }
 }
 
@@ -102,7 +294,11 @@ function inferMethodType(expr: MethodCallNode): ScalarInference {
     case 'unique':
       return objectType;
     case 'entries':
-      return { kind: 'array-of-maps', shape: '[key, value]', suggestions: ["entries().map(_.first())"] };
+      return {
+        kind: 'array-of-maps',
+        shape: '[key, value]',
+        suggestions: ['entries().map(_.first())'],
+      };
     default:
       return { kind: 'scalar' };
   }
@@ -119,7 +315,7 @@ export class QueryAnalyzer {
     return {
       pushdownPredicates,
       lazyLoading,
-      executionOrder
+      executionOrder,
     };
   }
 
@@ -138,7 +334,7 @@ export class QueryAnalyzer {
   private extractPredicatesFromExpression(
     expr: Expression,
     predicates: PushdownPredicate[],
-    negated: boolean = false
+    negated: boolean = false,
   ): void {
     switch (expr.type) {
       case 'binary_op':
@@ -154,7 +350,7 @@ export class QueryAnalyzer {
   private extractBinaryOpPredicates(
     expr: BinaryOpNode,
     predicates: PushdownPredicate[],
-    negated: boolean
+    negated: boolean,
   ): void {
     const { left, op, right } = expr;
 
@@ -163,40 +359,49 @@ export class QueryAnalyzer {
       const field = left.name;
       const value = this.getValue(right);
       const effectiveOp = negated ? this.negateOperator(op) : op;
-      
+
       predicates.push({
         field,
         op: effectiveOp,
         value,
-        canPushdown: true
+        canPushdown: true,
       });
     }
     // Handle (not field) = value patterns
-    else if (left.type === 'unary_op' && left.op === 'NOT' && 
-             left.operand.type === 'field' && this.isValueNode(right)) {
+    else if (
+      left.type === 'unary_op' &&
+      left.op === 'NOT' &&
+      left.operand.type === 'field' &&
+      this.isValueNode(right)
+    ) {
       const field = left.operand.name;
       const value = this.getValue(right);
       const effectiveOp = negated ? this.negateOperator('!=') : '!=';
-      
+
       predicates.push({
         field,
         op: effectiveOp,
         value,
-        canPushdown: true
+        canPushdown: true,
       });
     }
     // Handle value = field patterns (reverse operands)
-    else if (this.isValueNode(left) && right.type === 'field' && 
-             (op === '=' || op === '!=' || op === '>' || op === '<' || op === '>=' || op === '<=')) {
+    else if (
+      this.isValueNode(left) &&
+      right.type === 'field' &&
+      (op === '=' || op === '!=' || op === '>' || op === '<' || op === '>=' || op === '<=')
+    ) {
       const field = right.name;
       const value = this.getValue(left);
-      const effectiveOp = negated ? this.negateOperator(this.reverseOperator(op)) : this.reverseOperator(op);
-      
+      const effectiveOp = negated
+        ? this.negateOperator(this.reverseOperator(op))
+        : this.reverseOperator(op);
+
       predicates.push({
         field,
         op: effectiveOp,
         value,
-        canPushdown: true
+        canPushdown: true,
       });
     }
     // Handle AND/OR combinations
@@ -215,7 +420,7 @@ export class QueryAnalyzer {
   private extractUnaryOpPredicates(
     expr: UnaryOpNode,
     predicates: PushdownPredicate[],
-    negated: boolean
+    negated: boolean,
   ): void {
     if (expr.op === 'NOT') {
       this.extractPredicatesFromExpression(expr.operand, predicates, !negated);
@@ -228,7 +433,7 @@ export class QueryAnalyzer {
       requiresContent: false,
       requiresMetadata: false,
       builtins: [],
-      contentFields: []
+      contentFields: [],
     };
 
     if (this.ast.type !== 'select') {
@@ -266,10 +471,7 @@ export class QueryAnalyzer {
   }
 
   // Check if expression requires content loading
-  private checkExpressionForContent(
-    expr: Expression,
-    analysis: LazyLoadingAnalysis
-  ): void {
+  private checkExpressionForContent(expr: Expression, analysis: LazyLoadingAnalysis): void {
     switch (expr.type) {
       case 'function_call':
         if (expr.name === 'file') {
@@ -310,19 +512,55 @@ export class QueryAnalyzer {
   }
 
   // Check function calls for content-extraction builtins
-  private checkFunctionCallForContent(
-    expr: FunctionCallNode,
-    analysis: LazyLoadingAnalysis
-  ): void {
-    const contentBuiltins = ['links', 'images', 'codeblocks', 'section', 'sections', 'grep', 'toc', 'content'];
-    
+  private checkFunctionCallForContent(expr: FunctionCallNode, analysis: LazyLoadingAnalysis): void {
+    const contentBuiltins = [
+      'links',
+      'images',
+      'codeblocks',
+      'section',
+      'sections',
+      'grep',
+      'toc',
+      'content',
+      'outline',
+      // New element functions (body-syntax design, 2026-08-17)
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'link',
+      'linkRef',
+      'image',
+      'imageRef',
+      'code',
+      'inlineCode',
+      'table',
+      'tableRow',
+      'tableCell',
+      'list',
+      'listItem',
+      'blockquote',
+      'p',
+      'html',
+      'em',
+      'strong',
+      'del',
+      'break',
+      'footnote',
+      'def',
+      // body namespace
+      'body',
+    ];
+
     if (contentBuiltins.includes(expr.name)) {
       if (!analysis.builtins.includes(expr.name)) {
         analysis.builtins.push(expr.name);
       }
       analysis.requiresContent = true;
     }
-    
+
     // Check arguments
     for (const arg of expr.args) {
       this.checkExpressionForContent(arg, analysis);
@@ -330,13 +568,10 @@ export class QueryAnalyzer {
   }
 
   // Check method calls for content-extraction builtins
-  private checkMethodCallForContent(
-    expr: MethodCallNode,
-    analysis: LazyLoadingAnalysis
-  ): void {
+  private checkMethodCallForContent(expr: MethodCallNode, analysis: LazyLoadingAnalysis): void {
     // Check the object (which might be a function call)
     this.checkExpressionForContent(expr.object, analysis);
-    
+
     // Check arguments
     for (const arg of expr.args) {
       this.checkExpressionForContent(arg, analysis);
@@ -348,10 +583,7 @@ export class QueryAnalyzer {
   // loaded in fast mode — without this, FastFileOps.readFiles leaves body
   // undefined and the comparison throws. `content` is always loaded from raw,
   // but flagging it too is harmless and keeps the analysis uniform.
-  private checkFieldForContent(
-    expr: FieldNode,
-    analysis: LazyLoadingAnalysis
-  ): void {
+  private checkFieldForContent(expr: FieldNode, analysis: LazyLoadingAnalysis): void {
     if (expr.name === 'body' || expr.name === 'content') {
       if (!analysis.contentFields.includes(expr.name)) {
         analysis.contentFields.push(expr.name);
@@ -364,31 +596,31 @@ export class QueryAnalyzer {
   private createExecutionOrder(): string[] {
     const order: string[] = [];
     const lazyLoading = this.analyzeLazyLoading();
-    
+
     // 1. File discovery with pushdown predicates
     order.push('file_discovery');
-    
+
     // 2. Frontmatter loading and filtering
     order.push('frontmatter_loading');
-    
+
     // 3. Apply remaining predicates that couldn't be pushed down
     if (this.ast.type === 'select' && this.ast.where) {
       order.push('post_filtering');
     }
-    
+
     // 4. Content loading (only if needed)
     if (lazyLoading.requiresContent) {
       order.push('content_loading');
-      
+
       // 5. Builtin execution
       for (const builtin of lazyLoading.builtins) {
         order.push(`builtin_${builtin}`);
       }
     }
-    
+
     // 6. Field projection
     order.push('field_projection');
-    
+
     // 7. Sorting, limiting, etc.
     if (this.ast.type === 'select' && this.ast.orderBy) {
       order.push('sorting');
@@ -396,7 +628,7 @@ export class QueryAnalyzer {
     if (this.ast.type === 'select' && this.ast.limit) {
       order.push('limiting');
     }
-    
+
     return order;
   }
 
@@ -419,7 +651,7 @@ export class QueryAnalyzer {
       return new RegExp(node.value);
     }
     if (node.type === 'array') {
-      return node.items.map(item => this.getValue(item));
+      return node.items.map((item) => this.getValue(item));
     }
     return undefined;
   }
@@ -432,11 +664,11 @@ export class QueryAnalyzer {
       '<': '>=',
       '>=': '<',
       '<=': '>',
-      'IN': 'NOT IN',
+      IN: 'NOT IN',
       'NOT IN': 'IN',
-      'CONTAINS': 'NOT CONTAINS',
-      'STARTS_WITH': 'NOT STARTS_WITH',
-      'ENDS_WITH': 'NOT ENDS_WITH'
+      CONTAINS: 'NOT CONTAINS',
+      STARTS_WITH: 'NOT STARTS_WITH',
+      ENDS_WITH: 'NOT ENDS_WITH',
     };
     return negations[op] || op;
   }
@@ -466,34 +698,51 @@ export type ContentPrefilterNode =
 const CONTENT_FIELDS = new Set(['content', 'body']);
 
 const PREFILTERABLE_OPS = new Set([
-  'CONTAINS', 'NOT CONTAINS',
-  'STARTS_WITH', 'NOT STARTS_WITH',
-  'ENDS_WITH', 'NOT ENDS_WITH',
-  '=', '!=', 'IN', 'NOT IN'
+  'CONTAINS',
+  'NOT CONTAINS',
+  'STARTS_WITH',
+  'NOT STARTS_WITH',
+  'ENDS_WITH',
+  'NOT ENDS_WITH',
+  '=',
+  '!=',
+  'IN',
+  'NOT IN',
 ]);
 
 const NEGATE_OP: Record<string, string> = {
-  '=': '!=', '!=': '=',
-  'IN': 'NOT IN', 'NOT IN': 'IN',
-  'CONTAINS': 'NOT CONTAINS', 'NOT CONTAINS': 'CONTAINS',
-  'STARTS_WITH': 'NOT STARTS_WITH', 'NOT STARTS_WITH': 'STARTS_WITH',
-  'ENDS_WITH': 'NOT ENDS_WITH', 'NOT ENDS_WITH': 'ENDS_WITH'
+  '=': '!=',
+  '!=': '=',
+  IN: 'NOT IN',
+  'NOT IN': 'IN',
+  CONTAINS: 'NOT CONTAINS',
+  'NOT CONTAINS': 'CONTAINS',
+  STARTS_WITH: 'NOT STARTS_WITH',
+  'NOT STARTS_WITH': 'STARTS_WITH',
+  ENDS_WITH: 'NOT ENDS_WITH',
+  'NOT ENDS_WITH': 'ENDS_WITH',
 };
 
 // Walk the WHERE AST and build a prefilter tree that preserves AND/OR/NOT
 // structure. Returns null when the WHERE has no prefilterable content/body
 // predicate — the caller then skips prefiltering entirely.
-export function buildContentPrefilterTree(where: Expression | undefined): ContentPrefilterNode | null {
+export function buildContentPrefilterTree(
+  where: Expression | undefined,
+): ContentPrefilterNode | null {
   if (!where) return null;
   return walkPrefilterExpr(where, false);
 }
 
 function walkPrefilterExpr(expr: Expression, negated: boolean): ContentPrefilterNode | null {
   switch (expr.type) {
-    case 'binary_op': return walkPrefilterBinary(expr, negated);
-    case 'unary_op': return expr.op === 'NOT' ? walkPrefilterExpr(expr.operand, !negated) : null;
-    case 'paren': return walkPrefilterExpr(expr.expression, negated);
-    default: return null;
+    case 'binary_op':
+      return walkPrefilterBinary(expr, negated);
+    case 'unary_op':
+      return expr.op === 'NOT' ? walkPrefilterExpr(expr.operand, !negated) : null;
+    case 'paren':
+      return walkPrefilterExpr(expr.expression, negated);
+    default:
+      return null;
   }
 }
 
@@ -503,11 +752,20 @@ function walkPrefilterBinary(expr: BinaryOpNode, negated: boolean): ContentPrefi
   // AND/OR: De Morgan — NOT(A AND B) = NOT A OR NOT B
   if (op === 'AND' || op === 'OR') {
     const effective = negated ? (op === 'AND' ? 'OR' : 'AND') : op;
-    return combinePrefilterNodes(effective, walkPrefilterExpr(left, negated), walkPrefilterExpr(right, negated));
+    return combinePrefilterNodes(
+      effective,
+      walkPrefilterExpr(left, negated),
+      walkPrefilterExpr(right, negated),
+    );
   }
 
   // Legacy `not field op value` — the NOT wraps the field, negating the comparison
-  if (left.type === 'unary_op' && left.op === 'NOT' && left.operand.type === 'field' && isPrefilterValueNode(right)) {
+  if (
+    left.type === 'unary_op' &&
+    left.op === 'NOT' &&
+    left.operand.type === 'field' &&
+    isPrefilterValueNode(right)
+  ) {
     const effectiveOp = negated ? op : (NEGATE_OP[op] ?? op);
     return contentPrefilterLeaf(left.operand.name, effectiveOp, right);
   }
@@ -522,17 +780,27 @@ function walkPrefilterBinary(expr: BinaryOpNode, negated: boolean): ContentPrefi
   return null;
 }
 
-function contentPrefilterLeaf(field: string, op: string, value: ValueNode): ContentPrefilterNode | null {
+function contentPrefilterLeaf(
+  field: string,
+  op: string,
+  value: ValueNode,
+): ContentPrefilterNode | null {
   if (!CONTENT_FIELDS.has(field)) return null;
   if (!PREFILTERABLE_OPS.has(op)) return null;
 
   // IN / NOT IN with an array value → expand to per-element leaves so each
   // element becomes a single grepts pattern.
   if (op === 'IN' && value.type === 'array') {
-    return combinePrefilterNodes('OR', ...value.items.map(item => contentPrefilterLeaf(field, '=', item)));
+    return combinePrefilterNodes(
+      'OR',
+      ...value.items.map((item) => contentPrefilterLeaf(field, '=', item)),
+    );
   }
   if (op === 'NOT IN' && value.type === 'array') {
-    return combinePrefilterNodes('AND', ...value.items.map(item => contentPrefilterLeaf(field, '!=', item)));
+    return combinePrefilterNodes(
+      'AND',
+      ...value.items.map((item) => contentPrefilterLeaf(field, '!=', item)),
+    );
   }
 
   const pattern = prefilterPattern(value);
@@ -561,7 +829,7 @@ function combinePrefilterNodes(
   ...nodes: (ContentPrefilterNode | null)[]
 ): ContentPrefilterNode | null {
   if (nodes.length === 0) return null;
-  if (op === 'OR' && nodes.some(n => n === null)) return null;
+  if (op === 'OR' && nodes.some((n) => n === null)) return null;
   return nodes.reduce<ContentPrefilterNode | null>((acc, node) => {
     if (acc === null) return node;
     if (node === null) return acc;

@@ -1,21 +1,45 @@
 // src/executor.ts
 
-import { Parser } from './parser';
-import { FileOps, FileData, ReadOptions } from './files';
-import { FastFileOps, FileIOAnalysis, isNegatedContentOp, applyContentPrefilter } from './file-io';
-import { QueryAnalyzer, buildContentPrefilterTree, inferScalarType, type ContentPrefilterNode } from './query-analyzer';
 import { existsSync } from 'fs';
 import { isAbsolute, join } from 'path';
-import {
-  ASTNode, Expression, SelectStatement, UpdateStatement, CreateStatement, DeleteStatement,
-  BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode, ArrayIndexNode, MapIndexNode,
-  FieldNode, ValueNode, SubqueryNode, PipeNode, UnionNode, TriggerStatement, OrderByNode,
-  JoinNode, ExecutorHooks, QueryResult
-} from './types';
-import { ContentExtractor } from './content-extractor';
-import { TypeSystem } from './type-system';
-import { copyToClipboard } from './clipboard';
 import { Builtins } from './builtins';
+import { createBodyIndex, BodyIndexImpl } from './body-index';
+import { copyToClipboard } from './clipboard';
+import { ContentExtractor } from './content-extractor';
+import { applyContentPrefilter, FastFileOps, FileIOAnalysis, isNegatedContentOp } from './file-io';
+import { FileData, FileOps, ReadOptions } from './files';
+import { Parser } from './parser';
+import {
+  buildContentPrefilterTree,
+  type ContentPrefilterNode,
+  inferScalarType,
+  QueryAnalyzer,
+} from './query-analyzer';
+import { TypeSystem } from './type-system';
+import {
+  ArrayIndexNode,
+  ASTNode,
+  BinaryOpNode,
+  CreateStatement,
+  DeleteStatement,
+  ExecutorHooks,
+  Expression,
+  FieldNode,
+  FunctionCallNode,
+  JoinNode,
+  MapIndexNode,
+  MethodCallNode,
+  OrderByNode,
+  PipeNode,
+  QueryResult,
+  SelectStatement,
+  SubqueryNode,
+  TriggerStatement,
+  UnaryOpNode,
+  UnionNode,
+  UpdateStatement,
+  ValueNode,
+} from './types';
 
 // Trigger context for before/after trigger evaluation
 export interface TriggerContext {
@@ -43,11 +67,44 @@ function newExecutionState(): ExecutionState {
     errors: [],
     timings: { list: 0, read: 0, prefilter: 0, evaluate: 0, total: 0 },
     filesSearched: 0,
-    filesMatched: 0
+    filesMatched: 0,
   };
 }
 
 const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
+
+// Default shorthand-filter field per body element function (body-syntax design,
+// 2026-08-17). element("pattern") filters the element array by this field using
+// wildcard matching. null means the element has no shorthand filter.
+const ELEMENT_FILTER_FIELD: Record<string, string | null> = {
+  h1: 'title',
+  h2: 'title',
+  h3: 'title',
+  h4: 'title',
+  h5: 'title',
+  h6: 'title',
+  link: 'url',
+  linkRef: 'identifier',
+  image: 'alt',
+  imageRef: 'identifier',
+  code: 'lang',
+  inlineCode: 'content',
+  table: null,
+  tableRow: null,
+  tableCell: 'content',
+  list: null,
+  listItem: 'content',
+  blockquote: 'content',
+  p: 'content',
+  html: 'content',
+  em: 'content',
+  strong: 'content',
+  del: 'content',
+  break: null,
+  footnote: 'label',
+  def: 'identifier',
+  toc: null,
+};
 
 export class Executor {
   private dirs: string[];
@@ -56,6 +113,7 @@ export class Executor {
   private readOptions: ReadOptions;
   private hooks?: ExecutorHooks;
   private contentExtractorCache: Map<string, ContentExtractor> = new Map();
+  private bodyIndexCache: Map<string, BodyIndexImpl> = new Map();
   private lastAst: ASTNode | null = null;
 
   constructor(
@@ -63,7 +121,7 @@ export class Executor {
     context?: Record<string, any>,
     triggerContext?: TriggerContext,
     readOptions: ReadOptions = {},
-    hooks?: ExecutorHooks
+    hooks?: ExecutorHooks,
   ) {
     // Copy the array so caller mutations don't affect the executor
     this.dirs = Array.isArray(dir) ? [...dir] : [dir];
@@ -114,9 +172,17 @@ export class Executor {
   // failures (missing/unreadable dir) are recorded in meta.errors and do not
   // abort the remaining dirs. Each file gets a `source_dir` field stamped with
   // the directory it was read from.
-  private async readFilesWithHooks(dirs: string[], options: ReadOptions = {}, state?: ExecutionState): Promise<FileData[]> {
+  private async readFilesWithHooks(
+    dirs: string[],
+    options: ReadOptions = {},
+    state?: ExecutionState,
+  ): Promise<FileData[]> {
     const allFiles: FileData[] = [];
-    const onError = (err: { path: string; error: string; phase: 'read' | 'prefilter' | 'evaluate' }) => {
+    const onError = (err: {
+      path: string;
+      error: string;
+      phase: 'read' | 'prefilter' | 'evaluate';
+    }) => {
       state?.errors.push(err);
       options.onError?.(err);
     };
@@ -151,10 +217,8 @@ export class Executor {
             const t1 = Date.now();
             let filtered: string[];
             try {
-              filtered = await applyContentPrefilter(
-                paths,
-                prefilterTree,
-                (op, pattern) => FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op))
+              filtered = await applyContentPrefilter(paths, prefilterTree, (op, pattern) =>
+                FastFileOps.preFilterByContent(dir, paths, pattern, isNegatedContentOp(op)),
               );
             } catch (e: any) {
               // A prefilter failure must not crash the query — record it and fall
@@ -178,7 +242,11 @@ export class Executor {
           // Inject the executor's onError wrapper so legacy FileOps.read records
           // per-file read errors into the execution state (and forwards to any
           // user-supplied ReadOptions.onError). metadata comes from the analysis.
-          files = await FileOps.readFiles(dir, { ...options, onError, metadata: analysis.requiresMetadata });
+          files = await FileOps.readFiles(dir, {
+            ...options,
+            onError,
+            metadata: analysis.requiresMetadata,
+          });
           if (state) {
             state.timings.read += Date.now() - t2;
             // filesSearched = files read + files that errored in THIS dir only
@@ -203,7 +271,7 @@ export class Executor {
     }
 
     if (this.hooks?.onAfterRead) {
-      return allFiles.map(f => this.hooks!.onAfterRead!(f));
+      return allFiles.map((f) => this.hooks!.onAfterRead!(f));
     }
 
     return allFiles;
@@ -223,14 +291,15 @@ export class Executor {
   // Derive the FileIOAnalysis for the most recently parsed query so the fast
   // path knows whether to pre-filter by content and whether to load bodies.
   private analyzeCurrentQuery(): FileIOAnalysis {
-    if (!this.lastAst) return { requiresContent: false, requiresMetadata: false, bodyPredicates: [] };
+    if (!this.lastAst)
+      return { requiresContent: false, requiresMetadata: false, bodyPredicates: [] };
     const plan = new QueryAnalyzer(this.lastAst).analyze();
     return {
       requiresContent: plan.lazyLoading.requiresContent,
       requiresMetadata: plan.lazyLoading.requiresMetadata,
       bodyPredicates: plan.pushdownPredicates
-        .filter(p => p.field === 'content' || p.field === 'body')
-        .map(p => ({ field: p.field, op: p.op, value: String(p.value) }))
+        .filter((p) => p.field === 'content' || p.field === 'body')
+        .map((p) => ({ field: p.field, op: p.op, value: String(p.value) })),
     };
   }
 
@@ -309,7 +378,7 @@ export class Executor {
         // Strip rows where every selected field is undefined (files that
         // matched but declare none of the selected fields). null is a
         // legitimate value (e.g. section("Nope") → null) and is kept.
-        const hasValue = Object.values(row).some(v => v !== undefined);
+        const hasValue = Object.values(row).some((v) => v !== undefined);
         if (!hasValue) continue;
         if (node.offset && skipped < node.offset) {
           skipped++;
@@ -332,8 +401,8 @@ export class Executor {
         filesSearched: state.filesSearched,
         filesMatched: state.filesMatched,
         timings: state.timings,
-        errors: state.errors
-      }
+        errors: state.errors,
+      },
     };
   }
 
@@ -346,11 +415,11 @@ export class Executor {
       if (inference.kind === 'map' || inference.kind === 'array-of-maps') {
         const exprName = this.generateFieldName(field);
         const kind = inference.kind === 'map' ? 'a map' : 'an array of maps';
-        const suggestions = inference.suggestions.map(s => `\`${s}\``).join(', ');
+        const suggestions = inference.suggestions.map((s) => `\`${s}\``).join(', ');
         throw new Error(
           `Scalar value error: \`${exprName}\` returns ${kind} in the shape ` +
-          `${inference.shape}. Table/CSV output requires scalar columns. ` +
-          `Consider rewriting the query, e.g. ${suggestions}.`
+            `${inference.shape}. Table/CSV output requires scalar columns. ` +
+            `Consider rewriting the query, e.g. ${suggestions}.`,
         );
       }
     }
@@ -401,28 +470,38 @@ export class Executor {
   // Generate field name for complex expressions
   private generateFieldName(expr: Expression): string {
     switch (expr.type) {
-      case 'field': return expr.name;
+      case 'field':
+        return expr.name;
       case 'function_call': {
-        const argsStr = expr.args.map(a => this.generateFieldName(a)).join(', ');
+        const argsStr = expr.args.map((a) => this.generateFieldName(a)).join(', ');
         return `${expr.name}(${argsStr})`;
       }
       case 'method_call': {
-        const argsStr = expr.args.map(a => this.generateFieldName(a)).join(', ');
+        const argsStr = expr.args.map((a) => this.generateFieldName(a)).join(', ');
         return `${this.generateFieldName(expr.object)}.${expr.method}(${argsStr})`;
       }
-      case 'array_index': return `${this.generateFieldName(expr.object)}[${this.generateFieldName(expr.index)}]`;
+      case 'array_index':
+        return `${this.generateFieldName(expr.object)}[${this.generateFieldName(expr.index)}]`;
       case 'map_index': {
         const key = expr.key.type === 'string' ? expr.key.value : this.generateFieldName(expr.key);
         return `${this.generateFieldName(expr.object)}.${key}`;
       }
-      case 'binary_op': return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
-      case 'unary_op': return `${expr.op}_${this.generateFieldName(expr.operand)}`;
-      case 'paren': return this.generateFieldName(expr.expression);
-      case 'string': return `"${expr.value}"`;
-      case 'regex': return expr.value;
-      case 'number': return String(expr.value);
-      case 'boolean': return String(expr.value);
-      default: return 'expr';
+      case 'binary_op':
+        return `${this.generateFieldName(expr.left)}_${expr.op}_${this.generateFieldName(expr.right)}`;
+      case 'unary_op':
+        return `${expr.op}_${this.generateFieldName(expr.operand)}`;
+      case 'paren':
+        return this.generateFieldName(expr.expression);
+      case 'string':
+        return `"${expr.value}"`;
+      case 'regex':
+        return expr.value;
+      case 'number':
+        return String(expr.value);
+      case 'boolean':
+        return String(expr.value);
+      default:
+        return 'expr';
     }
   }
 
@@ -441,7 +520,7 @@ export class Executor {
     const groups = new Map<string, FileData[]>();
 
     for (const file of files) {
-      const key = fields.map(f => String((file as any)[f])).join('|');
+      const key = fields.map((f) => String((file as any)[f])).join('|');
       if (!groups.has(key)) {
         groups.set(key, []);
       }
@@ -499,12 +578,14 @@ export class Executor {
   // Remove duplicate rows based on selected fields
   private distinct(files: FileData[], fields: Expression[]): FileData[] {
     const seen = new Set<string>();
-    return files.filter(f => {
-      const key = fields.map(field => {
-        if (field.type === 'field') return String((f as any)[field.name]);
-        if (field.type === 'wildcard') return JSON.stringify(this.flattenFileData(f));
-        return '';
-      }).join('|');
+    return files.filter((f) => {
+      const key = fields
+        .map((field) => {
+          if (field.type === 'field') return String((f as any)[field.name]);
+          if (field.type === 'wildcard') return JSON.stringify(this.flattenFileData(f));
+          return '';
+        })
+        .join('|');
 
       if (seen.has(key)) {
         return false;
@@ -543,7 +624,7 @@ export class Executor {
   private async executeUpdate(node: UpdateStatement): Promise<QueryResult> {
     const files = await this.readFilesWithHooks(this.dirs, this.readOptions);
     const matches = node.where
-      ? files.filter(f => this.evaluateExpression(node.where!, { file: f }))
+      ? files.filter((f) => this.evaluateExpression(node.where!, { file: f }))
       : files;
 
     if (matches.length === 0) {
@@ -579,7 +660,7 @@ export class Executor {
 
     return {
       type: 'update',
-      updated: matches.length
+      updated: matches.length,
     };
   }
 
@@ -588,7 +669,7 @@ export class Executor {
   private async executeCreate(node: CreateStatement): Promise<QueryResult> {
     const newFile: any = {
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     // Set fields with type conversion
@@ -621,7 +702,7 @@ export class Executor {
 
     return {
       type: 'create',
-      created: 1
+      created: 1,
     };
   }
 
@@ -634,7 +715,9 @@ export class Executor {
     }
 
     const files = await this.readFilesWithHooks(this.dirs, this.readOptions);
-    const matches = node.where ? files.filter(f => this.evaluateExpression(node.where!, { file: f })) : files;
+    const matches = node.where
+      ? files.filter((f) => this.evaluateExpression(node.where!, { file: f }))
+      : files;
 
     if (matches.length === 0) {
       throw new Error(this.noMatchError(node.where));
@@ -647,7 +730,7 @@ export class Executor {
 
     return {
       type: 'delete',
-      deleted: matches.length
+      deleted: matches.length,
     };
   }
 
@@ -673,7 +756,12 @@ export class Executor {
   }
 
   private noMatchError(where?: Expression): string {
-    if (where && where.type === 'binary_op' && where.left.type === 'field' && where.right.type === 'string') {
+    if (
+      where &&
+      where.type === 'binary_op' &&
+      where.left.type === 'field' &&
+      where.right.type === 'string'
+    ) {
       return `no file with ${where.left.name} '${where.right.value}'`;
     }
     return 'no files matched the query';
@@ -689,17 +777,28 @@ export class Executor {
   // Evaluate expression tree
   evaluateExpression(expr: Expression, context: EvaluationContext): any {
     switch (expr.type) {
-      case 'binary_op': return this.evaluateBinaryOp(expr, context);
-      case 'unary_op': return this.evaluateUnaryOp(expr, context);
-      case 'function_call': return this.evaluateFunctionCall(expr, context);
-      case 'method_call': return this.evaluateMethodCall(expr, context);
-      case 'array_index': return this.evaluateArrayIndex(expr, context);
-      case 'map_index': return this.evaluateMapIndex(expr, context);
-      case 'field': return this.evaluateField(expr, context);
-      case 'subquery': return this.evaluateSubquery(expr, context);
-      case 'paren': return this.evaluateExpression(expr.expression, context);
-      case 'wildcard': return this.flattenFileData(context.file as FileData);
-      case 'exists': return false;
+      case 'binary_op':
+        return this.evaluateBinaryOp(expr, context);
+      case 'unary_op':
+        return this.evaluateUnaryOp(expr, context);
+      case 'function_call':
+        return this.evaluateFunctionCall(expr, context);
+      case 'method_call':
+        return this.evaluateMethodCall(expr, context);
+      case 'array_index':
+        return this.evaluateArrayIndex(expr, context);
+      case 'map_index':
+        return this.evaluateMapIndex(expr, context);
+      case 'field':
+        return this.evaluateField(expr, context);
+      case 'subquery':
+        return this.evaluateSubquery(expr, context);
+      case 'paren':
+        return this.evaluateExpression(expr.expression, context);
+      case 'wildcard':
+        return this.flattenFileData(context.file as FileData);
+      case 'exists':
+        return false;
       default:
         if (this.isValueNode(expr as Expression)) {
           return this.evaluateValue(expr as ValueNode);
@@ -731,6 +830,8 @@ export class Executor {
       case 'STARTS_WITH':
       case 'ENDS_WITH':
         return TypeSystem.evaluateComparison(expr.op, left, right);
+      case 'MATCHES':
+        return this.evaluateMatches(left, right);
       case 'NOT CONTAINS':
         return !TypeSystem.evaluateComparison('CONTAINS', left, right);
       case 'NOT STARTS_WITH':
@@ -768,17 +869,47 @@ export class Executor {
     }
   }
 
+  // Evaluate MATCHES: left string tested against right regex pattern.
+  private evaluateMatches(left: any, right: any): boolean {
+    if (typeof left !== 'string') return false;
+    let pattern: RegExp;
+    if (right instanceof RegExp) {
+      pattern = right;
+    } else if (typeof right === 'string') {
+      // Accept both "pattern" and "/pattern/" forms; strip slashes if present.
+      const source = right.trim();
+      const stripped = source.startsWith('/') ? source.slice(1, source.lastIndexOf('/')) : source;
+      try {
+        pattern = new RegExp(stripped);
+      } catch (e) {
+        throw new Error(`Invalid regex pattern in matches: ${right} (${(e as Error).message})`);
+      }
+    } else {
+      return false;
+    }
+    return pattern.test(left);
+  }
+
   // Evaluate IN operator
   private evaluateIn(left: any, right: any): boolean {
     // toc() returns array of { level, title } — match against titles
-    if (Array.isArray(right) && right.length > 0 &&
-        typeof right[0] === 'object' && right[0] !== null && 'title' in right[0]) {
+    if (
+      Array.isArray(right) &&
+      right.length > 0 &&
+      typeof right[0] === 'object' &&
+      right[0] !== null &&
+      'title' in right[0]
+    ) {
       const needle = String(left).toLowerCase();
-      return right.some(item => String((item as any).title).toLowerCase().includes(needle));
+      return right.some((item) =>
+        String((item as any).title)
+          .toLowerCase()
+          .includes(needle),
+      );
     }
 
     if (Array.isArray(right)) {
-      return right.some(item => this.looseEqual(left, item));
+      return right.some((item) => this.looseEqual(left, item));
     }
 
     if (Array.isArray(left)) {
@@ -799,13 +930,13 @@ export class Executor {
   // Evaluate ANY operator: array.some(item => item <op> right)
   private evaluateAny(left: any, subOp: string, right: any): boolean {
     if (!Array.isArray(left)) return false;
-    return left.some(item => TypeSystem.evaluateComparison(subOp, item, right));
+    return left.some((item) => TypeSystem.evaluateComparison(subOp, item, right));
   }
 
   // Evaluate ALL operator: array.every(item => item <op> right)
   private evaluateAll(left: any, subOp: string, right: any): boolean {
     if (!Array.isArray(left)) return false;
-    return left.every(item => TypeSystem.evaluateComparison(subOp, item, right));
+    return left.every((item) => TypeSystem.evaluateComparison(subOp, item, right));
   }
 
   // Evaluate IS EMPTY
@@ -821,7 +952,7 @@ export class Executor {
 
   // Evaluate function calls
   private evaluateFunctionCall(expr: FunctionCallNode, context: EvaluationContext): any {
-    const args = expr.args.map(arg => this.evaluateExpression(arg, context));
+    const args = expr.args.map((arg) => this.evaluateExpression(arg, context));
 
     // Aggregates (precomputed by groupBy)
     if (this.isAggregate(expr.name)) {
@@ -832,19 +963,38 @@ export class Executor {
 
     // Content-extraction builtins
     switch (expr.name) {
-      case 'links': return this.evaluateLinks(args, context);
-      case 'images': return this.evaluateImages(args, context);
-      case 'codeblocks': return this.evaluateCodeblocks(args, context);
-      case 'section': return this.evaluateSection(args, context);
-      case 'sections': return this.evaluateSections(args, context);
-      case 'grep': return this.evaluateGrep(args, context);
-      case 'toc': return this.evaluateToc(args, context);
-      case 'content': return this.evaluateContent(args, context);
-      case 'fields': return this.evaluateFields(args, context);
-      case 'file': return this.evaluateFile(args, context);
-      case 'has': return args[0] !== undefined && args[0] !== null;
-      case 'has_section': return this.evaluateHasSection(args, context);
-      case 'outline': return this.evaluateOutline(args, context);
+      case 'links':
+        return this.evaluateLinks(args, context);
+      case 'images':
+        return this.evaluateImages(args, context);
+      case 'codeblocks':
+        return this.evaluateCodeblocks(args, context);
+      case 'section':
+        return this.evaluateSection(args, context);
+      case 'sections':
+        return this.evaluateSections(args, context);
+      case 'grep':
+        return this.evaluateGrep(args, context);
+      case 'toc':
+        return this.evaluateToc(args, context);
+      case 'content':
+        return this.evaluateContent(args, context);
+      case 'fields':
+        return this.evaluateFields(args, context);
+      case 'file':
+        return this.evaluateFile(args, context);
+      case 'has':
+        return args[0] !== undefined && args[0] !== null;
+      case 'has_section':
+        return this.evaluateHasSection(args, context);
+      case 'outline':
+        return this.evaluateOutline(args, context);
+    }
+
+    // Body element functions (body-syntax design, 2026-08-17)
+    const bodyElement = this.evaluateBodyElement(expr.name, args, context);
+    if (bodyElement !== undefined) {
+      return bodyElement;
     }
 
     // Apply hooks
@@ -854,7 +1004,13 @@ export class Executor {
     }
 
     // Fallback to legacy builtins (now, next_date, upper, len, trim, ...)
-    return Builtins.call(expr.name, args, context.file as Record<string, any>, undefined, this.hooks);
+    return Builtins.call(
+      expr.name,
+      args,
+      context.file as Record<string, any>,
+      undefined,
+      this.hooks,
+    );
   }
 
   // Evaluate method calls
@@ -867,7 +1023,7 @@ export class Executor {
       return this.evaluateArrayMethodRaw(object, expr.method, expr.args, context);
     }
 
-    const args = expr.args.map(arg => this.evaluateExpression(arg, context));
+    const args = expr.args.map((arg) => this.evaluateExpression(arg, context));
 
     // Array methods
     if (Array.isArray(object)) {
@@ -889,33 +1045,55 @@ export class Executor {
 
   // Array methods whose arguments are raw expressions (predicates/mappers)
   // rather than evaluated values: filter/where/map/sort.
-  private evaluateArrayMethodRaw(array: any[], method: string, rawArgs: Expression[], context: EvaluationContext): any {
+  private evaluateArrayMethodRaw(
+    array: any[],
+    method: string,
+    rawArgs: Expression[],
+    context: EvaluationContext,
+  ): any {
     switch (method) {
       case 'filter':
-      case 'where': return this.evaluateArrayFilter(array, rawArgs[0], context);
-      case 'map': return this.evaluateArrayMap(array, rawArgs[0], context);
-      case 'sort': return this.evaluateArraySort(array, rawArgs[0], context);
-      default: throw new Error(`Unsupported raw array method: ${method}`);
+      case 'where':
+        return this.evaluateArrayFilter(array, rawArgs[0], context);
+      case 'map':
+        return this.evaluateArrayMap(array, rawArgs[0], context);
+      case 'sort':
+        return this.evaluateArraySort(array, rawArgs[0], context);
+      default:
+        throw new Error(`Unsupported raw array method: ${method}`);
     }
   }
 
   // Evaluate array methods
-  private evaluateArrayMethod(array: any[], method: string, args: any[], context: EvaluationContext): any {
+  private evaluateArrayMethod(
+    array: any[],
+    method: string,
+    args: any[],
+    context: EvaluationContext,
+  ): any {
     switch (method) {
-      case 'first': return array.length > 0 ? array[0] : undefined;
-      case 'last': return array.length > 0 ? array[array.length - 1] : undefined;
-      case 'slice': return this.evaluateArraySlice(array, args);
-      case 'flatten': return this.evaluateArrayFlatten(array);
-      case 'unique': return this.evaluateArrayUnique(array);
-      case 'count': return array.length;
-      case 'join': return array.map(String).join(args[0] ?? ',');
-      default: throw new Error(`Unsupported array method: ${method}`);
+      case 'first':
+        return array.length > 0 ? array[0] : undefined;
+      case 'last':
+        return array.length > 0 ? array[array.length - 1] : undefined;
+      case 'slice':
+        return this.evaluateArraySlice(array, args);
+      case 'flatten':
+        return this.evaluateArrayFlatten(array);
+      case 'unique':
+        return this.evaluateArrayUnique(array);
+      case 'count':
+        return array.length;
+      case 'join':
+        return array.map(String).join(args[0] ?? ',');
+      default:
+        throw new Error(`Unsupported array method: ${method}`);
     }
   }
 
   // Evaluate array filter
   private evaluateArrayFilter(array: any[], predicate: any, context: EvaluationContext): any[] {
-    return array.filter(item => {
+    return array.filter((item) => {
       const itemContext = { ...context, variables: { ...context.variables, _: item } };
       return this.evaluateExpression(predicate, itemContext);
     });
@@ -923,7 +1101,7 @@ export class Executor {
 
   // Evaluate array map
   private evaluateArrayMap(array: any[], mapper: any, context: EvaluationContext): any[] {
-    return array.map(item => {
+    return array.map((item) => {
       // map('field') → extract property from each item
       if (mapper && mapper.type === 'string') {
         return item?.[mapper.value];
@@ -968,28 +1146,52 @@ export class Executor {
   }
 
   // Evaluate string methods
-  private evaluateStringMethod(str: string, method: string, args: any[], context: EvaluationContext): any {
+  private evaluateStringMethod(
+    str: string,
+    method: string,
+    args: any[],
+    context: EvaluationContext,
+  ): any {
     switch (method) {
-      case 'length': return str.length;
-      case 'toLowerCase': return str.toLowerCase();
-      case 'toUpperCase': return str.toUpperCase();
-      case 'trim': return str.trim();
-      case 'startsWith': return str.startsWith(args[0]);
-      case 'endsWith': return str.endsWith(args[0]);
-      case 'includes': return str.includes(args[0]);
-      case 'slice': return str.slice(args[0], args[1]);
-      default: throw new Error(`Unsupported string method: ${method}`);
+      case 'length':
+        return str.length;
+      case 'toLowerCase':
+        return str.toLowerCase();
+      case 'toUpperCase':
+        return str.toUpperCase();
+      case 'trim':
+        return str.trim();
+      case 'startsWith':
+        return str.startsWith(args[0]);
+      case 'endsWith':
+        return str.endsWith(args[0]);
+      case 'includes':
+        return str.includes(args[0]);
+      case 'slice':
+        return str.slice(args[0], args[1]);
+      default:
+        throw new Error(`Unsupported string method: ${method}`);
     }
   }
 
   // Evaluate object methods
-  private evaluateObjectMethod(obj: Record<string, any>, method: string, args: any[], context: EvaluationContext): any {
+  private evaluateObjectMethod(
+    obj: Record<string, any>,
+    method: string,
+    args: any[],
+    context: EvaluationContext,
+  ): any {
     switch (method) {
-      case 'keys': return Object.keys(obj);
-      case 'values': return Object.values(obj);
-      case 'entries': return Object.entries(obj);
-      case 'length': return Object.keys(obj).length;
-      default: throw new Error(`Unsupported object method: ${method}`);
+      case 'keys':
+        return Object.keys(obj);
+      case 'values':
+        return Object.values(obj);
+      case 'entries':
+        return Object.entries(obj);
+      case 'length':
+        return Object.keys(obj).length;
+      default:
+        throw new Error(`Unsupported object method: ${method}`);
     }
   }
 
@@ -1018,6 +1220,14 @@ export class Executor {
   private evaluateMapIndex(expr: MapIndexNode, context: EvaluationContext): any {
     const object = this.evaluateExpression(expr.object, context);
     const key = this.evaluateExpression(expr.key, context);
+
+    // body namespace: `body.h1`, `body.code`, etc. The object is the raw body
+    // string (the `body` field) and the key is a known element name — build
+    // the BodyIndex namespace and return the element array.
+    if (typeof object === 'string' && typeof key === 'string' && key in ELEMENT_FILTER_FIELD) {
+      const index = createBodyIndex(object);
+      return this.buildBodyNamespace(index)[key];
+    }
 
     if (typeof object !== 'object' || object === null) {
       throw new Error(`Cannot index non-object: ${typeof object}`);
@@ -1057,13 +1267,20 @@ export class Executor {
     if (file) {
       // Identity fields
       switch (expr.name) {
-        case 'filename': return file.filename;
-        case 'path': return file.path;
-        case 'abspath': return file.abspath;
-        case 'filepath': return file.filepath;
-        case '_filename': return file.filename;
-        case '_path': return file.path;
-        case '_content': return this.getFileBody(file);
+        case 'filename':
+          return file.filename;
+        case 'path':
+          return file.path;
+        case 'abspath':
+          return file.abspath;
+        case 'filepath':
+          return file.filepath;
+        case '_filename':
+          return file.filename;
+        case '_path':
+          return file.path;
+        case '_content':
+          return this.getFileBody(file);
       }
 
       // Frontmatter fields
@@ -1100,11 +1317,16 @@ export class Executor {
   // Evaluate value literals
   private evaluateValue(expr: ValueNode): any {
     switch (expr.type) {
-      case 'string': return expr.value;
-      case 'number': return expr.value;
-      case 'boolean': return expr.value;
-      case 'null': return null;
-      case 'empty': return undefined;
+      case 'string':
+        return expr.value;
+      case 'number':
+        return expr.value;
+      case 'boolean':
+        return expr.value;
+      case 'null':
+        return null;
+      case 'empty':
+        return undefined;
       case 'regex': {
         // expr.value is /pattern/flags (slash-wrapped by the lexer) — strip the
         // delimiters and split flags so the regex matches the pattern, not "/pattern/".
@@ -1112,10 +1334,14 @@ export class Executor {
         const lastSlash = raw.lastIndexOf('/');
         return new RegExp(raw.slice(1, lastSlash), raw.slice(lastSlash + 1));
       }
-      case 'array': return expr.items.map(item => this.evaluateValue(item));
-      case 'field': return this.evaluateField(expr, {});
-      case 'subquery': return this.evaluateSubquery(expr, {});
-      default: throw new Error(`Unsupported value type: ${(expr as ValueNode).type}`);
+      case 'array':
+        return expr.items.map((item) => this.evaluateValue(item));
+      case 'field':
+        return this.evaluateField(expr, {});
+      case 'subquery':
+        return this.evaluateSubquery(expr, {});
+      default:
+        throw new Error(`Unsupported value type: ${(expr as ValueNode).type}`);
     }
   }
 
@@ -1160,7 +1386,7 @@ export class Executor {
       return sections[0] ?? null;
     }
     const name = String(args[0]);
-    return sections.find(s => s.title === name) ?? null;
+    return sections.find((s) => s.title === name) ?? null;
   }
 
   private evaluateSections(args: any[], context: EvaluationContext): any {
@@ -1182,9 +1408,10 @@ export class Executor {
     if (!content) {
       return [];
     }
-    const extractor = args.length > 1
-      ? new ContentExtractor(content)
-      : this.getContentExtractor(context.file as FileData);
+    const extractor =
+      args.length > 1
+        ? new ContentExtractor(content)
+        : this.getContentExtractor(context.file as FileData);
     return extractor.extractGrep(pattern);
   }
 
@@ -1193,7 +1420,7 @@ export class Executor {
     // Prefer precomputed regex-based sections (fast path, avoids remark parse)
     let entries: { level: number; title: string }[] = [];
     if (file.sections && file.sections.size > 0) {
-      entries = Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+      entries = Array.from(file.sections.values()).map((s) => ({ level: s.level, title: s.title }));
     } else if (this.getFileBody(file)) {
       const extractor = this.getContentExtractor(file);
       entries = extractor.extractToc();
@@ -1203,10 +1430,13 @@ export class Executor {
       const levels = new Set<number>();
       for (const arg of args) {
         if (typeof arg === 'number') levels.add(arg);
-        else if (Array.isArray(arg)) arg.forEach(a => { if (typeof a === 'number') levels.add(a); });
+        else if (Array.isArray(arg))
+          arg.forEach((a) => {
+            if (typeof a === 'number') levels.add(a);
+          });
       }
       if (levels.size > 0) {
-        entries = entries.filter(e => levels.has(e.level));
+        entries = entries.filter((e) => levels.has(e.level));
       }
     }
     return entries;
@@ -1219,13 +1449,13 @@ export class Executor {
 
     let entries: { level: number; title: string }[] = [];
     if (file.sections && file.sections.size > 0) {
-      entries = Array.from(file.sections.values()).map(s => ({ level: s.level, title: s.title }));
+      entries = Array.from(file.sections.values()).map((s) => ({ level: s.level, title: s.title }));
     } else if (this.getFileBody(file)) {
       const extractor = this.getContentExtractor(file);
       entries = extractor.extractToc();
     }
 
-    const filtered = entries.filter(e => e.level <= maxDepth);
+    const filtered = entries.filter((e) => e.level <= maxDepth);
     if (filtered.length === 0) return '';
 
     // Classic tree-drawing: track pending vertical bars per depth.
@@ -1241,7 +1471,10 @@ export class Executor {
       // (scanning forward until a lower-level heading is found).
       let hasNext = false;
       for (let j = i + 1; j < filtered.length; j++) {
-        if (filtered[j].level === depth) { hasNext = true; break; }
+        if (filtered[j].level === depth) {
+          hasNext = true;
+          break;
+        }
         if (filtered[j].level < depth) break;
       }
 
@@ -1293,7 +1526,7 @@ export class Executor {
       const pattern = args[0];
       const withValues = args[1] === true;
       const matches = this.wildcardMatch(pattern);
-      const keys = Object.keys(frontmatter).filter(k => matches(k));
+      const keys = Object.keys(frontmatter).filter((k) => matches(k));
       if (withValues) {
         const result: Record<string, any> = {};
         for (const key of keys) result[key] = frontmatter[key];
@@ -1312,17 +1545,17 @@ export class Executor {
     const trailing = pattern.endsWith('*');
     if (leading && trailing) {
       const mid = pattern.slice(1, -1);
-      return v => v.includes(mid);
+      return (v) => v.includes(mid);
     }
     if (trailing) {
       const prefix = pattern.slice(0, -1);
-      return v => v.startsWith(prefix);
+      return (v) => v.startsWith(prefix);
     }
     if (leading) {
       const suffix = pattern.slice(1);
-      return v => v.endsWith(suffix);
+      return (v) => v.endsWith(suffix);
     }
-    return v => v === pattern;
+    return (v) => v === pattern;
   }
 
   // file() returns the current file's metadata map (lazily loaded during the
@@ -1349,7 +1582,7 @@ export class Executor {
     // Fall back to ContentExtractor
     if (this.getFileBody(file)) {
       const extractor = this.getContentExtractor(file);
-      return extractor.extractSections().some(s => s.title === name);
+      return extractor.extractSections().some((s) => s.title === name);
     }
 
     return false;
@@ -1380,5 +1613,157 @@ export class Executor {
     const extractor = new ContentExtractor(this.getFileBody(file));
     this.contentExtractorCache.set(cacheKey, extractor);
     return extractor;
+  }
+
+  // Get or create the lazy BodyIndex for a file (body-syntax design, 2026-08-17).
+  private getBodyIndex(file: FileData): BodyIndexImpl {
+    if (!this.getFileBody(file)) {
+      throw new Error('File content not loaded');
+    }
+
+    const cacheKey = file.abspath || file.path || file.filename;
+    if (this.bodyIndexCache.has(cacheKey)) {
+      return this.bodyIndexCache.get(cacheKey)!;
+    }
+
+    const index = createBodyIndex(this.getFileBody(file));
+    this.bodyIndexCache.set(cacheKey, index);
+    return index;
+  }
+
+  // Body element functions: h1-h6, link, code, table, list, etc.
+  // Returns undefined when the name is not a body element function.
+  private evaluateBodyElement(name: string, args: any[], context: EvaluationContext): any {
+    const file = context.file as FileData;
+    if (!this.getFileBody(file)) {
+      return [];
+    }
+    const index = this.getBodyIndex(file);
+
+    let result: any[];
+    switch (name) {
+      case 'h1':
+      case 'h2':
+      case 'h3':
+      case 'h4':
+      case 'h5':
+      case 'h6': {
+        const level = Number(name.slice(1));
+        result = index.headingsOf(level);
+        break;
+      }
+      case 'link':
+        result = index.linksOf;
+        break;
+      case 'linkRef':
+        result = index.linkRefsOf;
+        break;
+      case 'image':
+        result = index.imagesOf;
+        break;
+      case 'imageRef':
+        result = index.imageRefsOf;
+        break;
+      case 'code':
+        result = index.codeOf;
+        break;
+      case 'inlineCode':
+        result = index.inlineCodeOf;
+        break;
+      case 'table':
+        result = index.tablesOf;
+        break;
+      case 'tableRow':
+        result = index.tableRowsOf;
+        break;
+      case 'tableCell':
+        result = index.tableCellsOf;
+        break;
+      case 'list':
+        result = index.listsOf;
+        break;
+      case 'listItem':
+        result = index.listItemsOf;
+        break;
+      case 'blockquote':
+        result = index.blockquotesOf;
+        break;
+      case 'p':
+        result = index.paragraphsOf;
+        break;
+      case 'html':
+        result = index.htmlOf;
+        break;
+      case 'em':
+        result = index.emphasisOf;
+        break;
+      case 'strong':
+        result = index.strongOf;
+        break;
+      case 'del':
+        result = index.delOf;
+        break;
+      case 'break':
+        result = index.breaksOf;
+        break;
+      case 'footnote':
+        result = index.footnotesOf;
+        break;
+      case 'def':
+        result = index.definitionsOf;
+        break;
+      case 'toc':
+        result = index.tocOf;
+        break;
+      default:
+        return undefined;
+    }
+
+    // Shorthand filter: element("pattern") filters by the element's default
+    // field using wildcard matching (exact, prefix, contains).
+    if (args.length > 0 && typeof args[0] === 'string') {
+      const field = ELEMENT_FILTER_FIELD[name];
+      if (field) {
+        const matches = this.wildcardMatch(args[0]);
+        result = result.filter((item: any) => matches(String(item?.[field] ?? '')));
+      }
+    }
+
+    return result;
+  }
+
+  // body namespace: exposes the full BodyIndex plus element-function names as
+  // direct properties so `body.h1[0].title` chains work via map_index.
+  private buildBodyNamespace(index: BodyIndexImpl): Record<string, any> {
+    const idx = index.get();
+    const body: Record<string, any> = { ...idx };
+    body.h1 = idx.headings[1] || [];
+    body.h2 = idx.headings[2] || [];
+    body.h3 = idx.headings[3] || [];
+    body.h4 = idx.headings[4] || [];
+    body.h5 = idx.headings[5] || [];
+    body.h6 = idx.headings[6] || [];
+    body.link = idx.links;
+    body.linkRef = idx.linkRefs;
+    body.image = idx.images;
+    body.imageRef = idx.imageRefs;
+    body.code = idx.code;
+    body.inlineCode = idx.inlineCode;
+    body.table = idx.tables;
+    body.tableRow = idx.tableRows;
+    body.tableCell = idx.tableCells;
+    body.list = idx.lists;
+    body.listItem = idx.listItems;
+    body.blockquote = idx.blockquotes;
+    body.p = idx.paragraphs;
+    body.html = idx.html;
+    body.em = idx.emphasis;
+    body.strong = idx.strong;
+    body.del = idx.del;
+    body.break = idx.breaks;
+    body.footnote = idx.footnotes;
+    body.def = idx.definitions;
+    body.toc = idx.toc;
+    return body;
   }
 }

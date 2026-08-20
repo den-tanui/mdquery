@@ -1,31 +1,108 @@
 // src/parser.ts
-import { Token, TokenType, ASTNode, Expression, SelectStatement, UpdateStatement, 
-  CreateStatement, DeleteStatement, TriggerStatement, PipeNode, UnionNode,
-  BinaryOpNode, UnaryOpNode, FunctionCallNode, MethodCallNode, ArrayIndexNode,
-  MapIndexNode, ValueNode, ParenNode, WildcardNode, SubqueryNode,
-  JoinNode, FromClause, OrderByNode } from './types';
+
 import { Lexer } from './lexer';
+import {
+  ArrayIndexNode,
+  ASTNode,
+  BinaryOpNode,
+  CreateStatement,
+  DeleteStatement,
+  Expression,
+  FromClause,
+  FunctionCallNode,
+  JoinNode,
+  MapIndexNode,
+  MethodCallNode,
+  OrderByNode,
+  ParenNode,
+  PipeNode,
+  SelectStatement,
+  SubqueryNode,
+  Token,
+  TokenType,
+  TriggerStatement,
+  UnaryOpNode,
+  UnionNode,
+  UpdateStatement,
+  ValueNode,
+  WildcardNode,
+} from './types';
 
 // Binding power table for Pratt parser
 const BINDING_POWER: Record<string, number> = {
   // OR has lowest precedence
-  'OR': 10,
-  'AND': 20,
+  OR: 10,
+  AND: 20,
   // Comparisons
-  '=': 30, '!=': 30, '<': 30, '>': 30, '<=': 30, '>=': 30,
-  'IN': 30, 'NOT IN': 30, 'CONTAINS': 30, 'STARTS_WITH': 30, 'ENDS_WITH': 30,
-  'IS': 30, 'ANY': 30, 'ALL': 30,
+  '=': 30,
+  '!=': 30,
+  '<': 30,
+  '>': 30,
+  '<=': 30,
+  '>=': 30,
+  IN: 30,
+  'NOT IN': 30,
+  CONTAINS: 30,
+  MATCHES: 30,
+  STARTS_WITH: 30,
+  ENDS_WITH: 30,
+  IS: 30,
+  ANY: 30,
+  ALL: 30,
   // Additive
-  '+': 40, '-': 40,
+  '+': 40,
+  '-': 40,
   // Multiplicative
-  '*': 50, '/': 50, '%': 50,
+  '*': 50,
+  '/': 50,
+  '%': 50,
   // Exponentiation (right associative)
   '^': 60,
   // Unary
-  'NOT': 70, '!': 70, 'UNARY_MINUS': 70, 'UNARY_PLUS': 70,
+  NOT: 70,
+  '!': 70,
+  UNARY_MINUS: 70,
+  UNARY_PLUS: 70,
   // Function calls, method calls, indexing
-  'CALL': 80, 'METHOD': 90, 'INDEX': 80
+  CALL: 80,
+  METHOD: 90,
+  INDEX: 80,
 };
+
+// Zero-arg element functions callable without parentheses (body-syntax design,
+// 2026-08-17). A bare identifier matching one of these names is parsed as a
+// function call with empty args unless followed by LPAREN/DOT/LBRACKET.
+const ZERO_ARG_FUNCTIONS = [
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'link',
+  'linkRef',
+  'image',
+  'imageRef',
+  'code',
+  'inlineCode',
+  'table',
+  'tableRow',
+  'tableCell',
+  'list',
+  'listItem',
+  'blockquote',
+  'p',
+  'html',
+  'em',
+  'strong',
+  'del',
+  'break',
+  'footnote',
+  'def',
+  'toc',
+  'outline',
+  'fields',
+];
 
 export class Parser {
   private tokens: Token[];
@@ -42,9 +119,9 @@ export class Parser {
     if (token.type === 'UNION') {
       return this.parseUnion(this.parseSelect());
     }
-    
+
     let ast: ASTNode;
-    
+
     if (token.type === 'SELECT') ast = this.parseSelect();
     else if (token.type === 'UPDATE') ast = this.parseUpdate();
     else if (token.type === 'CREATE') ast = this.parseCreate();
@@ -139,8 +216,12 @@ export class Parser {
     }
 
     // JOIN
-    if (this.current().type === 'LEFT' || this.current().type === 'RIGHT' ||
-        this.current().type === 'INNER' || this.current().type === 'CROSS') {
+    if (
+      this.current().type === 'LEFT' ||
+      this.current().type === 'RIGHT' ||
+      this.current().type === 'INNER' ||
+      this.current().type === 'CROSS'
+    ) {
       node.join = this.parseJoin();
     } else if (this.current().type === 'JOIN') {
       node.join = this.parseJoin();
@@ -167,7 +248,7 @@ export class Parser {
 
   private parseJoin(): JoinNode {
     let joinType: 'left' | 'right' | 'inner' | 'cross' = 'cross';
-    
+
     if (this.current().type === 'LEFT') {
       joinType = 'left';
       this.advance();
@@ -189,29 +270,29 @@ export class Parser {
     } else {
       this.expect('JOIN');
     }
-    
+
     const right = this.parseFromClause();
     let on: Expression | undefined;
-    
+
     if (joinType !== 'cross' && this.current().type === 'ON') {
       this.advance();
       on = this.parseExpression();
     }
-    
+
     // For now, we'll use a default left table
     const left: FromClause = { table: 'current', alias: 'a' };
-    
+
     return { type: 'join', joinType, left, right, on };
   }
 
   private parseFromClause(): FromClause {
     const table = this.expect('IDENTIFIER').value;
     let alias: string | undefined;
-    
+
     if (this.current().type === 'IDENTIFIER' && this.current().value !== 'ON') {
       alias = this.advance().value;
     }
-    
+
     return { table, alias };
   }
 
@@ -260,7 +341,7 @@ export class Parser {
     const event = this.advance().type === 'BEFORE' ? 'before' : 'after';
     const opToken = this.current();
     let operation: 'create' | 'update' | 'delete';
-    
+
     if (opToken.type === 'CREATE') {
       operation = 'create';
     } else if (opToken.type === 'UPDATE') {
@@ -270,14 +351,14 @@ export class Parser {
     } else {
       throw new Error(`Expected CREATE, UPDATE, or DELETE, got ${opToken.type}`);
     }
-    
+
     this.advance();
 
     const node: TriggerStatement = {
       type: 'trigger',
       event,
       operation,
-      action: { type: 'deny', message: '' } // default
+      action: { type: 'deny', message: '' }, // default
     };
 
     // WHERE
@@ -309,7 +390,7 @@ export class Parser {
 
     while (this.current().type !== 'EOF' && !this.isKeyword()) {
       const expr = this.parseExpression();
-      
+
       // Check for AS alias
       let alias: string | undefined;
       if (this.current().type === 'AS') {
@@ -318,7 +399,7 @@ export class Parser {
         // Add alias to the last field — any expression type can be aliased
         (expr as { alias?: string }).alias = alias;
       }
-      
+
       fields.push(expr);
 
       if (this.current().type === 'COMMA') {
@@ -333,25 +414,29 @@ export class Parser {
 
   private parseExpression(rbp: number = 0): Expression {
     let left = this.parsePrefix();
-    
+
     while (rbp < this.getBindingPower(this.current())) {
       left = this.parseInfix(left);
     }
-    
+
     return left;
   }
 
   private parsePrefix(): Expression {
     const token = this.current();
-    
+
     // Unary operators
-    if (this.isTokenType(token, 'NOT') || this.isTokenType(token, 'MINUS') || this.isTokenType(token, 'PLUS')) {
+    if (
+      this.isTokenType(token, 'NOT') ||
+      this.isTokenType(token, 'MINUS') ||
+      this.isTokenType(token, 'PLUS')
+    ) {
       const op = this.isTokenType(token, 'NOT') ? 'NOT' : token.value;
       this.advance();
       const operand = this.parseExpression(BINDING_POWER[op]);
       return { type: 'unary_op', op, operand };
     }
-    
+
     // Parentheses
     if (token.type === 'LPAREN') {
       this.advance(); // skip (
@@ -367,51 +452,64 @@ export class Parser {
       this.expect('RPAREN');
       return { type: 'paren', expression: expr };
     }
-    
+
     // Function call
     if (token.type === 'IDENTIFIER' && this.peek().type === 'LPAREN') {
       return this.parseFunctionCall();
     }
-    
+
     // Array literal
     if (token.type === 'LBRACKET') {
       return this.parseArrayLiteral();
     }
-    
+
     // Value literals
-    if (token.type === 'STRING' || token.type === 'NUMBER' || token.type === 'BOOLEAN' ||
-        token.type === 'REGEX' || token.value === 'null' || token.type === 'EMPTY') {
+    if (
+      token.type === 'STRING' ||
+      token.type === 'NUMBER' ||
+      token.type === 'BOOLEAN' ||
+      token.type === 'REGEX' ||
+      token.value === 'null' ||
+      token.type === 'EMPTY'
+    ) {
       return this.parseValue();
     }
-    
+
     // HAS keyword
     if (token.type === 'HAS') {
       return this.parseHas();
     }
-    
+
     // EXISTS keyword
     if (token.type === 'EXISTS') {
       return this.parseExists();
     }
-    
+
     // Field reference
     if (token.type === 'IDENTIFIER') {
       this.advance();
+      // Paren-free convention: known zero-arg element functions called
+      // without parentheses (e.g. `select h1`, `h1[0].title`,
+      // `h1.filter(...)`). When followed by LPAREN, normal function-call
+      // parsing takes over below so args are parsed.
+      if (ZERO_ARG_FUNCTIONS.includes(token.value) && this.current().type !== 'LPAREN') {
+        return { type: 'function_call', name: token.value, args: [] };
+      }
       return { type: 'field', name: token.value };
     }
-    
+
     // Wildcard
     if (token.type === 'STAR') {
       this.advance();
       return { type: 'wildcard' };
     }
-    
+
     throw new Error(`Unexpected token in prefix: ${token.value}`);
   }
 
   private parseInfix(left: Expression): Expression {
     const token = this.current();
-    
+
     // EXISTS operator
     if (token.type === 'EXISTS') {
       this.advance();
@@ -420,7 +518,7 @@ export class Parser {
       this.expect('RPAREN');
       return { type: 'exists', subquery: query };
     }
-    
+
     // EXISTS operator
     if (this.isTokenType(token, 'EXISTS')) {
       this.advance();
@@ -429,17 +527,26 @@ export class Parser {
       this.expect('RPAREN');
       return { type: 'exists', subquery: query };
     }
-    
+
     // Binary operators
-    if (token.type === 'EQUALS' || token.type === 'NOT_EQUALS' ||
-        token.type === 'LT' || token.type === 'GT' ||
-        token.type === 'LTE' || token.type === 'GTE' ||
-        token.type === 'PLUS' || token.type === 'MINUS' ||
-        token.type === 'STAR' || token.type === 'SLASH' ||
-        token.type === 'PERCENT' || token.type === 'AND' || token.type === 'OR') {
+    if (
+      token.type === 'EQUALS' ||
+      token.type === 'NOT_EQUALS' ||
+      token.type === 'LT' ||
+      token.type === 'GT' ||
+      token.type === 'LTE' ||
+      token.type === 'GTE' ||
+      token.type === 'PLUS' ||
+      token.type === 'MINUS' ||
+      token.type === 'STAR' ||
+      token.type === 'SLASH' ||
+      token.type === 'PERCENT' ||
+      token.type === 'AND' ||
+      token.type === 'OR'
+    ) {
       const op = this.getOperator();
       this.advance();
-      
+
       // Check for subquery in right operand
       let right: Expression;
       if (this.current().type === 'LPAREN' && this.peek().type === 'SELECT') {
@@ -450,10 +557,10 @@ export class Parser {
       } else {
         right = this.parseExpression(BINDING_POWER[op]);
       }
-      
+
       return { type: 'binary_op', left, op, right };
     }
-    
+
     // Exponentiation (right associative)
     if (token.type === 'CARET') {
       const op = '^';
@@ -462,14 +569,14 @@ export class Parser {
       const right = this.parseExpression(BINDING_POWER[op] - 1);
       return { type: 'binary_op', left, op, right };
     }
-    
+
     // IN operator
-    
+
     // IN operator
     if (token.type === 'IN') {
       this.advance();
       let right: Expression;
-      
+
       if (this.current().type === 'LPAREN') {
         // Peek ahead to see if it's a subquery
         const nextToken = this.peek();
@@ -494,16 +601,16 @@ export class Parser {
         // IN function_call
         right = this.parseExpression(BINDING_POWER['IN']);
       }
-      
+
       return { type: 'binary_op', left, op: 'IN', right };
     }
-    
+
     // NOT IN operator
     if (token.type === 'NOT' && this.peek().type === 'IN') {
       this.advance(); // skip NOT
       this.advance(); // skip IN
       let right: Expression;
-      
+
       if (this.current().type === 'LPAREN') {
         this.advance(); // skip (
         const items: ValueNode[] = [];
@@ -516,18 +623,23 @@ export class Parser {
       } else {
         right = this.parseExpression(BINDING_POWER['IN']);
       }
-      
+
       return { type: 'binary_op', left, op: 'NOT IN', right };
     }
-    
-    // CONTAINS, STARTS_WITH, ENDS_WITH
-    if (token.type === 'CONTAINS' || token.type === 'STARTS_WITH' || token.type === 'ENDS_WITH') {
+
+    // CONTAINS, STARTS_WITH, ENDS_WITH, MATCHES
+    if (
+      token.type === 'CONTAINS' ||
+      token.type === 'STARTS_WITH' ||
+      token.type === 'ENDS_WITH' ||
+      token.type === 'MATCHES'
+    ) {
       const op = token.type;
       this.advance();
       const right = this.parseExpression(BINDING_POWER[op]);
       return { type: 'binary_op', left, op, right };
     }
-    
+
     // NOT CONTAINS, NOT STARTS_WITH, NOT ENDS_WITH
     if (token.type === 'NOT') {
       const nextType = this.peek().type;
@@ -539,7 +651,7 @@ export class Parser {
         return { type: 'binary_op', left, op, right };
       }
     }
-    
+
     // IS EMPTY / IS NOT EMPTY
     if (token.type === 'IS') {
       this.advance();
@@ -551,7 +663,7 @@ export class Parser {
       this.expect('EMPTY');
       return { type: 'binary_op', left, op: 'IS EMPTY', right: { type: 'empty' } };
     }
-    
+
     // ANY operator: field any <op> value (e.g. tags any = "backend")
     if (token.type === 'ANY') {
       this.advance();
@@ -560,7 +672,7 @@ export class Parser {
       const right = this.parseExpression(BINDING_POWER[subOp] || BINDING_POWER['=']);
       return { type: 'binary_op', left, op: `ANY ${subOp}`, right };
     }
-    
+
     // ALL operator: field all <op> value (e.g. tags all contains "backend")
     if (token.type === 'ALL') {
       this.advance();
@@ -569,34 +681,36 @@ export class Parser {
       const right = this.parseExpression(BINDING_POWER[subOp] || BINDING_POWER['=']);
       return { type: 'binary_op', left, op: `ALL ${subOp}`, right };
     }
-    
+
     // Function call (postfix)
     if (token.type === 'LPAREN') {
       return this.parseFunctionCallArgs(left);
     }
-    
+
     // Method call (postfix) - only for chained methods like .filter(), .map()
     // (method names may lex as keywords: .join() → JOIN, .where() → WHERE)
     if (token.type === 'DOT' && this.isChainedMethod(this.peek().value)) {
       return this.parseMethodCall(left);
     }
-    
+
     // Map index (postfix) - for property access like .text, .url
     if (token.type === 'DOT' && this.peek().type === 'IDENTIFIER') {
       return this.parseMapIndex(left);
     }
-    
+
     // Array index (postfix)
     if (this.isTokenType(token, 'LBRACKET')) {
       return this.parseArrayIndex(left);
     }
-    
+
     // Map index (postfix) - check if next token is STRING or IDENTIFIER
-    if (this.isTokenType(token, 'LBRACKET') && 
-        (this.peek().type === 'STRING' || this.peek().type === 'IDENTIFIER')) {
+    if (
+      this.isTokenType(token, 'LBRACKET') &&
+      (this.peek().type === 'STRING' || this.peek().type === 'IDENTIFIER')
+    ) {
       return this.parseMapIndex(left);
     }
-    
+
     throw new Error(`Unexpected token in infix: ${token.value}`);
   }
 
@@ -604,19 +718,19 @@ export class Parser {
     const name = this.expect('IDENTIFIER').value;
     this.expect('LPAREN');
     const args: Expression[] = [];
-    
+
     while (this.current().type !== 'RPAREN') {
       args.push(this.parseExpression());
       if (this.current().type === 'COMMA') this.advance();
     }
-    
+
     this.expect('RPAREN');
-    
+
     // Check for property accessor (e.g., grep(/TODO/g)('text'))
     if (this.current().type === 'LPAREN') {
       return this.parseFunctionCallArgs({ type: 'function_call', name, args });
     }
-    
+
     return { type: 'function_call', name, args };
   }
 
@@ -630,12 +744,12 @@ export class Parser {
     }
 
     this.expect('RPAREN');
-    
+
     // Handle property accessor pattern: grep(/TODO/g)('text')
     if (left.type === 'function_call') {
       return { type: 'function_call', name: left.name, args: [...left.args, ...args] };
     }
-    
+
     // Calling a non-function (e.g. file().mtime()) is invalid — a map is not
     // callable. Previously this produced a garbage function_call with an
     // undefined name; reject it with a clear parse error instead.
@@ -643,7 +757,21 @@ export class Parser {
   }
 
   private isChainedMethod(method: string): boolean {
-    const chainedMethods = ['filter', 'map', 'where', 'first', 'last', 'sort', 'slice', 'flatten', 'unique', 'count', 'join', 'keys', 'values'];
+    const chainedMethods = [
+      'filter',
+      'map',
+      'where',
+      'first',
+      'last',
+      'sort',
+      'slice',
+      'flatten',
+      'unique',
+      'count',
+      'join',
+      'keys',
+      'values',
+    ];
     return chainedMethods.includes(method);
   }
 
@@ -656,12 +784,12 @@ export class Parser {
     this.advance();
     this.expect('LPAREN');
     const args: Expression[] = [];
-    
+
     while (this.current().type !== 'RPAREN') {
       args.push(this.parseExpression());
       if (this.current().type === 'COMMA') this.advance();
     }
-    
+
     this.expect('RPAREN');
     return { type: 'method_call', object, method, args };
   }
@@ -670,7 +798,7 @@ export class Parser {
     this.expect('LBRACKET');
     const index = this.parseExpression();
     this.expect('RBRACKET');
-    
+
     return { type: 'array_index', object, index };
   }
 
@@ -681,7 +809,7 @@ export class Parser {
       const key = this.expect('IDENTIFIER').value;
       return { type: 'map_index', object, key: { type: 'string', value: key } };
     }
-    
+
     // Handle LBRACKET syntax: ['text'], ['url']
     this.expect('LBRACKET');
     const key = this.parseValue();
@@ -692,56 +820,56 @@ export class Parser {
   private parseArrayLiteral(): ValueNode {
     this.expect('LBRACKET');
     const items: ValueNode[] = [];
-    
+
     while (this.current().type !== 'RBRACKET') {
       items.push(this.parseValue());
       if (this.current().type === 'COMMA') this.advance();
     }
-    
+
     this.expect('RBRACKET');
     return { type: 'array', items };
   }
 
   private parseValue(): ValueNode {
     const token = this.current();
-    
+
     // Handle negative numbers
     if (token.type === 'MINUS' && this.peek().type === 'NUMBER') {
       this.advance(); // skip MINUS
       const numToken = this.advance(); // get NUMBER
       return { type: 'number', value: -parseInt(numToken.value) };
     }
-    
+
     if (token.type === 'STRING') {
       this.advance();
       return { type: 'string', value: token.value };
     }
-    
+
     if (token.type === 'NUMBER') {
       this.advance();
       return { type: 'number', value: parseInt(token.value) };
     }
-    
+
     if (token.type === 'BOOLEAN') {
       this.advance();
       return { type: 'boolean', value: token.value === 'true' };
     }
-    
+
     if (token.type === 'REGEX') {
       this.advance();
       return { type: 'regex', value: token.value };
     }
-    
+
     if (token.type === 'IDENTIFIER' && token.value.toLowerCase() === 'null') {
       this.advance();
       return { type: 'null', value: null };
     }
-    
+
     if (token.type === 'EMPTY') {
       this.advance();
       return { type: 'empty' };
     }
-    
+
     // Array literal: [item, item, ...]
     if (token.type === 'LBRACKET') {
       this.advance(); // skip [
@@ -753,7 +881,7 @@ export class Parser {
       this.expect('RBRACKET');
       return { type: 'array', items };
     }
-    
+
     // Subquery
     if (token.type === 'LPAREN') {
       // Peek ahead to see if it's a subquery
@@ -765,7 +893,7 @@ export class Parser {
         return { type: 'subquery', query };
       }
     }
-    
+
     throw new Error(`Unexpected token in value: ${token.value}`);
   }
 
@@ -774,23 +902,25 @@ export class Parser {
 
     while (this.current().type !== 'EOF') {
       if (this.current().type !== 'IDENTIFIER') break;
-      
+
       const field = this.expect('IDENTIFIER').value;
-      
+
       // Check for type annotation (e.g., field:type)
       let typeAnnotation: string | undefined;
       if (this.current().type === 'COLON') {
         this.advance();
         typeAnnotation = this.expect('IDENTIFIER').value;
       }
-      
+
       this.expect('EQUALS');
       set[field] = { value: this.parseExpression(), type: typeAnnotation };
 
       if (this.current().type === 'COMMA') {
         this.advance();
-      } else if (this.current().type === 'IDENTIFIER' && (this.peek().type === 'EQUALS' || this.peek().type === 'COLON')) {
-        continue;
+      } else if (
+        this.current().type === 'IDENTIFIER' &&
+        (this.peek().type === 'EQUALS' || this.peek().type === 'COLON')
+      ) {
       } else {
         break;
       }
@@ -816,16 +946,20 @@ export class Parser {
 
   private parseHas(): FunctionCallNode {
     this.advance(); // skip HAS
-    
+
     // Handle has section("name") syntax
     if (this.current().type === 'IDENTIFIER' && this.current().value.toLowerCase() === 'section') {
       this.advance(); // skip section
       this.expect('LPAREN');
       const sectionName = this.expect('STRING').value;
       this.expect('RPAREN');
-      return { type: 'function_call', name: 'has_section', args: [{ type: 'string', value: sectionName }] };
+      return {
+        type: 'function_call',
+        name: 'has_section',
+        args: [{ type: 'string', value: sectionName }],
+      };
     }
-    
+
     // Handle has(field) syntax
     this.expect('LPAREN');
     const field = this.expect('IDENTIFIER').value;
@@ -876,11 +1010,11 @@ export class Parser {
     if (token.type === 'LPAREN') return BINDING_POWER['CALL'];
     if (token.type === 'DOT') return BINDING_POWER['METHOD'];
     if (token.type === 'LBRACKET') return BINDING_POWER['INDEX'];
-    
+
     // Check for binary operators
     const op = this.getOperator();
     if (op && BINDING_POWER[op]) return BINDING_POWER[op];
-    
+
     // Default to 0 (lowest precedence)
     return 0;
   }
@@ -908,27 +1042,59 @@ export class Parser {
       OR: 'OR',
       IN: 'IN',
       CONTAINS: 'CONTAINS',
+      MATCHES: 'MATCHES',
       STARTS_WITH: 'STARTS_WITH',
       ENDS_WITH: 'ENDS_WITH',
       IS: 'IS',
       ANY: 'ANY',
       ALL: 'ALL',
-      NOT: 'NOT'
+      NOT: 'NOT',
     };
     return ops[token.type] || token.value;
   }
 
   private isKeyword(): boolean {
-    const keywords = ['WHERE', 'SET', 'ORDER', 'GROUP', 'LIMIT', 'OFFSET', 'AND', 'OR', 'BY', 'FROM', 'JOIN', 'UNION'];
+    const keywords = [
+      'WHERE',
+      'SET',
+      'ORDER',
+      'GROUP',
+      'LIMIT',
+      'OFFSET',
+      'AND',
+      'OR',
+      'BY',
+      'FROM',
+      'JOIN',
+      'UNION',
+    ];
     return keywords.includes(this.current().type);
   }
 
   private current(): Token {
-    return this.tokens[this.position] || { type: 'EOF', value: '', position: -1, line: -1, column: -1, offset: -1 };
+    return (
+      this.tokens[this.position] || {
+        type: 'EOF',
+        value: '',
+        position: -1,
+        line: -1,
+        column: -1,
+        offset: -1,
+      }
+    );
   }
 
   private peek(): Token {
-    return this.tokens[this.position + 1] || { type: 'EOF', value: '', position: -1, line: -1, column: -1, offset: -1 };
+    return (
+      this.tokens[this.position + 1] || {
+        type: 'EOF',
+        value: '',
+        position: -1,
+        line: -1,
+        column: -1,
+        offset: -1,
+      }
+    );
   }
 
   private advance(): Token {
@@ -940,7 +1106,9 @@ export class Parser {
   private expect(type: TokenType): Token {
     const token = this.current();
     if (token.type !== type) {
-      throw new Error(`Expected ${type}, got ${token.type} (${token.value}) at line ${token.line}, column ${token.column}`);
+      throw new Error(
+        `Expected ${type}, got ${token.type} (${token.value}) at line ${token.line}, column ${token.column}`,
+      );
     }
     return this.advance();
   }

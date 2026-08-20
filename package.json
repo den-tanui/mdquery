@@ -14,8 +14,12 @@
     "test": "vitest run",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit",
-    "format": "echo 'No formatter configured'"
+    "lint": "biome check src/ tests/",
+    "lint:fix": "biome check --write src/ tests/",
+    "format": "biome format --write src/ tests/",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false src/ tests/",
+    "dead-code": "knip",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",
@@ -28,6 +32,7 @@
     "ignore": "^7.0.6",
     "js-yaml": "^5.3.0",
     "mdast": "^3.0.0",
+    "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "string-width": "^8.2.2",
     "unified": "^11.0.5",
@@ -35,9 +40,11 @@
     "unist-util-visit-parents": "^6.0.2"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "vitest": "^1.0.0",
+    "@biomejs/biome": "^2.5.9",
+    "@types/bun": "latest",
     "@vitest/coverage-v8": "^1.0.0",
-    "@types/bun": "latest"
+    "knip": "^6.32.2",
+    "typescript": "^5.5.0",
+    "vitest": "^1.0.0"
   }
 }

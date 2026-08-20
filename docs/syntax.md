@@ -128,13 +128,14 @@ Comparisons compose with `and`, `or`, `not`, and parentheses.
 | `contains <val>` | substring match |
 | `starts_with <val>` | prefix match |
 | `ends_with <val>` | suffix match |
+| `matches <regex>` | regex match (e.g. `title matches "Set.*"`) |
 | `is empty` / `is not empty` | null or empty check |
 | `in (`val, ...)` | membership in a list |
 | `any <op>` / `all <op>` | match inside an array field |
 | `exists (<subquery>)` | subquery existence |
 | `"value" in toc()` | check if heading exists in markdown body |
-| `has section("name")` | check if section exists in markdown body |
-| `has_section("name")` | function form of `has section("name")` |
+| `has section("name")` | check if section exists in markdown body (deprecated — prefer `h1("name").count() > 0`) |
+| `has_section("name")` | function form of `has section("name")` (deprecated) |
 
 Examples:
 
@@ -173,10 +174,154 @@ Callable in `set` clauses and as values:
 | `next_date('daily'\|'weekly'\|'monthly'\|'yearly'\|<n>)` | next recurrence / in n days |
 | `nextEnum(val, [a, b, c])` / `prevEnum(val, [..])` | cycle through enum values |
 | `fields()` | return frontmatter field map `{field: value}` (use `fields().keys()` / `.values()` for lists) |
-| `toc()` | return array of `{level, title}` entries |
+| `fields("query")` | wildcard-filtered field names (`fields("task_*")`); `fields("query", true)` returns the matching `{field: value}` map |
+| `toc()` | return array of `{level, title}` entries (structured objects) |
+| `outline()` | return a box-drawing heading tree as a scalar string (works in all output formats); `outline(2)` limits depth |
 | `sections()` | return array of section maps `{title, level, position, hierarchy, content}` |
-| `section("name")` | return first exact-match section map, or `null` |
+| `section("name")` | **deprecated** — return first exact-match section map, or `null`; prefer `h1("name")` / `h2("name")` shorthands |
 | `trimAll(x)` | replace presentation-breaking chars (`\n \r \t \v \f \u2028 \u2029 \u0085 | \0 \x00-\x1f`) with spaces |
+
+## Body elements
+
+Every markdown body is parsed into typed element arrays. Each element function returns an array of element objects for the current file. The parser uses [remark-parse] + [remark-gfm], so tables, task lists, strikethrough, and footnotes are supported.
+
+### Top-level element functions
+
+| Function | Returns |
+| --- | --- |
+| `h1` … `h6` | headings of that level |
+| `link` | inline links |
+| `linkRef` | reference-style links (`[text][id]`) |
+| `image` | inline images |
+| `imageRef` | reference-style images (`![alt][id]`) |
+| `code` | fenced code blocks |
+| `inlineCode` | inline code spans |
+| `table` | tables (`{headers, rows}`) |
+| `tableRow` | all table data rows (flat) |
+| `tableCell` | all table cells (flat) |
+| `list` | lists (`{ordered, items}`) |
+| `listItem` | all list items (flat, with `checked` for task items) |
+| `blockquote` | blockquotes |
+| `p` | paragraphs |
+| `html` | raw HTML blocks |
+| `em` | emphasis (`*text*`) |
+| `strong` | strong (`**text**`) |
+| `del` | strikethrough (`~~text~~`) |
+| `break` | hard line breaks |
+| `footnote` | footnote references (`[^1]`) |
+| `def` | link/image definitions (`[id]: url`) |
+
+### Element shapes
+
+| Element | Fields |
+| --- | --- |
+| `h1`…`h6` | `title: string`, `level: number`, `content: string`, `position` |
+| `link` | `text: string`, `url: string`, `position` |
+| `linkRef` | `text: string`, `identifier: string`, `position` |
+| `image` | `alt: string`, `url: string`, `position` |
+| `imageRef` | `alt: string`, `identifier: string`, `position` |
+| `code` | `lang: string?`, `content: string`, `position` |
+| `inlineCode` | `content: string`, `position` |
+| `table` | `headers: [{content, position}]`, `rows: [{cells: [{content, position}], position}]`, `position` |
+| `tableRow` | `cells: [{content, position}]`, `position` |
+| `tableCell` | `content: string`, `position` |
+| `list` | `ordered: boolean`, `items: [listItem]`, `position` |
+| `listItem` | `content: string`, `checked: boolean\|null`, `children: [listItem]`, `position` |
+| `blockquote` | `content: string`, `position` |
+| `p` | `content: string`, `position` |
+| `html` | `content: string`, `position` |
+| `em` / `strong` / `del` | `content: string`, `position` |
+| `break` | `position` |
+| `footnote` | `label: string`, `position` |
+| `def` | `identifier: string`, `url: string`, `title: string?`, `position` |
+
+`position` is the mdast source position: `{start: {line, column, offset}, end: {line, column, offset}}`.
+
+### Paren-free convention
+
+Zero-argument element functions can be called **without parentheses**:
+
+```sql
+select h1            -- same as h1()
+select code          -- same as code()
+select toc           -- same as toc()
+```
+
+Chaining works the same as with parentheses:
+
+```sql
+select h1[0].title
+select h1.filter(title contains "Setup")
+select link.map('url')
+select table[0].headers.map('content')
+select h1.count()
+```
+
+### Shorthand filters
+
+Passing a string argument filters the element array by a per-type default field using wildcard matching:
+
+| Function | Filter field | Example |
+| --- | --- | --- |
+| `h1`…`h6` | `title` | `h1("Setup")` |
+| `link` | `url` | `link("https*")` |
+| `linkRef` / `def` | `identifier` | `def("ref-*")` |
+| `image` | `alt` | `image("logo*")` |
+| `imageRef` | `identifier` | `imageRef("img-*")` |
+| `code` | `lang` | `code("js")` |
+| `inlineCode` / `p` / `em` / `strong` / `del` / `blockquote` / `listItem` / `tableCell` | `content` | `blockquote("*Important*")` |
+| `footnote` | `label` | `footnote("1")` |
+| `table` / `tableRow` / `list` / `break` | — (no filter) | — |
+
+Wildcard rules: no wildcard = exact match; trailing `*` = prefix; leading `*` = suffix; both = contains; `*` alone = all.
+
+```sql
+select h1("Setup")            -- exact title match
+select h1("Set*")             -- titles starting with "Set"
+select code("js")             -- js code blocks
+select link("https*")         -- https links
+select blockquote("*Important*")  -- blockquotes containing "Important"
+```
+
+### body namespace
+
+The `body` field (raw markdown body) can be indexed by element name to reach the same arrays:
+
+```sql
+select body.h1[0].title
+select body.code[0].lang
+select body.table[0].headers[0].content
+```
+
+`select body` alone still returns the raw markdown body string (unchanged).
+
+### matches operator
+
+Regex filtering works in `.filter()` and in `WHERE`:
+
+```sql
+select h1.filter(title matches "Set.*")
+select title where h1.filter(title matches "Setup|Config").count() > 0
+select fields().filter(key matches "^task_\\d+$")
+```
+
+### Scalar enforcement
+
+Table/CSV output requires **scalar columns**. Element arrays are arrays of maps, so they are JSON-only — table/CSV throw an early error naming the expression and suggesting a rewrite:
+
+```sql
+select h1                          -- JSON ok; table/csv error
+select h1.map('title')             -- scalar: ok everywhere
+select h1.count()                  -- scalar: ok everywhere
+select h1[0].title                 -- scalar: ok everywhere
+```
+
+### Backward compatibility
+
+The older extraction functions are unchanged and still available: `links()`, `images()`, `codeblocks()`, `sections()`, `section("name")` (deprecated — prefer `h1("name")` / `h2("name")`), `toc()` (now returns structured `[{level, title}]` objects), `outline()` (new scalar tree string), and `fields()` (now supports wildcard filtering).
+
+[remark-parse]: https://www.npmjs.com/package/remark-parse
+[remark-gfm]: https://www.npmjs.com/package/remark-gfm
 
 ## Aggregate functions
 

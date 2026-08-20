@@ -2,37 +2,96 @@
 // Lazy markdown body index. Built on first body-element access, cached for reuse.
 // One AST walk collects every element type into typed arrays (see BodyIndex).
 
-import { unified } from 'unified';
+import { Code, Heading, Image, Link, Node, Parent, Root, Text } from 'mdast';
+import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
-import { visit, SKIP } from 'unist-util-visit';
-import { Node, Parent, Link, Image, Code, Heading, Text, Root } from 'mdast';
+import { unified } from 'unified';
+import { SKIP, visit } from 'unist-util-visit';
 import {
+  BlockquoteElement,
   BodyIndex,
-  HeadingElement, LinkElement, LinkRefElement, ImageElement, ImageRefElement,
-  CodeElement, InlineCodeElement, TableElement, TableRowElement, TableCellElement,
-  ListElement, ListItemElement, BlockquoteElement, ParagraphElement, HtmlElement,
-  EmphasisElement, StrongElement, DeleteElement, BreakElement, FootnoteRefElement,
-  DefinitionElement, TocEntry, ElementPosition,
+  BreakElement,
+  CodeElement,
+  DefinitionElement,
+  DeleteElement,
+  ElementPosition,
+  EmphasisElement,
+  FootnoteRefElement,
+  HeadingElement,
+  HtmlElement,
+  ImageElement,
+  ImageRefElement,
+  InlineCodeElement,
+  LinkElement,
+  LinkRefElement,
+  ListElement,
+  ListItemElement,
+  ParagraphElement,
+  StrongElement,
+  TableCellElement,
+  TableElement,
+  TableRowElement,
+  TocEntry,
 } from './types';
 
 // mdast types not in the core typedefs
-interface Table extends Parent { align: any; }
-interface TableRow extends Parent { }
-interface TableCell extends Parent { }
-interface List extends Parent { ordered?: boolean; spread?: boolean; }
-interface ListItem extends Parent { checked?: boolean | null; spread?: boolean; }
-interface Blockquote extends Parent { }
-interface Paragraph extends Parent { }
-interface Html { type: 'html'; value: string; position?: any; }
-interface InlineCode { type: 'inlineCode'; value: string; position?: any; }
-interface LinkReference { type: 'linkReference'; label?: string; identifier?: string; referenceType?: string; }
-interface ImageReference { type: 'imageReference'; label?: string; identifier?: string; referenceType?: string; }
-interface Definition { type: 'definition'; identifier?: string; url?: string; title?: string; position?: any; }
-interface Break { type: 'break'; position?: any; }
-interface FootnoteReference { type: 'footnoteReference'; label?: string; identifier?: string; position?: any; }
-interface Emphasis extends Parent { }
-interface Strong extends Parent { }
-interface Delete extends Parent { }
+interface Table extends Parent {
+  align: any;
+}
+interface TableRow extends Parent {}
+interface TableCell extends Parent {}
+interface List extends Parent {
+  ordered?: boolean;
+  spread?: boolean;
+}
+interface ListItem extends Parent {
+  checked?: boolean | null;
+  spread?: boolean;
+}
+interface Blockquote extends Parent {}
+interface Paragraph extends Parent {}
+interface Html {
+  type: 'html';
+  value: string;
+  position?: any;
+}
+interface InlineCode {
+  type: 'inlineCode';
+  value: string;
+  position?: any;
+}
+interface LinkReference {
+  type: 'linkReference';
+  label?: string;
+  identifier?: string;
+  referenceType?: string;
+}
+interface ImageReference {
+  type: 'imageReference';
+  label?: string;
+  identifier?: string;
+  referenceType?: string;
+}
+interface Definition {
+  type: 'definition';
+  identifier?: string;
+  url?: string;
+  title?: string;
+  position?: any;
+}
+interface Break {
+  type: 'break';
+  position?: any;
+}
+interface FootnoteReference {
+  type: 'footnoteReference';
+  label?: string;
+  identifier?: string;
+  position?: any;
+}
+interface Emphasis extends Parent {}
+interface Strong extends Parent {}
+interface Delete extends Parent {}
 
 const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 
@@ -45,10 +104,11 @@ export class BodyIndexImpl {
     this.source = source;
   }
 
-  /** Parse markdown into an mdast root (cached). */
+  /** Parse markdown into an mdast root (cached). GFM plugin enables tables,
+   *  task lists, strikethrough, and footnotes. */
   private getAst(): Root {
     if (!this.ast) {
-      this.ast = unified().use(remarkParse).parse(this.source) as Root;
+      this.ast = unified().use(remarkParse).use(remarkGfm).parse(this.source) as Root;
     }
     return this.ast;
   }
@@ -60,13 +120,27 @@ export class BodyIndexImpl {
     const ast = this.getAst();
     const index: BodyIndex = {
       headings: { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] },
-      links: [], linkRefs: [], images: [], imageRefs: [],
-      code: [], inlineCode: [],
-      tables: [], tableRows: [], tableCells: [],
-      lists: [], listItems: [],
-      blockquotes: [], paragraphs: [], html: [],
-      emphasis: [], strong: [], del: [], breaks: [],
-      footnotes: [], definitions: [], toc: [],
+      links: [],
+      linkRefs: [],
+      images: [],
+      imageRefs: [],
+      code: [],
+      inlineCode: [],
+      tables: [],
+      tableRows: [],
+      tableCells: [],
+      lists: [],
+      listItems: [],
+      blockquotes: [],
+      paragraphs: [],
+      html: [],
+      emphasis: [],
+      strong: [],
+      del: [],
+      breaks: [],
+      footnotes: [],
+      definitions: [],
+      toc: [],
     };
 
     visit(ast, (node: Node) => {
@@ -105,7 +179,7 @@ export class BodyIndexImpl {
         case 'imageReference': {
           const r = node as unknown as ImageReference;
           index.imageRefs.push({
-            alt: this.extractText(node),
+            alt: (node as any).alt || '',
             identifier: r.identifier || r.label || '',
             position: node.position,
           });
@@ -127,9 +201,10 @@ export class BodyIndexImpl {
           const headers: TableCellElement[] = [];
           const children = (t.children || []) as TableRow[];
           children.forEach((row, rowIdx) => {
-            const cells: TableCellElement[] = (row.children || []).map((cell: unknown) =>
-              ({ content: this.extractText(cell as Node), position: (cell as Node).position })
-            );
+            const cells: TableCellElement[] = (row.children || []).map((cell: unknown) => ({
+              content: this.extractText(cell as Node),
+              position: (cell as Node).position,
+            }));
             if (rowIdx === 0) {
               headers.push(...cells);
             } else {
@@ -138,12 +213,14 @@ export class BodyIndexImpl {
           });
           index.tables.push({ headers, rows, position: t.position });
           index.tableRows.push(...rows);
-          index.tableCells.push(...headers, ...rows.flatMap(r => r.cells));
+          index.tableCells.push(...headers, ...rows.flatMap((r) => r.cells));
           return;
         }
         case 'list': {
           const l = node as unknown as List;
-          const items: ListItemElement[] = (l.children || []).map(item => this.buildListItem(item as ListItem));
+          const items: ListItemElement[] = (l.children || []).map((item) =>
+            this.buildListItem(item as ListItem),
+          );
           index.lists.push({ ordered: l.ordered === true, items, position: l.position });
           return;
         }
@@ -219,27 +296,69 @@ export class BodyIndexImpl {
   headingsOf(level: number): HeadingElement[] {
     return this.get().headings[level] || [];
   }
-  get linksOf(): LinkElement[] { return this.get().links; }
-  get linkRefsOf(): LinkRefElement[] { return this.get().linkRefs; }
-  get imagesOf(): ImageElement[] { return this.get().images; }
-  get imageRefsOf(): ImageRefElement[] { return this.get().imageRefs; }
-  get codeOf(): CodeElement[] { return this.get().code; }
-  get inlineCodeOf(): InlineCodeElement[] { return this.get().inlineCode; }
-  get tablesOf(): TableElement[] { return this.get().tables; }
-  get tableRowsOf(): TableRowElement[] { return this.get().tableRows; }
-  get tableCellsOf(): TableCellElement[] { return this.get().tableCells; }
-  get listsOf(): ListElement[] { return this.get().lists; }
-  get listItemsOf(): ListItemElement[] { return this.get().listItems; }
-  get blockquotesOf(): BlockquoteElement[] { return this.get().blockquotes; }
-  get paragraphsOf(): ParagraphElement[] { return this.get().paragraphs; }
-  get htmlOf(): HtmlElement[] { return this.get().html; }
-  get emphasisOf(): EmphasisElement[] { return this.get().emphasis; }
-  get strongOf(): StrongElement[] { return this.get().strong; }
-  get delOf(): DeleteElement[] { return this.get().del; }
-  get breaksOf(): BreakElement[] { return this.get().breaks; }
-  get footnotesOf(): FootnoteRefElement[] { return this.get().footnotes; }
-  get definitionsOf(): DefinitionElement[] { return this.get().definitions; }
-  get tocOf(): TocEntry[] { return this.get().toc; }
+  get linksOf(): LinkElement[] {
+    return this.get().links;
+  }
+  get linkRefsOf(): LinkRefElement[] {
+    return this.get().linkRefs;
+  }
+  get imagesOf(): ImageElement[] {
+    return this.get().images;
+  }
+  get imageRefsOf(): ImageRefElement[] {
+    return this.get().imageRefs;
+  }
+  get codeOf(): CodeElement[] {
+    return this.get().code;
+  }
+  get inlineCodeOf(): InlineCodeElement[] {
+    return this.get().inlineCode;
+  }
+  get tablesOf(): TableElement[] {
+    return this.get().tables;
+  }
+  get tableRowsOf(): TableRowElement[] {
+    return this.get().tableRows;
+  }
+  get tableCellsOf(): TableCellElement[] {
+    return this.get().tableCells;
+  }
+  get listsOf(): ListElement[] {
+    return this.get().lists;
+  }
+  get listItemsOf(): ListItemElement[] {
+    return this.get().listItems;
+  }
+  get blockquotesOf(): BlockquoteElement[] {
+    return this.get().blockquotes;
+  }
+  get paragraphsOf(): ParagraphElement[] {
+    return this.get().paragraphs;
+  }
+  get htmlOf(): HtmlElement[] {
+    return this.get().html;
+  }
+  get emphasisOf(): EmphasisElement[] {
+    return this.get().emphasis;
+  }
+  get strongOf(): StrongElement[] {
+    return this.get().strong;
+  }
+  get delOf(): DeleteElement[] {
+    return this.get().del;
+  }
+  get breaksOf(): BreakElement[] {
+    return this.get().breaks;
+  }
+  get footnotesOf(): FootnoteRefElement[] {
+    return this.get().footnotes;
+  }
+  get definitionsOf(): DefinitionElement[] {
+    return this.get().definitions;
+  }
+  get tocOf(): TocEntry[] {
+    return this.get().toc;
+  }
 
   // ---- helpers ----
 
@@ -251,9 +370,9 @@ export class BodyIndexImpl {
       position: item.position,
     };
     // Nested lists live inside item children; find and recurse.
-    const nested = (item.children || []).find(c => c.type === 'list') as List | undefined;
+    const nested = (item.children || []).find((c) => c.type === 'list') as List | undefined;
     if (nested && nested.children) {
-      el.children = nested.children.map(child => this.buildListItem(child as ListItem));
+      el.children = nested.children.map((child) => this.buildListItem(child as ListItem));
     }
     return el;
   }
@@ -263,7 +382,7 @@ export class BodyIndexImpl {
       return node.value as string;
     }
     if ('children' in node) {
-      return (node as Parent).children.map(child => this.extractText(child)).join('');
+      return (node as Parent).children.map((child) => this.extractText(child)).join('');
     }
     return '';
   }

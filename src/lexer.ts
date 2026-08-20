@@ -20,6 +20,7 @@ const KEYWORDS: Record<string, TokenType> = {
   not: 'NOT',
   in: 'IN',
   contains: 'CONTAINS',
+  matches: 'MATCHES',
   starts_with: 'STARTS_WITH',
   ends_with: 'ENDS_WITH',
   any: 'ANY',
@@ -109,7 +110,7 @@ export class Lexer {
       }
 
       throw new Error(
-        `Unexpected character '${char}' at position ${this.position}, line ${this.line}, column ${this.column}`
+        `Unexpected character '${char}' at position ${this.position}, line ${this.line}, column ${this.column}`,
       );
     }
 
@@ -144,7 +145,7 @@ export class Lexer {
     const startLine = this.line;
     const startColumn = this.column;
     const startOffset = this.position;
-    
+
     this.advance(); // skip opening quote
     let value = '';
 
@@ -164,7 +165,7 @@ export class Lexer {
     }
 
     this.advance(); // skip closing quote
-    
+
     return {
       type: 'STRING',
       value,
@@ -179,7 +180,7 @@ export class Lexer {
     const startLine = this.line;
     const startColumn = this.column;
     const startOffset = this.position;
-    
+
     this.advance(); // skip opening /
     let value = '/';
 
@@ -271,17 +272,38 @@ export class Lexer {
     if (char === '!' && next === '=') {
       this.advance();
       this.advance();
-      return { type: 'NOT_EQUALS', value: '!=', position: startOffset, line: startLine, column: startColumn, offset: startOffset };
+      return {
+        type: 'NOT_EQUALS',
+        value: '!=',
+        position: startOffset,
+        line: startLine,
+        column: startColumn,
+        offset: startOffset,
+      };
     }
     if (char === '<' && next === '=') {
       this.advance();
       this.advance();
-      return { type: 'LTE', value: '<=', position: startOffset, line: startLine, column: startColumn, offset: startOffset };
+      return {
+        type: 'LTE',
+        value: '<=',
+        position: startOffset,
+        line: startLine,
+        column: startColumn,
+        offset: startOffset,
+      };
     }
     if (char === '>' && next === '=') {
       this.advance();
       this.advance();
-      return { type: 'GTE', value: '>=', position: startOffset, line: startLine, column: startColumn, offset: startOffset };
+      return {
+        type: 'GTE',
+        value: '>=',
+        position: startOffset,
+        line: startLine,
+        column: startColumn,
+        offset: startOffset,
+      };
     }
 
     // Single-char operators and delimiters
@@ -308,7 +330,14 @@ export class Lexer {
 
     if (symbols[char]) {
       this.advance();
-      return { type: symbols[char], value: char, position: startOffset, line: startLine, column: startColumn, offset: startOffset };
+      return {
+        type: symbols[char],
+        value: char,
+        position: startOffset,
+        line: startLine,
+        column: startColumn,
+        offset: startOffset,
+      };
     }
 
     return null;

@@ -2,19 +2,72 @@
 
 // Token types
 export type TokenType =
-  | 'SELECT' | 'UPDATE' | 'CREATE' | 'DELETE'
-  | 'WHERE' | 'SET' | 'ORDER' | 'BY' | 'GROUP' | 'HAVING' | 'FROM'
-  | 'LIMIT' | 'OFFSET' | 'DISTINCT'
-  | 'AND' | 'OR' | 'NOT' | 'IN' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'ANY' | 'ALL'
-  | 'EXISTS' | 'IS' | 'EMPTY' | 'HAS'
-  | 'BEFORE' | 'AFTER' | 'DENY' | 'RUN' | 'AS'
-  | 'LEFT' | 'RIGHT' | 'INNER' | 'CROSS' | 'JOIN' | 'ON'
+  | 'SELECT'
+  | 'UPDATE'
+  | 'CREATE'
+  | 'DELETE'
+  | 'WHERE'
+  | 'SET'
+  | 'ORDER'
+  | 'BY'
+  | 'GROUP'
+  | 'HAVING'
+  | 'FROM'
+  | 'LIMIT'
+  | 'OFFSET'
+  | 'DISTINCT'
+  | 'AND'
+  | 'OR'
+  | 'NOT'
+  | 'IN'
+  | 'CONTAINS'
+  | 'MATCHES'
+  | 'STARTS_WITH'
+  | 'ENDS_WITH'
+  | 'ANY'
+  | 'ALL'
+  | 'EXISTS'
+  | 'IS'
+  | 'EMPTY'
+  | 'HAS'
+  | 'BEFORE'
+  | 'AFTER'
+  | 'DENY'
+  | 'RUN'
+  | 'AS'
+  | 'LEFT'
+  | 'RIGHT'
+  | 'INNER'
+  | 'CROSS'
+  | 'JOIN'
+  | 'ON'
   | 'UNION'
-  | 'IDENTIFIER' | 'NUMBER' | 'STRING' | 'BOOLEAN' | 'REGEX'
-  | 'COMMA' | 'DOT' | 'LPAREN' | 'RPAREN' | 'LBRACKET' | 'RBRACKET' | 'SEMICOLON'
-  | 'EQUALS' | 'NOT_EQUALS' | 'LT' | 'GT' | 'LTE' | 'GTE'
-  | 'PLUS' | 'MINUS' | 'STAR' | 'SLASH' | 'PERCENT' | 'CARET'
-  | 'PIPE' | 'COLON'
+  | 'IDENTIFIER'
+  | 'NUMBER'
+  | 'STRING'
+  | 'BOOLEAN'
+  | 'REGEX'
+  | 'COMMA'
+  | 'DOT'
+  | 'LPAREN'
+  | 'RPAREN'
+  | 'LBRACKET'
+  | 'RBRACKET'
+  | 'SEMICOLON'
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'LT'
+  | 'GT'
+  | 'LTE'
+  | 'GTE'
+  | 'PLUS'
+  | 'MINUS'
+  | 'STAR'
+  | 'SLASH'
+  | 'PERCENT'
+  | 'CARET'
+  | 'PIPE'
+  | 'COLON'
   | 'EOF';
 
 export interface Token {
@@ -281,16 +334,16 @@ export interface Schema {
 export interface ExecutorHooks {
   // Transform AST before execution
   onBeforeExecute?: (ast: ASTNode) => ASTNode;
-  
+
   // Validate/coerce values during evaluation
   onEvaluateValue?: (value: any, field: string) => any;
-  
+
   // Validate before writing (create/update/delete)
   onBeforeWrite?: (file: any, operation: 'create' | 'update' | 'delete') => void;
-  
+
   // Transform after reading
   onAfterRead?: (file: any) => any;
-  
+
   // Handle custom builtin function calls
   onBuiltinCall?: (name: string, args: any[], context?: Record<string, any>) => any;
 }
